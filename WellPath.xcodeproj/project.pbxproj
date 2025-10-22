@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0F5A36E24503C2AEB709B121 /* TrackedMetricsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C5C466314F0484C333C74F5 /* TrackedMetricsListView.swift */; };
 		121048EF6F13BF1E6D7D56AE /* SleepEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D13264E8F78904DEA708BB8 /* SleepEntryView.swift */; };
 		2081EAFF185AB66A33BFB3BA /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B14850915AADBE2A741715 /* ChallengesView.swift */; };
 		287A6F8556D14B30EEAFAE09 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C585E0CF16F69C98879F21E7 /* DashboardView.swift */; };
@@ -26,6 +27,7 @@
 
 /* Begin PBXFileReference section */
 		0D3D3207DC028711940F6CEE /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
+		1C5C466314F0484C333C74F5 /* TrackedMetricsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedMetricsListView.swift; sourceTree = "<group>"; };
 		1D13264E8F78904DEA708BB8 /* SleepEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepEntryView.swift; sourceTree = "<group>"; };
 		28C6B6C68AFB171A7A3B68BD /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		574760B88E6EB80659BC0930 /* EducationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EducationView.swift; sourceTree = "<group>"; };
@@ -147,6 +149,7 @@
 			isa = PBXGroup;
 			children = (
 				5CEB4DD0E95A6692AA6DA3C1 /* TrackedMetricsEntryView.swift */,
+				1C5C466314F0484C333C74F5 /* TrackedMetricsListView.swift */,
 			);
 			path = TrackedMetrics;
 			sourceTree = "<group>";
@@ -254,6 +257,7 @@
 				909B4AE1976CA79A20BB9C7B /* SleepViewModel.swift in Sources */,
 				99AB4FFD2B55FE6F7F531584 /* SupabaseManager.swift in Sources */,
 				5A76E91DD9B3D70144A95717 /* TrackedMetricsEntryView.swift in Sources */,
+				0F5A36E24503C2AEB709B121 /* TrackedMetricsListView.swift in Sources */,
 				AE71ACA81BA7A89ED2EF9E3C /* WellPathApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
