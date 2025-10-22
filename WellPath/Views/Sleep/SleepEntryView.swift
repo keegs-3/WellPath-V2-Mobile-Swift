@@ -112,21 +112,23 @@ class SleepEntryViewModel: ObservableObject {
 
         do {
             let duration = wakeTime.timeIntervalSince(bedtime) / 60  // Convert to minutes
+            let userId = try await supabase.auth.session.user.id
 
-            // Insert into patient_data_entries
-            let entry: [String: Any] = [
-                "user_id": try await supabase.auth.session.user.id.uuidString,
-                "field_id": "DEF_SLEEP_DURATION",
-                "entry_date": ISO8601DateFormatter().string(from: bedtime),
-                "entry_timestamp": ISO8601DateFormatter().string(from: bedtime),
-                "value_quantity": duration,
-                "source": "manual_entry",
-                "metadata": [
-                    "bedtime": ISO8601DateFormatter().string(from: bedtime),
-                    "wake_time": ISO8601DateFormatter().string(from: wakeTime),
-                    "quality": quality
-                ]
-            ]
+            let metadata = SleepMetadata(
+                bedtime: ISO8601DateFormatter().string(from: bedtime),
+                wakeTime: ISO8601DateFormatter().string(from: wakeTime),
+                quality: quality
+            )
+
+            let entry = SleepDataEntry(
+                userId: userId,
+                fieldId: "DEF_SLEEP_DURATION",
+                entryDate: ISO8601DateFormatter().string(from: bedtime),
+                entryTimestamp: ISO8601DateFormatter().string(from: bedtime),
+                valueQuantity: duration,
+                source: "manual_entry",
+                metadata: metadata
+            )
 
             _ = try await supabase
                 .from("patient_data_entries")
@@ -138,10 +140,42 @@ class SleepEntryViewModel: ObservableObject {
 
         } catch {
             self.error = error.localizedDescription
-            print("Error saving sleep: \\(error)")
+            print("Error saving sleep: \(error)")
             isLoading = false
             return false
         }
+    }
+}
+
+struct SleepMetadata: Codable {
+    let bedtime: String
+    let wakeTime: String
+    let quality: Int
+
+    enum CodingKeys: String, CodingKey {
+        case bedtime
+        case wakeTime = "wake_time"
+        case quality
+    }
+}
+
+struct SleepDataEntry: Codable {
+    let userId: UUID
+    let fieldId: String
+    let entryDate: String
+    let entryTimestamp: String
+    let valueQuantity: Double
+    let source: String
+    let metadata: SleepMetadata
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case fieldId = "field_id"
+        case entryDate = "entry_date"
+        case entryTimestamp = "entry_timestamp"
+        case valueQuantity = "value_quantity"
+        case source
+        case metadata
     }
 }
 
