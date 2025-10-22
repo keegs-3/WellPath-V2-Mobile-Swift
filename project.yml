@@ -1,0 +1,76 @@
+name: WellPath
+options:
+  bundleIdPrefix: com.wellpath
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: en
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+
+targets:
+  WellPath:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - WellPath
+    dependencies:
+      - package: Supabase
+        product: Supabase
+    info:
+      path: WellPath/Info.plist
+      properties:
+        CFBundleDevelopmentRegion: $(DEVELOPMENT_LANGUAGE)
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSRequiresIPhoneOS: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities:
+          - armv7
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSHealthShareUsageDescription: "WellPath needs access to your health data to track sleep, exercise, and nutrition metrics."
+        NSHealthUpdateUsageDescription: "WellPath needs to update your health data to save your tracked metrics."
+    settings:
+      base:
+        PRODUCT_NAME: WellPath
+        PRODUCT_BUNDLE_IDENTIFIER: com.wellpath.WellPath
+        DEVELOPMENT_TEAM: ""
+        INFOPLIST_FILE: WellPath/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_VERSION: "5.9"
+        ENABLE_PREVIEWS: true
+        TARGETED_DEVICE_FAMILY: "1"
+    entitlements:
+      path: WellPath/WellPath.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+
+schemes:
+  WellPath:
+    build:
+      targets:
+        WellPath: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
