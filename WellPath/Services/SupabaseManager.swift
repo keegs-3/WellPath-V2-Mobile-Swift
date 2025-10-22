@@ -14,10 +14,9 @@ class SupabaseManager {
     let client: SupabaseClient
 
     private init() {
-        // TODO: Replace with your Supabase project URL and anon key
         client = SupabaseClient(
-            supabaseURL: URL(string: "https://YOUR_PROJECT.supabase.co")!,
-            supabaseKey: "YOUR_ANON_KEY"
+            supabaseURL: URL(string: "https://csotzmardnvrpdhlogjm.supabase.co")!,
+            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzb3R6bWFyZG52cnBkaGxvZ2ptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzMjQ4MTEsImV4cCI6MjA3NDkwMDgxMX0.Kw5NRNL3uv35HFUaalLMSbXJLBOPXCceexs7Y-4U9S4"
         )
     }
 }
