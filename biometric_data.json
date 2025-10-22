@@ -1,0 +1,462 @@
+Generated 51 records
+[
+  {
+    "id": "24e32bff-1a1b-43a4-b4d6-73a7b05256c1",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "VO2 Max",
+    "value": 55.8,
+    "unit": "mL/kg/min",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "e0bedd8c-305c-4385-b816-f772429cfd70",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "VO2 Max",
+    "value": 60.9,
+    "unit": "mL/kg/min",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "6d26c3c3-057b-482e-ba9a-d343634542ee",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "VO2 Max",
+    "value": 64.9,
+    "unit": "mL/kg/min",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "5d67df45-1198-4055-9d0d-093478d6634e",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Resting Heart Rate",
+    "value": 71.4,
+    "unit": "bpm",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "bf459037-192a-4617-a798-a1ace11b7d3c",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Resting Heart Rate",
+    "value": 77.9,
+    "unit": "bpm",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "d0cd737f-386f-457b-8ad1-e87f4f43fc59",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Resting Heart Rate",
+    "value": 76.1,
+    "unit": "bpm",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "5d08a084-3fab-4562-8929-cac34559d47d",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Heart Rate Variability",
+    "value": 48.8,
+    "unit": "ms",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "3179d93e-5521-4b85-8628-4f045ef411ac",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Heart Rate Variability",
+    "value": 55.3,
+    "unit": "ms",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "cd92feb1-da92-483c-85ad-8e8ec4e06850",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Heart Rate Variability",
+    "value": 41.2,
+    "unit": "ms",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "4292eb4a-05a8-4b2b-a156-2038cda2e564",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Systolic Blood Pressure",
+    "value": 142.5,
+    "unit": "mmHg",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "9ed8e83a-db4b-470e-998a-3b8eee32d4d2",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Systolic Blood Pressure",
+    "value": 148.3,
+    "unit": "mmHg",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "0d30462c-201d-463a-8d8d-73fa1058e031",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Systolic Blood Pressure",
+    "value": 106.6,
+    "unit": "mmHg",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "5db75ac6-ef6f-4536-89b2-801b93874ea9",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Diastolic Blood Pressure",
+    "value": 71.1,
+    "unit": "mmHg",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "4c62ee75-21b0-4962-ad32-cbf6520b09fb",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Diastolic Blood Pressure",
+    "value": 97.9,
+    "unit": "mmHg",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "76651d54-b79f-4c61-93bc-f19717157611",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Diastolic Blood Pressure",
+    "value": 90.4,
+    "unit": "mmHg",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "8dceee90-f40b-4b79-9913-25d5fb4b845d",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Body Weight",
+    "value": 89.0,
+    "unit": "kg",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "7ae15568-8dbf-4322-b6b6-4d0955126b76",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Body Weight",
+    "value": 81.3,
+    "unit": "kg",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "b310144e-e29d-4953-a275-3b9792f513c8",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Body Weight",
+    "value": 60.3,
+    "unit": "kg",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "52e7d5f1-1cf0-456c-b4c4-a0819ce01139",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Body Fat Percentage",
+    "value": 15.3,
+    "unit": "%",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "f50b6a6f-0dbc-4297-a2c7-31304f6fbf70",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Body Fat Percentage",
+    "value": 18.3,
+    "unit": "%",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "f4c5d540-81ce-4d01-8c7c-8bbfb6ae9479",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Body Fat Percentage",
+    "value": 20.2,
+    "unit": "%",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "2a5d1862-64ea-4d1d-b545-23d47b11e916",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "BMI",
+    "value": 20.2,
+    "unit": "kg/m\u00b2",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "6abf9bbc-e67d-421e-a0be-8a4779965de7",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "BMI",
+    "value": 28.9,
+    "unit": "kg/m\u00b2",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "dca2ab7f-09d5-4775-b095-6bc81431c22d",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "BMI",
+    "value": 25.1,
+    "unit": "kg/m\u00b2",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "c31c4a17-85d1-4ac4-a2ad-60399faab73f",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Lean Mass",
+    "value": 71.2,
+    "unit": "kg",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "170f54d3-a879-4e96-bc50-879f737e9945",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Lean Mass",
+    "value": 66.4,
+    "unit": "kg",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "eb125f3c-5567-42ad-964d-7cb69796e97b",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Lean Mass",
+    "value": 67.4,
+    "unit": "kg",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "1a8b7348-2da2-4548-9203-e8c834e070db",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Active Energy",
+    "value": 566.7,
+    "unit": "kcal",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "8750efa3-cd4e-4f38-9c82-429f389eade3",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Active Energy",
+    "value": 591.6,
+    "unit": "kcal",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "2110d106-695a-4c49-b28f-45a1babd0ef5",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Active Energy",
+    "value": 600.4,
+    "unit": "kcal",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "5f094a41-8176-458b-bf4d-58a36902f31c",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Steps",
+    "value": 7059.0,
+    "unit": "steps",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "5f383df5-c9c5-4fd8-906c-1a7f992c49e7",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Steps",
+    "value": 9099.5,
+    "unit": "steps",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "b5e7cfb0-0e1d-4d0c-9295-584aa5eb4b37",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Steps",
+    "value": 6805.6,
+    "unit": "steps",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "1f87eac2-95e4-4f59-b5d0-41e02afcd3f6",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Walking Running Distance",
+    "value": 7.2,
+    "unit": "km",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "66dc0a43-b4c0-47a4-8fe1-4e41ce464ea7",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Walking Running Distance",
+    "value": 5.6,
+    "unit": "km",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "3031bc1f-331d-4d00-ad53-4402847192c5",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Walking Running Distance",
+    "value": 6.3,
+    "unit": "km",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "77225cd3-0417-4136-8696-c4ce9d0e2509",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Flights Climbed",
+    "value": 8.3,
+    "unit": "flights",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "71856b0a-ca3b-4719-be2f-11a23cf70e5b",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Flights Climbed",
+    "value": 8.2,
+    "unit": "flights",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "a9abca71-827d-47e4-9aaf-fb175d3f201c",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Flights Climbed",
+    "value": 8.6,
+    "unit": "flights",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "84f4cb60-bd90-4df5-a293-3c92dfca48a3",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Sleep Duration",
+    "value": 7.5,
+    "unit": "hours",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "e34f068b-c95c-462e-b892-76ac9a29afdd",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Sleep Duration",
+    "value": 7.3,
+    "unit": "hours",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "0b91652d-1c15-431e-8efb-c7d087a3e75f",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Sleep Duration",
+    "value": 7.9,
+    "unit": "hours",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "014445dd-8fd4-4192-9a32-3e334b3813d9",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Deep Sleep",
+    "value": 1.5,
+    "unit": "hours",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "330614d7-85a8-42a9-becf-d6796c58076a",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Deep Sleep",
+    "value": 1.4,
+    "unit": "hours",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "992adaaa-b7ab-47a2-8585-3bda312cdeeb",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Deep Sleep",
+    "value": 1.7,
+    "unit": "hours",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "8278ea25-4487-41b1-bb23-738a5e4c4bfb",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "REM Sleep",
+    "value": 1.7,
+    "unit": "hours",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "05f18ee6-a9e8-41ce-bdd7-1116adc6c585",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "REM Sleep",
+    "value": 2.2,
+    "unit": "hours",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "0fa2aca5-33c4-4e13-9383-f15ae3d8889f",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "REM Sleep",
+    "value": 1.8,
+    "unit": "hours",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "02e1263c-0f54-4ad6-99a8-d75ae0c2ad51",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Sleep Efficiency",
+    "value": 96.3,
+    "unit": "%",
+    "recorded_at": "2025-10-16T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "59176852-3e51-4fd0-a70f-88071aa19e64",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Sleep Efficiency",
+    "value": 104.4,
+    "unit": "%",
+    "recorded_at": "2025-07-18T05:15:41+00:00",
+    "source": "manual"
+  },
+  {
+    "id": "d51d21be-563c-4bc5-b494-2d25a4523477",
+    "user_id": "8B79CE33-02B8-4F49-8268-3204130EFA82",
+    "biometric_name": "Sleep Efficiency",
+    "value": 105.5,
+    "unit": "%",
+    "recorded_at": "2025-04-19T05:15:41+00:00",
+    "source": "manual"
+  }
+]

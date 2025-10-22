@@ -8,8 +8,18 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var authManager = AuthStateManager()
+
     var body: some View {
-        MainTabView()
+        Group {
+            if authManager.isAuthenticated {
+                MainTabView()
+                    .environmentObject(authManager)
+            } else {
+                LoginView()
+                    .environmentObject(authManager)
+            }
+        }
     }
 }
 
