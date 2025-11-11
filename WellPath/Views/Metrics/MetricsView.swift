@@ -190,6 +190,17 @@ struct MetricsView: View {
         }
     }
 
+    func getFilterColor(_ filter: BiometricFilter) -> Color {
+        switch filter {
+        case .outOfRange:
+            return Color.red.opacity(0.7)
+        case .inRange:
+            return Color.blue.opacity(0.7)
+        case .optimal:
+            return Color.green.opacity(0.7)
+        }
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -258,57 +269,57 @@ struct MetricsView: View {
                     }
                     .padding(.horizontal)
 
-                    // Category Toggle
-                    HStack(spacing: 20) {
+                    // Category Toggle - Segmented Picker
+                    Picker("Category", selection: $selectedCategory) {
                         ForEach(MetricCategory.allCases, id: \.self) { category in
-                            Button(action: {
-                                selectedCategory = category
-                                Task {
-                                    if category == .biomarkers {
-                                        await viewModel.loadBiomarkers()
-                                    } else {
-                                        await viewModel.loadBiometrics()
-                                    }
-                                }
-                            }) {
-                                HStack {
-                                    Circle()
-                                        .fill(selectedCategory == category ? Color.black : Color.gray.opacity(0.3))
-                                        .frame(width: 20, height: 20)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.black, lineWidth: 2)
-                                        )
+                            Text(category.rawValue).tag(category)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .onChange(of: selectedCategory) { oldValue, newValue in
+                        Task {
+                            if newValue == .biomarkers {
+                                await viewModel.loadBiomarkers()
+                            } else {
+                                await viewModel.loadBiometrics()
+                            }
+                        }
+                    }
 
-                                    Text(category.rawValue)
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
-                                }
+                    // Status Filter - Rounded pill buttons with colored selection
+                    HStack(spacing: 8) {
+                        ForEach(BiometricFilter.allCases, id: \.self) { filter in
+                            Button(action: {
+                                selectedFilter = filter
+                            }) {
+                                Text(filter.rawValue)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        selectedFilter == filter
+                                            ? getFilterColor(filter)
+                                            : Color(uiColor: .secondarySystemGroupedBackground)
+                                    )
+                                    .foregroundColor(
+                                        selectedFilter == filter
+                                            ? .white
+                                            : .primary
+                                    )
+                                    .clipShape(Capsule())
+                                    .overlay(
+                                        Capsule()
+                                            .strokeBorder(
+                                                Color.gray.opacity(0.3),
+                                                style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                                            )
+                                    )
                             }
                         }
                     }
                     .padding(.horizontal)
-
-                    // Status Filter Pills
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(BiometricFilter.allCases, id: \.self) { filter in
-                                Button(action: {
-                                    selectedFilter = filter
-                                }) {
-                                    Text(filter.rawValue)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 10)
-                                        .background(selectedFilter == filter ? Color.green.opacity(0.3) : Color.gray.opacity(0.2))
-                                        .foregroundColor(selectedFilter == filter ? .primary : .secondary)
-                                        .cornerRadius(20)
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
 
                     // Category Filters Section
                     categoryFiltersView
@@ -328,8 +339,8 @@ struct MetricsView: View {
                                 .foregroundColor(.secondary)
                                 .padding()
                         } else {
-                            VStack(spacing: 16) {
-                                ForEach(filteredBiomarkers) { card in
+                            VStack(spacing: 0) {
+                                ForEach(Array(filteredBiomarkers.enumerated()), id: \.element.id) { index, card in
                                     NavigationLink(destination: BiomarkerDetailView(
                                         name: card.name,
                                         value: card.value,
@@ -338,16 +349,25 @@ struct MetricsView: View {
                                         trend: card.trend,
                                         isBiometric: false
                                     )) {
-                                        BiomarkerCard(
-                                            name: card.name,
-                                            value: card.value,
-                                            status: card.status,
-                                            rangeName: card.rangeName,
-                                            optimalRange: card.optimalRange,
-                                            trend: card.trend,
-                                            trendData: card.trendData,
-                                            statusColor: getStatusColor(card.status)
-                                        )
+                                        VStack(spacing: 0) {
+                                            BiomarkerCard(
+                                                name: card.name,
+                                                value: card.value,
+                                                status: card.status,
+                                                rangeName: card.rangeName,
+                                                optimalRange: card.optimalRange,
+                                                trend: card.trend,
+                                                trendData: card.trendData,
+                                                statusColor: getStatusColor(card.status),
+                                                isBiometric: false
+                                            )
+
+                                            // Divider between rows (not after last item)
+                                            if index < filteredBiomarkers.count - 1 {
+                                                Divider()
+                                                    .padding(.horizontal)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -360,8 +380,8 @@ struct MetricsView: View {
                                 .foregroundColor(.secondary)
                                 .padding()
                         } else {
-                            VStack(spacing: 16) {
-                                ForEach(filteredBiometrics) { card in
+                            VStack(spacing: 0) {
+                                ForEach(Array(filteredBiometrics.enumerated()), id: \.element.id) { index, card in
                                     NavigationLink(destination: BiomarkerDetailView(
                                         name: card.name,
                                         value: card.value,
@@ -370,16 +390,25 @@ struct MetricsView: View {
                                         trend: card.trend,
                                         isBiometric: true
                                     )) {
-                                        BiomarkerCard(
-                                            name: card.name,
-                                            value: card.value,
-                                            status: card.status,
-                                            rangeName: card.rangeName,
-                                            optimalRange: card.optimalRange,
-                                            trend: card.trend,
-                                            trendData: card.trendData,
-                                            statusColor: getStatusColor(card.status)
-                                        )
+                                        VStack(spacing: 0) {
+                                            BiomarkerCard(
+                                                name: card.name,
+                                                value: card.value,
+                                                status: card.status,
+                                                rangeName: card.rangeName,
+                                                optimalRange: card.optimalRange,
+                                                trend: card.trend,
+                                                trendData: card.trendData,
+                                                statusColor: getStatusColor(card.status),
+                                                isBiometric: true
+                                            )
+
+                                            // Divider between rows (not after last item)
+                                            if index < filteredBiometrics.count - 1 {
+                                                Divider()
+                                                    .padding(.horizontal)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -409,58 +438,72 @@ struct BiomarkerCard: View {
     let trend: String
     let trendData: [Double]
     let statusColor: Color
+    let isBiometric: Bool
+
+    var metricColor: Color {
+        if isBiometric {
+            return Color(red: 1.0, green: 0.0, blue: 1.0) // Magenta for biometrics
+        } else {
+            return Color(red: 0.74, green: 0.56, blue: 0.94) // Purple for biomarkers
+        }
+    }
+
+    var metricIcon: String {
+        if isBiometric {
+            return "ruler.fill" // Physical measurements
+        } else {
+            return "drop.fill" // Lab/blood tests
+        }
+    }
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                // Marker name - medium size, not bold, single line
+            // Icon badge - colored by metric type
+            Image(systemName: metricIcon)
+                .font(.system(size: 20))
+                .foregroundColor(metricColor)
+                .frame(width: 44, height: 44)
+                .background(metricColor.opacity(0.15))
+                .cornerRadius(10)
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Marker name
                 Text(name)
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .lineLimit(1)
 
-                // Optimal range - smallest, not bold
-                Text("Optimal: \(optimalRange)")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
-                    .lineLimit(1)
-
-                // Value and range name on one line - bold value
+                // Value and range name on one line
                 HStack(spacing: 6) {
                     Text(value)
                         .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
 
                     Text(rangeName)
-                        .font(.caption2)
-                        .fontWeight(.semibold)
+                        .font(.caption)
+                        .fontWeight(.medium)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(statusColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(3)
+                        .background(statusColor.opacity(0.15))
+                        .foregroundColor(statusColor)
+                        .cornerRadius(4)
                 }
             }
 
             Spacer()
 
-            // Mini sparkline chart - always show with gradient coloring
+            // Mini sparkline chart
             MiniSparkline(
                 data: trendData.isEmpty ? [0] : trendData,
                 color: statusColor,
                 optimalRange: optimalRange
             )
-            .frame(width: 90, height: 60)
+            .frame(width: 80, height: 50)
         }
         .padding(16)
-        .background(
-            Image("MetricsBg")
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-        )
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
         .cornerRadius(12)
-        .clipped()
     }
 }
 
@@ -585,17 +628,19 @@ struct MiniSparkline: View {
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color.white.opacity(0.1))
 
+            // Y-axis
             Path { path in
                 path.move(to: CGPoint(x: dimensions.padding, y: dimensions.padding))
                 path.addLine(to: CGPoint(x: dimensions.padding, y: geometry.size.height - dimensions.padding))
             }
-            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
 
+            // X-axis
             Path { path in
                 path.move(to: CGPoint(x: dimensions.padding, y: geometry.size.height - dimensions.padding))
                 path.addLine(to: CGPoint(x: geometry.size.width - dimensions.padding, y: geometry.size.height - dimensions.padding))
             }
-            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
 
             lineSegments(chartStartX: dimensions.chartStartX, chartWidth: dimensions.chartWidth, chartHeight: dimensions.chartHeight, padding: dimensions.padding, minValue: dimensions.minValue, range: dimensions.range)
             dataPoints(chartStartX: dimensions.chartStartX, chartWidth: dimensions.chartWidth, chartHeight: dimensions.chartHeight, padding: dimensions.padding, minValue: dimensions.minValue, range: dimensions.range)

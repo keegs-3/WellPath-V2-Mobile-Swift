@@ -47,7 +47,7 @@ struct MainTabView: View {
             }
             .accentColor(.blue)
 
-            // Custom + button overlay
+            // Custom + button overlay (halfway between current and tab bar)
             Button(action: {
                 showTrackedMetricsEntry = true
             }) {
@@ -60,7 +60,7 @@ struct MainTabView: View {
                             .frame(width: 50, height: 50)
                     )
             }
-            .offset(y: -25)
+            .offset(y: -12)
             .sheet(isPresented: $showTrackedMetricsEntry) {
                 TrackedMetricsEntryView()
             }

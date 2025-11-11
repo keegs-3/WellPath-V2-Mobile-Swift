@@ -8,22 +8,6 @@
 import SwiftUI
 import Charts
 
-enum TimePeriod: String, CaseIterable {
-    case threeMonths = "3M"
-    case sixMonths = "6M"
-    case oneYear = "1Y"
-    case all = "All"
-
-    var months: Int? {
-        switch self {
-        case .threeMonths: return 3
-        case .sixMonths: return 6
-        case .oneYear: return 12
-        case .all: return nil
-        }
-    }
-}
-
 struct BiomarkerDetailView: View {
     let name: String
     let value: String
@@ -38,14 +22,82 @@ struct BiomarkerDetailView: View {
     @State private var baseInfo: Any? = nil // Will be BiomarkerBase or BiometricsBase
     @State private var service = BiometricsService()
     @State private var selectedPeriod: TimePeriod = .all
+    @State private var selectedView: DetailView = .chart
+    @State private var availableUnits: [UnitConversion] = []
+    @State private var selectedUnit: String = ""
+    @State private var originalUnit: String = ""
+    @State private var unitDisplayNames: [String: String] = [:]
+    @State private var educationSections: [Any] = [] // Will be [BiomarkerEducationSection] or [BiometricEducationSection]
+    @State private var isLoadingEducation = false
 
-    // Always show ALL data - time period filter only controls visible X-axis window
+    // State for current values fetched from database
+    @State private var currentValue: String = ""
+    @State private var currentStatus: String = ""
+    @State private var currentOptimalRange: String = ""
+    @State private var currentTrend: String = ""
+
+    enum DetailView: String, CaseIterable {
+        case chart = "Chart"
+        case about = "About"
+    }
+
     var chartData: [BiomarkerDataPoint] {
-        viewModel.historicalData.sorted { $0.date < $1.date }
+        let sortedData = viewModel.historicalData.sorted { $0.date < $1.date }
+
+        // Filter by period
+        let filteredData: [BiomarkerDataPoint]
+        if selectedPeriod == .all {
+            filteredData = sortedData
+        } else {
+            let calendar = Calendar.current
+            let now = Date()
+            let cutoffDate: Date
+
+            switch selectedPeriod {
+            case .threeMonths:
+                cutoffDate = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+            case .sixMonths:
+                cutoffDate = calendar.date(byAdding: .month, value: -6, to: now) ?? now
+            case .oneYear:
+                cutoffDate = calendar.date(byAdding: .year, value: -1, to: now) ?? now
+            case .fiveYears:
+                cutoffDate = calendar.date(byAdding: .year, value: -5, to: now) ?? now
+            case .all:
+                cutoffDate = Date.distantPast
+            }
+
+            filteredData = sortedData.filter { $0.date >= cutoffDate }
+        }
+
+        // Apply unit conversion if needed
+        if selectedUnit != originalUnit {
+            return filteredData.map { dataPoint in
+                BiomarkerDataPoint(
+                    date: dataPoint.date,
+                    value: convertValue(dataPoint.value)
+                )
+            }
+        }
+
+        return filteredData
     }
 
     var historicalData: [BiomarkerDataPoint] {
         viewModel.historicalData
+    }
+
+    enum TimePeriod: Equatable {
+        case threeMonths, sixMonths, oneYear, fiveYears, all
+
+        var label: String {
+            switch self {
+            case .threeMonths: return "3M"
+            case .sixMonths: return "6M"
+            case .oneYear: return "1Y"
+            case .fiveYears: return "5Y"
+            case .all: return "All"
+            }
+        }
     }
 
     var statusColor: Color {
@@ -54,6 +106,22 @@ struct BiomarkerDetailView: View {
         case "In-Range": return .blue
         case "Optimal": return .green
         default: return .gray
+        }
+    }
+
+    var metricColor: Color {
+        if isBiometric {
+            return Color(red: 1.0, green: 0.0, blue: 1.0) // Magenta for biometrics
+        } else {
+            return Color(red: 0.74, green: 0.56, blue: 0.94) // Purple for biomarkers
+        }
+    }
+
+    var metricIcon: String {
+        if isBiometric {
+            return "ruler.fill" // Physical measurements
+        } else {
+            return "drop.fill" // Lab/blood tests
         }
     }
 
@@ -68,168 +136,361 @@ struct BiomarkerDetailView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // View picker
+            Picker("View", selection: $selectedView) {
+                ForEach(DetailView.allCases, id: \.self) { view in
+                    Text(view.rawValue).tag(view)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding()
+
+            // Content based on selected view
+            if selectedView == .chart {
+                chartContentView
+            } else {
+                aboutContentView
+            }
+        }
+        .background(
+            ZStack {
+                // Background gradient
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [metricColor.opacity(0.65), metricColor.opacity(0.45), metricColor.opacity(0.25), metricColor.opacity(0.1), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+
+                    Spacer()
+                }
+
+                // Large background icon
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: metricIcon)
+                            .font(.system(size: 200))
+                            .foregroundStyle(Color.white.opacity(0.2))
+                            .rotationEffect(.degrees(-15))
+                            .offset(x: 50, y: -50)
+                    }
+                    Spacer()
+                }
+            }
+            .ignoresSafeArea()
+        )
+        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle(name)
+        .task {
+            print("🔍 BiomarkerDetailView loading for: '\(name)' (isBiometric: \(isBiometric))")
+            await viewModel.loadHistory(for: name, isBiometric: isBiometric)
+            // Load range details and base information
+            do {
+                if isBiometric {
+                    print("🔍 Fetching biometric details for: '\(name)'")
+                    rangeDetails = try await service.fetchBiometricDetails(for: name)
+                    let baseInfoFetched = try await service.fetchBiometricsBase(for: name)
+                    baseInfo = baseInfoFetched
+
+                    // Set current values from baseInfo
+                    if let base = baseInfoFetched {
+                        if let optRange = base.aboutOptimalRange {
+                            currentOptimalRange = optRange
+                        }
+                    }
+
+                    // Load unit conversions if unit exists
+                    if let unitId = (baseInfoFetched as? BiometricsBase)?.unit {
+                        originalUnit = unitId
+                        selectedUnit = unitId
+                        await loadUnitConversions(for: unitId)
+                    }
+                } else {
+                    print("🔍 Fetching biomarker details for: '\(name)'")
+                    rangeDetails = try await service.fetchBiomarkerDetails(for: name)
+                    let fetchedBase = try await service.fetchBiomarkerBase(for: name)
+                    print("🔍 Fetched biomarker base: \(fetchedBase?.biomarkerName ?? "nil")")
+                    baseInfo = fetchedBase
+
+                    // Set current values from baseInfo
+                    if let base = fetchedBase {
+                        if let optRange = base.aboutOptimalTarget {
+                            currentOptimalRange = optRange
+                        }
+                    }
+
+                    // Load unit conversions if unit exists
+                    if let unitId = fetchedBase?.units {
+                        originalUnit = unitId
+                        selectedUnit = unitId
+                        await loadUnitConversions(for: unitId)
+                    }
+                }
+
+                // Get the most recent value and status from historical data
+                if let latestDataPoint = viewModel.historicalData.first {
+                    // Format the value with units
+                    let formattedValue = formatValueForDisplay(latestDataPoint.value)
+                    if !originalUnit.isEmpty, let unitDisplay = unitDisplayNames[originalUnit] {
+                        currentValue = "\(formattedValue) \(unitDisplay)"
+                    } else {
+                        currentValue = formattedValue
+                    }
+
+                    // Determine status from range details
+                    let rangeInfo = getRangeNameFor(value: latestDataPoint.value)
+                    currentStatus = rangeInfo.bucket
+
+                    // Simple trend calculation - compare to previous value
+                    if viewModel.historicalData.count >= 2 {
+                        let current = viewModel.historicalData[0].value
+                        let previous = viewModel.historicalData[1].value
+                        let difference = current - previous
+                        let percentChange = abs(difference / previous * 100)
+
+                        if percentChange < 5 {
+                            currentTrend = "Stable"
+                        } else if difference > 0 {
+                            currentTrend = "Increasing"
+                        } else {
+                            currentTrend = "Decreasing"
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Error loading range details: \(error)")
+            }
+
+            // Load education sections
+            await loadEducationSections()
+        }
+    }
+
+    // MARK: - Chart Content View
+    private var chartContentView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // Header Card
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
+                // Current Status Card
+                VStack(alignment: .leading, spacing: 16) {
+                    // Metric icon and name
+                    HStack(spacing: 12) {
+                        Image(systemName: metricIcon)
+                            .font(.system(size: 24))
+                            .foregroundColor(metricColor)
+                            .frame(width: 40, height: 40)
+                            .background(metricColor.opacity(0.15))
+                            .cornerRadius(8)
+
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(name)
-                                .font(.title)
-                                .foregroundColor(.white)
-
-                            HStack(spacing: 8) {
-                                Text(value)
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-
-                                Text(status)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(statusColor)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(4)
-                            }
+                                .font(.headline)
+                            Text(isBiometric ? "Biometric" : "Biomarker")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-
-                        Spacer()
                     }
 
                     Divider()
-                        .background(Color.white.opacity(0.3))
 
-                    VStack(alignment: .leading, spacing: 8) {
+                    // Current value and status
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(currentValue.isEmpty ? value : currentValue)
+                            .font(.system(size: 32, weight: .semibold))
+                            .foregroundColor(statusColor)
+
+                        Text(currentStatus.isEmpty ? status : currentStatus)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(statusColor.opacity(0.15))
+                            .foregroundColor(statusColor)
+                            .cornerRadius(6)
+                    }
+
+                    // Metadata
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Optimal Range:")
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.7))
+                            Text("Optimal Range")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                             Spacer()
-                            Text(optimalRange)
-                                .font(.subheadline)
+                            Text(currentOptimalRange.isEmpty ? convertedOptimalRange() : currentOptimalRange)
+                                .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.white)
                         }
 
                         HStack {
-                            Text("Trend:")
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.7))
+                            Text("Trend")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                             Spacer()
-                            Text(trend)
-                                .font(.subheadline)
+                            Text(currentTrend.isEmpty ? trend : currentTrend)
+                                .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.white)
                         }
 
                         HStack {
-                            Text("Last Measured:")
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.7))
+                            Text("Last Measured")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                             Spacer()
                             Text(viewModel.historicalData.first?.date ?? Date(), style: .date)
-                                .font(.subheadline)
+                                .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.white)
                         }
                     }
                 }
                 .padding()
-                .background(Color.black.opacity(0.3))
+                .background(Color(uiColor: .tertiarySystemGroupedBackground))
                 .cornerRadius(12)
-
-                // Time Period Filter
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(TimePeriod.allCases, id: \.self) { period in
-                            Button(action: {
-                                selectedPeriod = period
-                            }) {
-                                Text(period.rawValue)
-                                    .font(.subheadline)
-                                    .fontWeight(selectedPeriod == period ? .semibold : .regular)
-                                    .foregroundColor(selectedPeriod == period ? .black : .white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(selectedPeriod == period ? Color.white : Color.white.opacity(0.2))
-                                    .cornerRadius(20)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
 
                 // History Chart
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("History")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("History")
+                                .font(.headline)
 
-                    if !chartData.isEmpty {
-                        // Use SwiftUI Charts scrollable feature - Y-axis stays fixed, chart scrolls
+                            if !chartData.isEmpty {
+                                Text("\(chartData.count) reading\(chartData.count == 1 ? "" : "s")")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Period Selector
+                        Picker("Period", selection: $selectedPeriod) {
+                            ForEach([TimePeriod.threeMonths, .sixMonths, .oneYear, .fiveYears, .all], id: \.label) { period in
+                                Text(period.label).tag(period)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 240)
+                    }
+                    .padding(.horizontal)
+
+                    // Unit Selector
+                    if !availableUnits.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Unit")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+
+                            Picker("Unit", selection: $selectedUnit) {
+                                // Original unit
+                                Text(unitDisplayNames[originalUnit] ?? originalUnit).tag(originalUnit)
+
+                                // All available conversions
+                                ForEach(availableUnits) { conversion in
+                                    Text(unitDisplayNames[conversion.toUnit] ?? conversion.toUnit).tag(conversion.toUnit)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .padding(.horizontal)
+                        }
+                    }
+
+                    if viewModel.isLoading {
+                        VStack(spacing: 16) {
+                            ProgressView()
+                            Text("Loading historical data...")
+                                .foregroundColor(.secondary)
+                                .font(.subheadline)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .frame(height: 200)
+                        .padding()
+                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    } else if !chartData.isEmpty {
                         Chart {
-                            // Optimal range band
+                            // Optimal range background
                             let optMin = getOptimalMin()
                             let optMax = getOptimalMax()
 
+                            // Calculate x-axis range with padding
+                            let xAxisRange = getXAxisDomain()
+                            let xStart = xAxisRange.lowerBound
+                            let xEnd = xAxisRange.upperBound
+
                             if optMin > 0 && optMax > optMin {
-                                // Both min and max defined
+                                // Optimal range background - more transparent
                                 RectangleMark(
-                                    xStart: .value("Start", chartData.first?.date ?? Date()),
-                                    xEnd: .value("End", chartData.last?.date ?? Date()),
+                                    xStart: .value("Start", xStart),
+                                    xEnd: .value("End", xEnd),
                                     yStart: .value("Min", optMin),
                                     yEnd: .value("Max", optMax)
                                 )
-                                .foregroundStyle(Color.green.opacity(0.25))
+                                .foregroundStyle(Color.green.opacity(0.08))
+
+                                // Dotted border lines - thin black
+                                RuleMark(y: .value("Optimal Max", optMax))
+                                    .foregroundStyle(Color.black.opacity(0.3))
+                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
+                                RuleMark(y: .value("Optimal Min", optMin))
+                                    .foregroundStyle(Color.black.opacity(0.3))
+                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
                             } else if optMax > 0 && optMin == 0 {
-                                // Only max defined (< X case)
+                                // Optimal range background - more transparent
                                 RectangleMark(
-                                    xStart: .value("Start", chartData.first?.date ?? Date()),
-                                    xEnd: .value("End", chartData.last?.date ?? Date()),
+                                    xStart: .value("Start", xStart),
+                                    xEnd: .value("End", xEnd),
                                     yStart: .value("Min", 0),
                                     yEnd: .value("Max", optMax)
                                 )
-                                .foregroundStyle(Color.green.opacity(0.25))
+                                .foregroundStyle(Color.green.opacity(0.08))
+
+                                // Dotted border line at top - thin black
+                                RuleMark(y: .value("Optimal Max", optMax))
+                                    .foregroundStyle(Color.black.opacity(0.3))
+                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
                             } else if optMin > 0 && optMax == 0 {
-                                // Only min defined (> X case) - draw line
+                                // Only min defined - dotted line - thin black
                                 RuleMark(y: .value("Optimal", optMin))
-                                    .foregroundStyle(Color.green.opacity(0.8))
-                                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                                    .foregroundStyle(Color.black.opacity(0.3))
+                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                             }
 
-                            // Simple grey line connecting all data points
+                            // Line connecting data points - using metric color
                             ForEach(chartData) { dataPoint in
                                 LineMark(
                                     x: .value("Date", dataPoint.date),
                                     y: .value("Value", dataPoint.value)
                                 )
-                                .foregroundStyle(Color.white.opacity(0.5))
-                                .lineStyle(StrokeStyle(lineWidth: 3))
+                                .foregroundStyle(metricColor)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
                             }
 
-                            // Data points with color coding
+                            // Data points - stroke only, no fill
                             ForEach(chartData) { dataPoint in
                                 PointMark(
                                     x: .value("Date", dataPoint.date),
                                     y: .value("Value", dataPoint.value)
                                 )
-                                .foregroundStyle(selectedDataPoint?.id == dataPoint.id ? Color.white : getColorForValue(dataPoint.value))
+                                .foregroundStyle(metricColor)
                                 .symbol {
                                     Circle()
-                                        .fill(selectedDataPoint?.id == dataPoint.id ? Color.white : getColorForValue(dataPoint.value))
+                                        .stroke(metricColor, lineWidth: 2)
                                         .frame(width: selectedDataPoint?.id == dataPoint.id ? 12 : 8, height: selectedDataPoint?.id == dataPoint.id ? 12 : 8)
                                 }
 
-                                // Show vertical line and value label for selected point
+                                // Selected point annotation
                                 if selectedDataPoint?.id == dataPoint.id {
                                     RuleMark(x: .value("Date", dataPoint.date))
-                                        .foregroundStyle(Color.white.opacity(0.3))
+                                        .foregroundStyle(metricColor.opacity(0.3))
                                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
 
-                                    // Value label next to the point
                                     PointMark(
                                         x: .value("Date", dataPoint.date),
                                         y: .value("Value", dataPoint.value)
@@ -238,49 +499,72 @@ struct BiomarkerDetailView: View {
                                         Text(formatValueForDisplay(dataPoint.value))
                                             .font(.caption)
                                             .fontWeight(.bold)
-                                            .foregroundColor(.white)
+                                            .foregroundColor(.primary)
                                             .padding(6)
-                                            .background(Color.black.opacity(0.8))
+                                            .background(Color(uiColor: .systemBackground))
                                             .cornerRadius(6)
+                                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
                                     }
                                 }
                             }
                         }
                         .chartYScale(domain: getChartYDomain())
-                        .chartScrollableAxes(.horizontal)  // Y-axis fixed, X-axis scrolls
-                        .chartXVisibleDomain(length: getVisibleDomainLength())  // Sets visible window based on filter
+                        .chartXScale(domain: getXAxisDomain())
                         .chartXAxis {
                             AxisMarks(values: .automatic) { value in
-                                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
-                                    .foregroundStyle(Color.white.opacity(0.2))
-                                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                                    .foregroundStyle(Color.white.opacity(0.7))
+                                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                                    .foregroundStyle(Color.secondary.opacity(0.2))
+                                AxisValueLabel {
+                                    if let date = value.as(Date.self) {
+                                        Text(date, format: .dateTime.month(.abbreviated).day())
+                                            .foregroundStyle(Color.secondary)
+                                            .font(.caption)
+                                    }
+                                }
                             }
                         }
                         .chartYAxis {
                             AxisMarks(position: .leading) { value in
-                                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
-                                    .foregroundStyle(Color.white.opacity(0.2))
+                                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                                    .foregroundStyle(Color.secondary.opacity(0.2))
                                 AxisValueLabel {
                                     if let doubleValue = value.as(Double.self) {
                                         Text(formatValueForDisplay(doubleValue))
-                                            .foregroundStyle(Color.white.opacity(0.7))
+                                            .foregroundStyle(Color.secondary)
+                                            .font(.caption)
                                     }
                                 }
                             }
                         }
                         .frame(height: 250)
-                        .padding(.vertical, 20)
-                        .padding(.horizontal, 16)
-                        .background(Color.black.opacity(0.3))
+                        .padding()
+                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
                         .cornerRadius(12)
+                        .padding(.horizontal)
                     } else {
-                        Text("Loading historical data...")
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding()
-                            .background(Color.black.opacity(0.3))
-                            .cornerRadius(12)
+                        // No data available - show onboarding message
+                        VStack(spacing: 16) {
+                            Image(systemName: metricIcon)
+                                .font(.system(size: 60))
+                                .foregroundColor(metricColor.opacity(0.3))
+
+                            VStack(spacing: 8) {
+                                Text("No Historical Data")
+                                    .font(.headline)
+
+                                Text("Complete your onboarding to see \(isBiometric ? "biometric" : "biomarker") data and track your health over time.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 32)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 250)
+                        .padding()
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
                     }
                 }
 
@@ -288,7 +572,6 @@ struct BiomarkerDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Recent Records")
                         .font(.headline)
-                        .foregroundColor(.white)
                         .padding(.horizontal)
 
                     if !historicalData.isEmpty {
@@ -300,7 +583,6 @@ struct BiomarkerDetailView: View {
                                         Text(dataPoint.date, style: .date)
                                             .font(.subheadline)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.white)
 
                                         // Range name pill on its own line to prevent wrapping
                                         let rangeInfo = getRangeNameFor(value: dataPoint.value)
@@ -309,14 +591,14 @@ struct BiomarkerDetailView: View {
                                             .fontWeight(.semibold)
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
-                                            .background(getColorForBucket(rangeInfo.bucket))
-                                            .foregroundColor(.white)
+                                            .background(getColorForBucket(rangeInfo.bucket).opacity(0.2))
+                                            .foregroundColor(getColorForBucket(rangeInfo.bucket))
                                             .cornerRadius(4)
                                             .lineLimit(1)
 
                                         Text(dataPoint.date, style: .time)
                                             .font(.caption)
-                                            .foregroundColor(.white.opacity(0.6))
+                                            .foregroundColor(.secondary)
                                     }
 
                                     Spacer()
@@ -330,21 +612,20 @@ struct BiomarkerDetailView: View {
                                     Text(formatValueForDisplay(dataPoint.value))
                                         .font(.headline)
                                         .fontWeight(.semibold)
-                                        .foregroundColor(.white)
                                         .frame(minWidth: 60, alignment: .trailing)
                                 }
                                 .padding()
                                 .background(
                                     selectedDataPoint?.id == dataPoint.id ?
-                                    Color.white.opacity(0.2) :
-                                    Color.black.opacity(0.3)
+                                    metricColor.opacity(0.1) :
+                                    Color(uiColor: .tertiarySystemGroupedBackground)
                                 )
                                 .cornerRadius(8)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(
                                             selectedDataPoint?.id == dataPoint.id ?
-                                            Color.white.opacity(0.5) :
+                                            metricColor :
                                             Color.clear,
                                             lineWidth: 2
                                         )
@@ -357,110 +638,98 @@ struct BiomarkerDetailView: View {
                             }
                         }
                         .padding(.horizontal)
-                    }
-                }
-
-                // Information Sections
-                if let biomarkerBase = baseInfo as? BiomarkerBase {
-                    // About Why
-                    if let aboutWhy = biomarkerBase.aboutWhy, !aboutWhy.isEmpty {
-                        InfoCard(title: "About \(name)", content: aboutWhy)
-                    }
-
-                    // Optimal Target
-                    if let aboutOptimalTarget = biomarkerBase.aboutOptimalTarget, !aboutOptimalTarget.isEmpty {
-                        InfoCard(title: "Optimal Range", content: aboutOptimalTarget)
-                    }
-
-                    // Quick Tips
-                    if let aboutQuickTips = biomarkerBase.aboutQuickTips, !aboutQuickTips.isEmpty {
-                        InfoCard(title: "Quick Tips", content: aboutQuickTips)
-                    }
-                } else if let biometricsBase = baseInfo as? BiometricsBase {
-                    // About Why
-                    if let aboutWhy = biometricsBase.aboutWhy, !aboutWhy.isEmpty {
-                        InfoCard(title: "About \(name)", content: aboutWhy)
-                    }
-
-                    // Optimal Range
-                    if let aboutOptimalRange = biometricsBase.aboutOptimalRange, !aboutOptimalRange.isEmpty {
-                        InfoCard(title: "Optimal Range", content: aboutOptimalRange)
-                    }
-
-                    // Quick Tips
-                    if let aboutQuickTips = biometricsBase.aboutQuickTips, !aboutQuickTips.isEmpty {
-                        InfoCard(title: "Quick Tips", content: aboutQuickTips)
+                    } else if !viewModel.isLoading {
+                        // No records available - show message
+                        Text("No records available yet. Complete your onboarding to start tracking.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                            .padding(.horizontal, 32)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
                     }
                 }
             }
             .padding()
         }
-        .background(
-            Image("MetricsDetailBg")
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .ignoresSafeArea()
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            // Clear selection when tapping outside
-            withAnimation {
-                selectedDataPoint = nil
-            }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationTitle(name)
-        .task {
-            print("🔍 BiomarkerDetailView loading for: '\(name)' (isBiometric: \(isBiometric))")
-            await viewModel.loadHistory(for: name, isBiometric: isBiometric)
-            // Load range details and base information
-            do {
-                if isBiometric {
-                    print("🔍 Fetching biometric details for: '\(name)'")
-                    rangeDetails = try await service.fetchBiometricDetails(for: name)
-                    baseInfo = try await service.fetchBiometricsBase(for: name)
+    }
+
+    // MARK: - About Content View
+    private var aboutContentView: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                if isLoadingEducation {
+                    ProgressView()
+                        .padding()
+                } else if educationSections.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 60))
+                            .foregroundColor(metricColor.opacity(0.3))
+
+                        VStack(spacing: 8) {
+                            Text("No Educational Content")
+                                .font(.headline)
+
+                            Text("Educational content for this \(isBiometric ? "biometric" : "biomarker") is not yet available.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
                 } else {
-                    print("🔍 Fetching biomarker details for: '\(name)'")
-                    rangeDetails = try await service.fetchBiomarkerDetails(for: name)
-                    let fetchedBase = try await service.fetchBiomarkerBase(for: name)
-                    print("🔍 Fetched biomarker base: \(fetchedBase?.biomarkerName ?? "nil")")
-                    baseInfo = fetchedBase
+                    // Display education sections with accordions
+                    VStack(spacing: 12) {
+                        if isBiometric {
+                            ForEach(Array((educationSections as! [BiometricEducationSection]).enumerated()), id: \.element.id) { index, section in
+                                EducationAccordionSection(
+                                    sectionNumber: index + 1,
+                                    title: section.sectionTitle,
+                                    content: section.sectionContent,
+                                    color: metricColor
+                                )
+                            }
+                        } else {
+                            ForEach(Array((educationSections as! [BiomarkerEducationSection]).enumerated()), id: \.element.id) { index, section in
+                                EducationAccordionSection(
+                                    sectionNumber: index + 1,
+                                    title: section.sectionTitle,
+                                    content: section.sectionContent,
+                                    color: metricColor
+                                )
+                            }
+                        }
+                    }
+                    .padding(.top, 8)
                 }
-            } catch {
-                print("❌ Error loading range details: \(error)")
             }
+            .padding(.vertical)
         }
     }
 
     // Helper functions
-    func getVisibleDomainLength() -> TimeInterval {
-        guard let months = selectedPeriod.months else {
-            // For "All", return total seconds in the data range
-            guard let earliest = historicalData.map({ $0.date }).min(),
-                  let latest = historicalData.map({ $0.date }).max() else {
-                return 90 * 24 * 60 * 60 // Default to 90 days in seconds if no data
-            }
-            return latest.timeIntervalSince(earliest)
-        }
-
-        // Return the number of seconds for the selected period
-        let days = Double(months) * 30.4
-        return days * 24 * 60 * 60 // Convert days to seconds
-    }
-
     func getOptimalMin() -> Double {
+        // Use converted range for parsing
+        let rangeString = convertedOptimalRange()
+
         // Parse optimal range string (e.g., "< 90 mg/dL" or "1 - 12" or "> 50")
-        if optimalRange.contains("-") {
-            let components = optimalRange.components(separatedBy: "-")
+        if rangeString.contains("-") {
+            let components = rangeString.components(separatedBy: "-")
             if let min = Double(components[0].trimmingCharacters(in: .whitespaces)) {
                 return min
             }
-        } else if optimalRange.contains("<") {
+        } else if rangeString.contains("<") {
             // "< X" means 0 to X is optimal
             return 0
-        } else if optimalRange.contains(">") {
+        } else if rangeString.contains(">") {
             // "> X" means X to infinity is optimal
-            let minString = optimalRange
+            let minString = rangeString
                 .replacingOccurrences(of: ">", with: "")
                 .components(separatedBy: " ")[0]
                 .trimmingCharacters(in: .whitespaces)
@@ -472,9 +741,12 @@ struct BiomarkerDetailView: View {
     }
 
     func getOptimalMax() -> Double {
+        // Use converted range for parsing
+        let rangeString = convertedOptimalRange()
+
         // Parse optimal range string
-        if optimalRange.contains("-") {
-            let components = optimalRange.components(separatedBy: "-")
+        if rangeString.contains("-") {
+            let components = rangeString.components(separatedBy: "-")
             if components.count > 1 {
                 // Remove all unit text from the string
                 let maxString = components[1]
@@ -489,9 +761,9 @@ struct BiomarkerDetailView: View {
                     return max
                 }
             }
-        } else if optimalRange.contains("<") {
+        } else if rangeString.contains("<") {
             // "< X" means max is X
-            let maxString = optimalRange
+            let maxString = rangeString
                 .replacingOccurrences(of: "<", with: "")
                 .replacingOccurrences(of: "mg/dL", with: "")
                 .replacingOccurrences(of: "ng/mL", with: "")
@@ -503,7 +775,7 @@ struct BiomarkerDetailView: View {
             if let max = Double(maxString) {
                 return max
             }
-        } else if optimalRange.contains(">") {
+        } else if rangeString.contains(">") {
             // "> X" means no upper bound
             return 0
         }
@@ -512,89 +784,73 @@ struct BiomarkerDetailView: View {
 
     func getChartYDomain() -> ClosedRange<Double> {
         let allValues = chartData.map { $0.value }
-        let dataMin = allValues.min() ?? 0
-        let dataMax = allValues.max() ?? 100
+        guard let dataMin = allValues.min(), let dataMax = allValues.max() else {
+            return 0...100
+        }
+
         let optMin = getOptimalMin()
         let optMax = getOptimalMax()
 
-        // Calculate range based on optimal or data values
         var domainMin: Double
         var domainMax: Double
 
         if optMin > 0 && optMax > optMin {
-            // Both optimal min and max defined - use ±20% of optimal range
-            let optimalRange = optMax - optMin
-            let padding = optimalRange * 0.2
-            domainMin = optMin - padding
-            domainMax = optMax + padding
-            // Also include data values
-            domainMin = min(domainMin, dataMin - padding)
-            domainMax = max(domainMax, dataMax + padding)
-        } else if optMax > 0 && optMin == 0 {
-            // Only max defined (< X case) - use ±20% of max value
-            let padding = optMax * 0.2
-            domainMin = 0
-            domainMax = optMax + padding
-            domainMax = max(domainMax, dataMax + padding)
-        } else if optMin > 0 && optMax == 0 {
-            // Only min defined (> X case) - use ±20% of min value
-            let padding = optMin * 0.2
-            domainMin = optMin - padding
-            domainMax = max(dataMax, optMin * 1.5)
-        } else {
-            // No optimal range - use ±20% of data values
-            let dataRange = dataMax - dataMin
-            let padding = dataRange * 0.2
-            domainMin = dataMin - padding
-            domainMax = dataMax + padding
-        }
+            // Both optimal min and max defined
+            // Use 20% above max of (dataMax, optMax) and 20% below min of (dataMin, optMin)
+            let upperBound = max(dataMax, optMax)
+            let lowerBound = min(dataMin, optMin)
 
-        // Ensure we have a reasonable range
-        if domainMax - domainMin < 1 {
-            domainMin -= 0.5
-            domainMax += 0.5
+            domainMax = upperBound * 1.20
+            domainMin = lowerBound * 0.80
+
+        } else if optMax > 0 && optMin == 0 {
+            // Only max defined (< X case)
+            let upperBound = max(dataMax, optMax)
+            domainMax = upperBound * 1.20
+            domainMin = min(dataMin, 0) * 0.80
+
+        } else if optMin > 0 && optMax == 0 {
+            // Only min defined (> X case) - 50% above, 20% below
+            domainMin = min(dataMin, optMin) * 0.80
+            domainMax = dataMax * 1.50
+
+        } else {
+            // No optimal range - use data values only with 20% buffer
+            domainMax = dataMax * 1.20
+            domainMin = dataMin * 0.80
         }
 
         return domainMin...domainMax
     }
 
+    func getXAxisDomain() -> ClosedRange<Date> {
+        guard !chartData.isEmpty else {
+            return Date()...Date()
+        }
+
+        let calendar = Calendar.current
+        let firstDate = chartData.first!.date
+        let lastDate = chartData.last!.date
+
+        // Handle single data point - add ±7 days padding
+        if chartData.count == 1 {
+            let startWithBuffer = calendar.date(byAdding: .day, value: -7, to: firstDate) ?? firstDate
+            let endWithBuffer = calendar.date(byAdding: .day, value: 7, to: firstDate) ?? firstDate
+            return startWithBuffer...endWithBuffer
+        }
+
+        // Calculate time span and buffer (10% of the total range, or at least 1 day)
+        let timeSpan = lastDate.timeIntervalSince(firstDate)
+        let bufferInterval = max(timeSpan * 0.10, 86400) // 10% or 1 day minimum
+
+        let startWithBuffer = firstDate.addingTimeInterval(-bufferInterval)
+        let endWithBuffer = lastDate.addingTimeInterval(bufferInterval)
+
+        return startWithBuffer...endWithBuffer
+    }
+
     func formatValueForDisplay(_ value: Double) -> String {
         return String(format: "%.\(decimalPlaces)f", value)
-    }
-
-    // X-axis shows rolling window from today going back based on selected period
-    func getChartXMin() -> Date {
-        // If a specific time period is selected, show that period from today
-        if let months = selectedPeriod.months {
-            return Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? Date()
-        }
-
-        // For "All", use the actual data range with padding
-        guard let earliestDate = historicalData.map({ $0.date }).min(),
-              let latestDate = historicalData.map({ $0.date }).max() else {
-            return Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        }
-        let calendar = Calendar.current
-        let daysBetween = calendar.dateComponents([.day], from: earliestDate, to: latestDate).day ?? 0
-        let padding = max(7, Int(Double(daysBetween) * 0.1))
-        return calendar.date(byAdding: .day, value: -padding, to: earliestDate) ?? earliestDate
-    }
-
-    func getChartXMax() -> Date {
-        // If a specific time period is selected, always end at today
-        if selectedPeriod.months != nil {
-            return Date()
-        }
-
-        // For "All", use the actual data range with padding
-        guard let earliestDate = historicalData.map({ $0.date }).min(),
-              let latestDate = historicalData.map({ $0.date }).max() else {
-            return Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
-        }
-        let calendar = Calendar.current
-        let daysBetween = calendar.dateComponents([.day], from: earliestDate, to: latestDate).day ?? 0
-        let padding = max(7, Int(Double(daysBetween) * 0.1))
-        return calendar.date(byAdding: .day, value: padding, to: latestDate) ?? latestDate
     }
 
     func getPreviousValue(for dataPoint: BiomarkerDataPoint) -> Double? {
@@ -766,6 +1022,108 @@ struct BiomarkerDetailView: View {
         return interpolatedData.sorted { $0.date < $1.date }
     }
 
+    // MARK: - Education Section Loading
+
+    func loadEducationSections() async {
+        isLoadingEducation = true
+        defer { isLoadingEducation = false }
+
+        do {
+            let supabase = SupabaseManager.shared.client
+
+            if isBiometric {
+                let sections: [BiometricEducationSection] = try await supabase
+                    .from("biometrics_education_sections")
+                    .select()
+                    .eq("biometric_name", value: name)
+                    .eq("is_active", value: true)
+                    .order("display_order", ascending: true)
+                    .execute()
+                    .value
+
+                educationSections = sections
+                print("📚 Loaded \(sections.count) biometric education sections for '\(name)'")
+            } else {
+                let sections: [BiomarkerEducationSection] = try await supabase
+                    .from("biomarkers_education_sections")
+                    .select()
+                    .eq("biomarker_name", value: name)
+                    .eq("is_active", value: true)
+                    .order("display_order", ascending: true)
+                    .execute()
+                    .value
+
+                educationSections = sections
+                print("📚 Loaded \(sections.count) biomarker education sections for '\(name)'")
+            }
+        } catch {
+            print("❌ Error loading education sections: \(error)")
+        }
+    }
+
+    // MARK: - Unit Conversion Helpers
+
+    func loadUnitConversions(for unitId: String) async {
+        do {
+            // Fetch all conversions for this unit
+            availableUnits = try await service.fetchUnitConversions(for: unitId)
+
+            // Build display name dictionary for all units (original + all "to" units)
+            unitDisplayNames[unitId] = try await service.getUnitDisplayName(for: unitId)
+
+            for conversion in availableUnits {
+                if unitDisplayNames[conversion.toUnit] == nil {
+                    unitDisplayNames[conversion.toUnit] = try await service.getUnitDisplayName(for: conversion.toUnit)
+                }
+            }
+        } catch {
+            print("❌ Error loading unit conversions: \(error)")
+        }
+    }
+
+    func convertValue(_ value: Double) -> Double {
+        guard selectedUnit != originalUnit else { return value }
+        return service.convertValue(value, from: originalUnit, to: selectedUnit, conversions: availableUnits)
+    }
+
+    func convertedOptimalRange() -> String {
+        guard selectedUnit != originalUnit else { return optimalRange }
+
+        // Parse the optimal range string and convert values
+        // Examples: "< 90 mg/dL", "40-60 mg/dL", "> 100 mg/dL"
+        let rangeString = optimalRange
+
+        // Extract numbers from the range
+        let numberPattern = "\\d+\\.?\\d*"
+        guard let regex = try? NSRegularExpression(pattern: numberPattern, options: []) else {
+            return optimalRange
+        }
+
+        let nsRange = NSRange(rangeString.startIndex..<rangeString.endIndex, in: rangeString)
+        let matches = regex.matches(in: rangeString, options: [], range: nsRange)
+
+        var convertedRange = rangeString
+        // Convert from last to first to maintain string positions
+        for match in matches.reversed() {
+            if let range = Range(match.range, in: rangeString),
+               let value = Double(rangeString[range]) {
+                let converted = convertValue(value)
+                let formattedValue = String(format: "%.1f", converted)
+                convertedRange = convertedRange.replacingOccurrences(
+                    of: String(rangeString[range]),
+                    with: formattedValue
+                )
+            }
+        }
+
+        // Replace unit display
+        if let oldUnitDisplay = unitDisplayNames[originalUnit],
+           let newUnitDisplay = unitDisplayNames[selectedUnit] {
+            convertedRange = convertedRange.replacingOccurrences(of: oldUnitDisplay, with: newUnitDisplay)
+        }
+
+        return convertedRange
+    }
 }
 
 struct BiomarkerDataPoint: Identifiable {
@@ -784,11 +1142,11 @@ struct MiniTrendIndicator: View {
             HStack(spacing: 2) {
                 Image(systemName: change > 0 ? "arrow.up" : change < 0 ? "arrow.down" : "minus")
                     .font(.caption)
-                    .foregroundColor(change > 0 ? .red : change < 0 ? .green : .white.opacity(0.6))
+                    .foregroundColor(change > 0 ? .red : change < 0 ? .green : .secondary)
 
                 Text(String(format: "%.1f", abs(change)))
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.secondary)
             }
         }
     }

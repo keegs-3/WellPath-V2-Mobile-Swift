@@ -10,7 +10,7 @@ import Foundation
 // MARK: - Biomarker Reading
 struct BiomarkerReading: Codable, Identifiable {
     let id: UUID
-    let userId: UUID
+    let patientId: UUID
     let biomarkerName: String
     let value: Double
     let unit: String
@@ -22,7 +22,7 @@ struct BiomarkerReading: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
+        case patientId = "patient_id"
         case biomarkerName = "biomarker_name"
         case value
         case unit
@@ -37,7 +37,7 @@ struct BiomarkerReading: Codable, Identifiable {
 // MARK: - Biometric Reading
 struct BiometricReading: Codable, Identifiable {
     let id: UUID
-    let userId: UUID
+    let patientId: UUID
     let biometricName: String
     let value: Double
     let unit: String
@@ -49,7 +49,7 @@ struct BiometricReading: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
+        case patientId = "patient_id"
         case biometricName = "biometric_name"
         case value
         case unit
@@ -132,6 +132,7 @@ struct BiomarkerBase: Codable, Identifiable {
     let aboutWhy: String?
     let aboutOptimalTarget: String?
     let aboutQuickTips: String?
+    let education: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -145,6 +146,7 @@ struct BiomarkerBase: Codable, Identifiable {
         case aboutWhy = "about_why"
         case aboutOptimalTarget = "about_optimal_target"
         case aboutQuickTips = "about_quick_tips"
+        case education
     }
 }
 
@@ -162,6 +164,7 @@ struct BiometricsBase: Codable, Identifiable {
     let aboutWhy: String?
     let aboutOptimalRange: String?
     let aboutQuickTips: String?
+    let education: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -176,6 +179,53 @@ struct BiometricsBase: Codable, Identifiable {
         case aboutWhy = "about_why"
         case aboutOptimalRange = "about_optimal_range"
         case aboutQuickTips = "about_quick_tips"
+        case education
+    }
+}
+
+// MARK: - Biomarker Education Section
+struct BiomarkerEducationSection: Codable, Identifiable {
+    let id: UUID
+    let biomarkerName: String
+    let sectionTitle: String
+    let sectionContent: String
+    let displayOrder: Int
+    let isActive: Bool
+    let createdAt: String?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case biomarkerName = "biomarker_name"
+        case sectionTitle = "section_title"
+        case sectionContent = "section_content"
+        case displayOrder = "display_order"
+        case isActive = "is_active"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+// MARK: - Biometric Education Section
+struct BiometricEducationSection: Codable, Identifiable {
+    let id: UUID
+    let biometricName: String
+    let sectionTitle: String
+    let sectionContent: String
+    let displayOrder: Int
+    let isActive: Bool
+    let createdAt: String?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case biometricName = "biometric_name"
+        case sectionTitle = "section_title"
+        case sectionContent = "section_content"
+        case displayOrder = "display_order"
+        case isActive = "is_active"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 }
 
@@ -195,6 +245,25 @@ struct BiometricsBiomarkersCategory: Codable, Identifiable {
         case biometrics
         case description
         case updatedAt = "updated_at"
+    }
+}
+
+// MARK: - Unit Conversion
+struct UnitConversion: Codable, Identifiable {
+    let id: UUID
+    let fromUnit: String
+    let toUnit: String
+    let conversionFactor: Double
+    let conversionOffset: Double?
+    let conversionFormula: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case fromUnit = "from_unit"
+        case toUnit = "to_unit"
+        case conversionFactor = "conversion_factor"
+        case conversionOffset = "conversion_offset"
+        case conversionFormula = "conversion_formula"
     }
 }
 

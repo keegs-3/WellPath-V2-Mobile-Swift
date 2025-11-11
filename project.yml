@@ -2,24 +2,28 @@ name: WellPath
 options:
   bundleIdPrefix: com.wellpath
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   developmentLanguage: en
 
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: 2.0.0
+  SleepChartKit:
+    path: ../SleepChartKit-main
 
 targets:
   WellPath:
     type: application
     platform: iOS
-    deploymentTarget: "16.0"
+    deploymentTarget: "17.0"
     sources:
       - WellPath
     dependencies:
       - package: Supabase
         product: Supabase
+      - package: SleepChartKit
+        product: SleepChartKit
     info:
       path: WellPath/Info.plist
       properties:

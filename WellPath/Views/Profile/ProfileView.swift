@@ -54,7 +54,16 @@ struct ProfileView: View {
                         ProfileOptionRow(icon: "lock.fill", title: "Change Password")
                         Divider().padding(.leading, 60)
 
-                        ProfileOptionRow(icon: "heart.fill", title: "Apple Health Tracking")
+                        NavigationLink(destination: HealthKitAuthorizationView()) {
+                            ProfileOptionRow(icon: "heart.fill", title: "Apple Health Tracking")
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        Divider().padding(.leading, 60)
+
+                        NavigationLink(destination: HealthKitTestView()) {
+                            ProfileOptionRow(icon: "stethoscope", title: "HealthKit Test (Debug)")
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         Divider().padding(.leading, 60)
 
                         Button(action: {

@@ -17,7 +17,7 @@ class BiometricsService: ObservableObject {
         let response: [BiomarkerReading] = try await supabase
             .from("patient_biomarker_readings")
             .select()
-            .eq("user_id", value: userId.uuidString)
+            .eq("patient_id", value: userId.uuidString)
             .order("test_date", ascending: false)
             .execute()
             .value
@@ -30,7 +30,7 @@ class BiometricsService: ObservableObject {
         let response: [BiomarkerReading] = try await supabase
             .from("patient_biomarker_readings")
             .select()
-            .eq("user_id", value: userId.uuidString)
+            .eq("patient_id", value: userId.uuidString)
             .eq("biomarker_name", value: biomarkerName)
             .order("test_date", ascending: false)
             .execute()
@@ -97,7 +97,8 @@ class BiometricsService: ObservableObject {
                     isActive: biomarker.isActive,
                     aboutWhy: biomarker.aboutWhy,
                     aboutOptimalTarget: biomarker.aboutOptimalTarget,
-                    aboutQuickTips: biomarker.aboutQuickTips
+                    aboutQuickTips: biomarker.aboutQuickTips,
+                    education: biomarker.education
                 )
             }
         }
@@ -110,7 +111,7 @@ class BiometricsService: ObservableObject {
         let response: [BiometricReading] = try await supabase
             .from("patient_biometric_readings")
             .select()
-            .eq("user_id", value: userId.uuidString)
+            .eq("patient_id", value: userId.uuidString)
             .order("recorded_at", ascending: false)
             .execute()
             .value
@@ -157,7 +158,8 @@ class BiometricsService: ObservableObject {
                     isActive: biometric.isActive,
                     aboutWhy: biometric.aboutWhy,
                     aboutOptimalRange: biometric.aboutOptimalRange,
-                    aboutQuickTips: biometric.aboutQuickTips
+                    aboutQuickTips: biometric.aboutQuickTips,
+                    education: biometric.education
                 )
             }
         }
@@ -353,28 +355,81 @@ class BiometricsService: ObservableObject {
         return applicableRanges.first?.frontendDisplay ?? "N/A"
     }
 
+    // MARK: - Fetch Unit Conversions
+    func fetchUnitConversions(for unitId: String) async throws -> [UnitConversion] {
+        // Fetch conversions where this unit is the "from" unit
+        let response: [UnitConversion] = try await supabase
+            .from("unit_conversions")
+            .select()
+            .eq("from_unit", value: unitId)
+            .execute()
+            .value
+
+        return response
+    }
+
+    // MARK: - Convert Value
+    func convertValue(_ value: Double, from fromUnit: String, to toUnit: String, conversions: [UnitConversion]) -> Double {
+        // If units are the same, return original value
+        guard fromUnit != toUnit else { return value }
+
+        // Find the conversion
+        if let conversion = conversions.first(where: { $0.fromUnit == fromUnit && $0.toUnit == toUnit }) {
+            // Apply conversion: value * factor + offset
+            let convertedValue = value * conversion.conversionFactor
+            if let offset = conversion.conversionOffset {
+                return convertedValue + offset
+            }
+            return convertedValue
+        }
+
+        // No conversion found, return original
+        return value
+    }
+
+    // MARK: - Get Unit Display Name
+    func getUnitDisplayName(for unitId: String) async throws -> String {
+        let response: [[String: String]] = try await supabase
+            .from("units_base")
+            .select("ui_display")
+            .eq("unit_id", value: unitId)
+            .limit(1)
+            .execute()
+            .value
+
+        return response.first?["ui_display"] ?? unitId
+    }
+
     // MARK: - Calculate Trend Description
     func calculateTrend(from readings: [BiomarkerReading]) -> String {
-        guard readings.count >= 2 else { return "" }
+        // Insufficient data
+        guard readings.count > 1 else { return "-" }
 
-        // Readings are ordered newest first, so take first 3 (most recent)
-        let recent = Array(readings.prefix(3))
+        // Get most recent value and oldest value
+        let newestValue = readings.first!.value  // Most recent (readings are sorted newest first)
+        let oldestValue = readings.last!.value   // Oldest
 
-        if recent.count >= 2 {
-            // Compare oldest to newest of the recent readings
-            let newestValue = recent.first!.value  // Most recent
-            let oldestValue = recent.last!.value   // Oldest of the recent 3
-            let change = newestValue - oldestValue
-
-            if change > 0 {
-                return "Rising over time"
-            } else if change < 0 {
-                return "Decreasing over time"
+        // Calculate percent change from oldest to newest
+        guard oldestValue != 0 else {
+            // Handle division by zero - just compare absolute values
+            if newestValue > oldestValue {
+                return "Rising"
+            } else if newestValue < oldestValue {
+                return "Falling"
             } else {
                 return "Stable"
             }
         }
 
-        return ""
+        let percentChange = ((newestValue - oldestValue) / abs(oldestValue)) * 100
+
+        // Use 5% threshold to determine significance
+        if percentChange > 5 {
+            return "Rising"
+        } else if percentChange < -5 {
+            return "Falling"
+        } else {
+            return "Stable"
+        }
     }
 }
