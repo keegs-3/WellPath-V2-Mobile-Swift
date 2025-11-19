@@ -250,6 +250,9 @@ struct StrengthTrainingEntryView: View {
             let components = calendar.dateComponents([.year, .month, .day], from: startDateTime)
             let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
 
+            // Get device timezone
+            let deviceTimezone = TimeZone.current.identifier
+
             // Calculate duration in minutes
             let durationValue = durationMinutes
 
@@ -262,7 +265,8 @@ struct StrengthTrainingEntryView: View {
                     "entry_date": dateString,
                     "value_timestamp": startTimestampString,
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
                 ])
                 .execute()
 
@@ -275,7 +279,8 @@ struct StrengthTrainingEntryView: View {
                     "entry_date": dateString,
                     "value_timestamp": endTimestampString,
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
                 ])
                 .execute()
 
@@ -289,7 +294,8 @@ struct StrengthTrainingEntryView: View {
                     "entry_timestamp": endTimestampString,
                     "value_quantity": "\(durationValue)",
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
                 ])
                 .execute()
 
@@ -303,7 +309,8 @@ struct StrengthTrainingEntryView: View {
                     "entry_timestamp": startTimestampString,
                     "value_reference": selectedType,
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
                 ])
                 .execute()
 
@@ -318,7 +325,8 @@ struct StrengthTrainingEntryView: View {
                         "entry_timestamp": startTimestampString,
                         "value_reference": selectedIntensity,
                         "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId
+                        "event_instance_id": eventInstanceId,
+                        "user_timezone": deviceTimezone
                     ])
                     .execute()
             }
@@ -334,7 +342,8 @@ struct StrengthTrainingEntryView: View {
                         "entry_timestamp": startTimestampString,
                         "value_reference": selectedMuscleGroup,
                         "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId
+                        "event_instance_id": eventInstanceId,
+                        "user_timezone": deviceTimezone
                     ])
                     .execute()
             }

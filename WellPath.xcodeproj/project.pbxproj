@@ -9,18 +9,21 @@
 /* Begin PBXBuildFile section */
 		005BA7BE7D3A1AF207A8B0ED /* SleepAnalysisDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66381331376E3425376227B7 /* SleepAnalysisDetail.swift */; };
 		00DFA0591E80A92117311DDE /* BehaviorsDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C7ACDFF305EE8226A41B9E /* BehaviorsDetailView.swift */; };
+		0190CCB22F23623C119789E0 /* SleepDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D2B606A1094303813544C1D /* SleepDataModels.swift */; };
 		05A204A3E0938B40E958D911 /* DisplayMetricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FFA3E2DBC06D7EF02D1DE42 /* DisplayMetricsView.swift */; };
 		079B191FA4AA6CF9CED908E3 /* StepsEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1828DF178873F1922C8981F3 /* StepsEntryView.swift */; };
 		0A0C75DEB690708093F00FA8 /* VegetablesMealTimingStackedChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7B7921C3D107011625715D /* VegetablesMealTimingStackedChart.swift */; };
 		0A2F9245CBC64112AA388AE9 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE3662E249A201F1B970CD03 /* HealthKitManager.swift */; };
 		0A82ABB1D3D727CD2B9E3313 /* BaseMetricViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D777A8A264366418A9C7B26 /* BaseMetricViewModel.swift */; };
 		0F5A36E24503C2AEB709B121 /* TrackedMetricsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C5C466314F0484C333C74F5 /* TrackedMetricsListView.swift */; };
+		107BE2CF9ACF660744DD5AED /* SleepDataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C4926D64D5C31F7918E46EE /* SleepDataManagementView.swift */; };
 		12E4E2DA40472FC96FE547FF /* StepsPrimaryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F0A005782DDA1729D873EC /* StepsPrimaryViewModel.swift */; };
 		161913E5F338107711AFB09A /* MetricsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71216B7E7AE04AB78BE7058C /* MetricsViewModel.swift */; };
 		17BBA799B1201DE94FBD7220 /* SleepStageData.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDD764B8C7B0ED184F2744C /* SleepStageData.swift */; };
 		1ADC8B6525ED8F1C1D551A7B /* SleepChartKit in Frameworks */ = {isa = PBXBuildFile; productRef = 64D6BD1F176FD9514B32AC67 /* SleepChartKit */; };
 		1D480560C0F3D9998F9553A3 /* StandardMetricViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B141A291D246E15EB2B2AF98 /* StandardMetricViewModel.swift */; };
 		1E10EE6CD8C0A434F3BF5821 /* WholeGrainsDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D10FF69644461DBA734B7E /* WholeGrainsDetail.swift */; };
+		1FE8B0A3DAFE12E3AFA41FAF /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8AA95E265DC1015DD1D1374 /* DataManagementView.swift */; };
 		2081EAFF185AB66A33BFB3BA /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B14850915AADBE2A741715 /* ChallengesView.swift */; };
 		229E9292FFFC33E5A437A325 /* FruitsTypeStackedChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0601E44F61B91CA20809673 /* FruitsTypeStackedChart.swift */; };
 		24CBD783B2CD931117651A54 /* TrendLineChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C668849822CAA0AC91885E /* TrendLineChart.swift */; };
@@ -31,6 +34,7 @@
 		3002B0715C9E581D2E16BEB2 /* WholeGrainsEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F93D68AA7D72E70C8303F3 /* WholeGrainsEntryView.swift */; };
 		309B83CD10CEE9AB7DEB3979 /* LegumesDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB886F6FB521B38A1C021A18 /* LegumesDetail.swift */; };
 		31020B6D3BD90979A37703AC /* PillarModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2861C7F392B47354356BC59F /* PillarModels.swift */; };
+		35C279456FE292891224A12C /* SleepPercentagesChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C119C0FA4E11C89F0D7F7DCC /* SleepPercentagesChart.swift */; };
 		363C1D76922662C2E64DC4EF /* LegumesEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA4F30C7DC16E96754B371A9 /* LegumesEntryView.swift */; };
 		3A85129A2845E35BA998CA5A /* ProteinTypeStackedChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F25279A9B919BAA3B780139 /* ProteinTypeStackedChart.swift */; };
 		3C059538AE46FC4BDBC83756 /* WholeGrainsTypeStackedChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127BDF150831F29A2B8B06CD /* WholeGrainsTypeStackedChart.swift */; };
@@ -103,6 +107,7 @@
 		D443CE449107E951B31874E6 /* WellPathOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B34536F40DFC562DBBA5BB0 /* WellPathOverviewView.swift */; };
 		D5F4DC3CAD1523C07A4CDAC6 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 539E94AC71D0D46D7D38AD4B /* ProfileView.swift */; };
 		D7001ED98ED0E851EFEF1864 /* FruitsPrimary.swift in Sources */ = {isa = PBXBuildFile; fileRef = F864E89B2F70B7A1194C15BE /* FruitsPrimary.swift */; };
+		D97CD118A4252F5EF404C647 /* SleepAnalysisDetail.swift.bak in Resources */ = {isa = PBXBuildFile; fileRef = C6EC785F4600968B6D82FFB6 /* SleepAnalysisDetail.swift.bak */; };
 		DB07753037E73751924B7CBF /* SleepDurationDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12B2B2D3A69E6E35C6F40EE /* SleepDurationDetail.swift */; };
 		DB2306AB25DBDA50564EA272 /* ComponentWeightBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F1C9559D1F834B8EBEE3B17 /* ComponentWeightBadge.swift */; };
 		DC204C6D6FEE73ACC613D26D /* BiometricsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A58C4E26C19619D7877BA02 /* BiometricsService.swift */; };
@@ -169,6 +174,7 @@
 		5D9E08B0136F497CDFB68B23 /* DetailScreenViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailScreenViewModel.swift; sourceTree = "<group>"; };
 		5F3C4034A51947EDCA07D744 /* ScoreRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreRingView.swift; sourceTree = "<group>"; };
 		66381331376E3425376227B7 /* SleepAnalysisDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepAnalysisDetail.swift; sourceTree = "<group>"; };
+		6D2B606A1094303813544C1D /* SleepDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepDataModels.swift; sourceTree = "<group>"; };
 		7000422AB9D4F959C19466B1 /* MetricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsView.swift; sourceTree = "<group>"; };
 		71216B7E7AE04AB78BE7058C /* MetricsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsViewModel.swift; sourceTree = "<group>"; };
 		749580821651477F343EC340 /* WellPath.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WellPath.entitlements; sourceTree = "<group>"; };
@@ -178,6 +184,7 @@
 		78EC248B5CF41C7871D6A89A /* MarkerBreakdownChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerBreakdownChart.swift; sourceTree = "<group>"; };
 		7904A2C01EEBA0C0E8544AC2 /* SLEEP_CHART_IMPLEMENTATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SLEEP_CHART_IMPLEMENTATION.md; sourceTree = "<group>"; };
 		7A58C4E26C19619D7877BA02 /* BiometricsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricsService.swift; sourceTree = "<group>"; };
+		7C4926D64D5C31F7918E46EE /* SleepDataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepDataManagementView.swift; sourceTree = "<group>"; };
 		7D7F7F1A5986E5CDB7B47D3E /* VegetablesDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VegetablesDetail.swift; sourceTree = "<group>"; };
 		7F1C9559D1F834B8EBEE3B17 /* ComponentWeightBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComponentWeightBadge.swift; sourceTree = "<group>"; };
 		7FFA3E2DBC06D7EF02D1DE42 /* DisplayMetricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayMetricsView.swift; sourceTree = "<group>"; };
@@ -206,12 +213,14 @@
 		B2DFBAE6D5B96E1396D07C66 /* HealthKitFieldMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitFieldMapper.swift; sourceTree = "<group>"; };
 		B80AEE1FAD7E78CCB0D3CB3E /* VegetablesEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VegetablesEntryView.swift; sourceTree = "<group>"; };
 		BBDD764B8C7B0ED184F2744C /* SleepStageData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepStageData.swift; sourceTree = "<group>"; };
+		C119C0FA4E11C89F0D7F7DCC /* SleepPercentagesChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepPercentagesChart.swift; sourceTree = "<group>"; };
 		C2B14850915AADBE2A741715 /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesView.swift; sourceTree = "<group>"; };
 		C2D95A70B65DE68148283322 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		C3BD8016394A0F7FB5FE1479 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C3CB393A9C66170843719887 /* MealTimingStackedChart.swift.backup */ = {isa = PBXFileReference; path = MealTimingStackedChart.swift.backup; sourceTree = "<group>"; };
 		C4470DA90A78EF36A7234B4C /* PillarChartCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillarChartCard.swift; sourceTree = "<group>"; };
 		C585E0CF16F69C98879F21E7 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		C6EC785F4600968B6D82FFB6 /* SleepAnalysisDetail.swift.bak */ = {isa = PBXFileReference; path = SleepAnalysisDetail.swift.bak; sourceTree = "<group>"; };
 		CDEA9FD46AA1CE94D8228CA5 /* WellPathScoreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WellPathScoreViewModel.swift; sourceTree = "<group>"; };
 		CE0CDCF8062CA453F9C12277 /* PillarDonutChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillarDonutChart.swift; sourceTree = "<group>"; };
 		CEBA5ADE7ABA0D3DE647DD6F /* SleepAnalysisPrimaryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepAnalysisPrimaryViewModel.swift; sourceTree = "<group>"; };
@@ -235,6 +244,7 @@
 		F6DC32F8114D30C6C06E7F72 /* MarkerContainerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerContainerRow.swift; sourceTree = "<group>"; };
 		F8229185B77F6AF91EFA4D0E /* EducationAccordionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EducationAccordionSection.swift; sourceTree = "<group>"; };
 		F864E89B2F70B7A1194C15BE /* FruitsPrimary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FruitsPrimary.swift; sourceTree = "<group>"; };
+		F8AA95E265DC1015DD1D1374 /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
 		FAAD20C28B2E4D1D71E9749B /* AccordionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccordionSection.swift; sourceTree = "<group>"; };
 		FB886F6FB521B38A1C021A18 /* LegumesDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegumesDetail.swift; sourceTree = "<group>"; };
 		FD7D8DB586E165C7DEA8F280 /* FruitsDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FruitsDetail.swift; sourceTree = "<group>"; };
@@ -423,6 +433,7 @@
 		4D28F2042D501D94D178A5F0 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				F8AA95E265DC1015DD1D1374 /* DataManagementView.swift */,
 				90C34FD6180E58D91478C070 /* ProteinEntryView.swift */,
 				77CAB03BA5621401DF6CC8B5 /* SleepEntryView.swift */,
 				1828DF178873F1922C8981F3 /* StepsEntryView.swift */,
@@ -556,7 +567,10 @@
 			isa = PBXGroup;
 			children = (
 				66381331376E3425376227B7 /* SleepAnalysisDetail.swift */,
+				C6EC785F4600968B6D82FFB6 /* SleepAnalysisDetail.swift.bak */,
 				D4B71A8816870BAD9EB4D217 /* SleepAnalysisPrimary.swift */,
+				7C4926D64D5C31F7918E46EE /* SleepDataManagementView.swift */,
+				C119C0FA4E11C89F0D7F7DCC /* SleepPercentagesChart.swift */,
 			);
 			path = SleepAnalysis;
 			sourceTree = "<group>";
@@ -675,6 +689,7 @@
 				29EA59C4728500A2A2A4B35E /* BiometricModels.swift */,
 				4E13D2719619AE24610AE95C /* DataEntryModels.swift */,
 				2861C7F392B47354356BC59F /* PillarModels.swift */,
+				6D2B606A1094303813544C1D /* SleepDataModels.swift */,
 				BBDD764B8C7B0ED184F2744C /* SleepStageData.swift */,
 				26928E2504F5D1F2518E6FC4 /* WellPathAboutModels.swift */,
 				1A367D3EA8ACC52F1F85BC11 /* WellPathScoreModels.swift */,
@@ -839,6 +854,7 @@
 				6AD02A28E5ED49A772E6A112 /* MealTimingStackedChart.swift.backup in Resources */,
 				AB4D3F25048ECCC448E4F0DF /* README.md in Resources */,
 				EC6AA23E953C4F59FA0427DD /* SLEEP_CHART_IMPLEMENTATION.md in Resources */,
+				D97CD118A4252F5EF404C647 /* SleepAnalysisDetail.swift.bak in Resources */,
 				CA58D0C7B3DC2C83E23BB595 /* settings.local.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -868,6 +884,7 @@
 				F7CC653FB8EF7D81F14F9C22 /* ContentView.swift in Sources */,
 				287A6F8556D14B30EEAFAE09 /* DashboardView.swift in Sources */,
 				CE803C83B7D9A3FB393BAC5F /* DataEntryModels.swift in Sources */,
+				1FE8B0A3DAFE12E3AFA41FAF /* DataManagementView.swift in Sources */,
 				A1E8078A8DB2941B500F4CE8 /* DateExtensions.swift in Sources */,
 				844155DE490A7D23B07E228D /* DetailScreenViewModel.swift in Sources */,
 				05A204A3E0938B40E958D911 /* DisplayMetricsView.swift in Sources */,
@@ -921,10 +938,13 @@
 				9763703D9A8F0DBD24947AA1 /* SleepAnalysisViewModel.swift in Sources */,
 				FEB7B5A07236F4C5E6D13BBF /* SleepConsistencyPrimary.swift in Sources */,
 				4B4CE92C000C0755144739A7 /* SleepConsistencyViewModel.swift in Sources */,
+				107BE2CF9ACF660744DD5AED /* SleepDataManagementView.swift in Sources */,
+				0190CCB22F23623C119789E0 /* SleepDataModels.swift in Sources */,
 				DB07753037E73751924B7CBF /* SleepDurationDetail.swift in Sources */,
 				A0922EC518E296847E1A8200 /* SleepDurationPrimary.swift in Sources */,
 				25C5B220BBD175EC2FA0D967 /* SleepDurationPrimaryViewModel.swift in Sources */,
 				CCC03E775360AEDE45D47F52 /* SleepEntryView.swift in Sources */,
+				35C279456FE292891224A12C /* SleepPercentagesChart.swift in Sources */,
 				17BBA799B1201DE94FBD7220 /* SleepStageData.swift in Sources */,
 				E41A05F37E6B00F3841C65D2 /* StackedBarChart.swift in Sources */,
 				1D480560C0F3D9998F9553A3 /* StandardMetricViewModel.swift in Sources */,

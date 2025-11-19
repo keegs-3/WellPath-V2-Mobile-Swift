@@ -33,12 +33,45 @@ struct SleepEntryView: View {
         timeInBedDuration / 3600
     }
 
+    // Validation helpers
+    var asleepStartRange: ClosedRange<Date> {
+        // If including time in bed, asleep must start after bed start
+        if includeTimeInBed {
+            return inBedStart...Date.distantFuture
+        }
+        return Date.distantPast...Date.distantFuture
+    }
+
+    var asleepEndRange: ClosedRange<Date> {
+        // Must be after asleep start
+        let earliest = asleepStart.addingTimeInterval(60) // at least 1 minute after start
+        // If including time in bed, must be before bed end
+        if includeTimeInBed {
+            // Make sure we have a valid range
+            let latestAllowed = max(earliest.addingTimeInterval(60), inBedEnd)
+            return earliest...latestAllowed
+        }
+        return earliest...Date.distantFuture
+    }
+
+    var inBedStartRange: PartialRangeThrough<Date> {
+        // Must be before or equal to asleep start
+        ...asleepStart
+    }
+
+    var inBedEndRange: ClosedRange<Date> {
+        // Must be after bed start AND after asleep end
+        let earliestFromBedStart = inBedStart.addingTimeInterval(60)
+        let earliest = max(earliestFromBedStart, asleepEnd)
+        return earliest...Date.distantFuture
+    }
+
     var body: some View {
         NavigationView {
             Form {
                 Section {
-                    DatePicker("Start", selection: $asleepStart)
-                    DatePicker("End", selection: $asleepEnd)
+                    DatePicker("Start", selection: $asleepStart, in: asleepStartRange)
+                    DatePicker("End", selection: $asleepEnd, in: asleepEndRange)
 
                     HStack {
                         Text("Duration")
@@ -54,8 +87,8 @@ struct SleepEntryView: View {
                     Toggle("Include Time in Bed", isOn: $includeTimeInBed)
 
                     if includeTimeInBed {
-                        DatePicker("Start", selection: $inBedStart)
-                        DatePicker("End", selection: $inBedEnd)
+                        DatePicker("Start", selection: $inBedStart, in: inBedStartRange)
+                        DatePicker("End", selection: $inBedEnd, in: inBedEndRange)
 
                         HStack {
                             Text("Duration")
@@ -108,6 +141,38 @@ struct SleepEntryView: View {
                     inBedEnd = asleepEnd
                 }
             }
+            .onChange(of: asleepStart) { newStart in
+                // If asleep start is now after asleep end, adjust asleep end
+                if newStart >= asleepEnd {
+                    asleepEnd = newStart.addingTimeInterval(3600) // 1 hour later
+                }
+                // If including time in bed and asleep start is before in bed start, adjust in bed start
+                if includeTimeInBed && newStart < inBedStart {
+                    inBedStart = newStart
+                }
+            }
+            .onChange(of: asleepEnd) { newEnd in
+                // If asleep end is now before or at asleep start, adjust asleep start
+                if newEnd <= asleepStart {
+                    asleepStart = newEnd.addingTimeInterval(-3600) // 1 hour earlier
+                }
+                // If including time in bed and asleep end is after in bed end, adjust in bed end
+                if includeTimeInBed && newEnd > inBedEnd {
+                    inBedEnd = newEnd
+                }
+            }
+            .onChange(of: inBedStart) { newStart in
+                // If in bed start is after asleep start, adjust asleep start
+                if newStart > asleepStart {
+                    asleepStart = newStart
+                }
+            }
+            .onChange(of: inBedEnd) { newEnd in
+                // If in bed end is before asleep end, adjust asleep end
+                if newEnd < asleepEnd {
+                    asleepEnd = newEnd
+                }
+            }
         }
     }
 
@@ -143,113 +208,43 @@ class SleepEntryViewModel: ObservableObject {
         error = nil
 
         do {
-            let userId = try await supabase.auth.session.user.id.uuidString
+            let userId = try await supabase.auth.session.user.id
 
-            // Generate shared event instance ID for both periods (links them together)
-            let sharedEventInstanceId = UUID().uuidString
-
-            // Format dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-            let calendar = Calendar.current
-            let bedtimeComponents = calendar.dateComponents([.year, .month, .day], from: inBedStart)
-            let entryDateString = String(format: "%04d-%02d-%02d",
-                                         bedtimeComponents.year!,
-                                         bedtimeComponents.month!,
-                                         bedtimeComponents.day!)
+            // Get device timezone
+            let deviceTimezone = TimeZone.current.identifier
 
             // UUIDs for sleep period types (from data_entry_fields_reference)
-            // Using the same types as HealthKit: in_bed and asleep (not custom manual types)
             let inBedTypeId = "0354d91d-6729-45cc-b0d8-3d20847b14aa"  // in_bed
             let asleepTypeId = "dcca423d-b20f-4ca2-8f1f-f1f1b460803d" // asleep
 
-            // =============================================================
-            // PERIOD 1: TIME IN BED
-            // =============================================================
-            // This matches how HealthKit stores sleep data:
-            // - 3 entries per period sharing the same event_instance_id
-            // - DEF_SLEEP_PERIOD_START, DEF_SLEEP_PERIOD_END, DEF_SLEEP_PERIOD_TYPE
+            // Create 2 sleep data entries (simplified from old 6-row approach)
+            let sleepEntries = [
+                PatientSleepDataEntry(
+                    patientId: userId,
+                    eventInstanceId: UUID(),
+                    periodStart: inBedStart,
+                    periodEnd: inBedEnd,
+                    periodTypeId: inBedTypeId,
+                    source: "wellpath_input",
+                    userTimezone: deviceTimezone,
+                    metadata: ["was_user_entered": .bool(true)]
+                ),
+                PatientSleepDataEntry(
+                    patientId: userId,
+                    eventInstanceId: UUID(),
+                    periodStart: asleepStart,
+                    periodEnd: asleepEnd,
+                    periodTypeId: asleepTypeId,
+                    source: "wellpath_input",
+                    userTimezone: deviceTimezone,
+                    metadata: ["was_user_entered": .bool(true)]
+                )
+            ]
 
-            let inBedEventId = UUID().uuidString
-            let inBedMetadata = """
-            {"reference_key": "in_bed", "shared_event_instance_id": "\(sharedEventInstanceId)", "was_user_entered": true}
-            """
-
-            // Period start
-            try await supabase.from("patient_data_entries").insert([
-                "patient_id": userId,
-                "field_id": "DEF_SLEEP_PERIOD_START",
-                "entry_date": entryDateString,
-                "value_timestamp": dateFormatter.string(from: inBedStart),
-                "source": "wellpath_input",
-                "event_instance_id": inBedEventId,
-                "metadata": inBedMetadata
-            ]).execute()
-
-            // Period end
-            try await supabase.from("patient_data_entries").insert([
-                "patient_id": userId,
-                "field_id": "DEF_SLEEP_PERIOD_END",
-                "entry_date": entryDateString,
-                "value_timestamp": dateFormatter.string(from: inBedEnd),
-                "source": "wellpath_input",
-                "event_instance_id": inBedEventId,
-                "metadata": inBedMetadata
-            ]).execute()
-
-            // Period type (reference to in_bed)
-            try await supabase.from("patient_data_entries").insert([
-                "patient_id": userId,
-                "field_id": "DEF_SLEEP_PERIOD_TYPE",
-                "entry_date": entryDateString,
-                "value_reference": inBedTypeId,
-                "source": "wellpath_input",
-                "event_instance_id": inBedEventId,
-                "metadata": inBedMetadata
-            ]).execute()
-
-            // =============================================================
-            // PERIOD 2: TIME ASLEEP
-            // =============================================================
-
-            let asleepEventId = UUID().uuidString
-            let asleepMetadata = """
-            {"reference_key": "asleep", "shared_event_instance_id": "\(sharedEventInstanceId)", "was_user_entered": true}
-            """
-
-            // Period start
-            try await supabase.from("patient_data_entries").insert([
-                "patient_id": userId,
-                "field_id": "DEF_SLEEP_PERIOD_START",
-                "entry_date": entryDateString,
-                "value_timestamp": dateFormatter.string(from: asleepStart),
-                "source": "wellpath_input",
-                "event_instance_id": asleepEventId,
-                "metadata": asleepMetadata
-            ]).execute()
-
-            // Period end
-            try await supabase.from("patient_data_entries").insert([
-                "patient_id": userId,
-                "field_id": "DEF_SLEEP_PERIOD_END",
-                "entry_date": entryDateString,
-                "value_timestamp": dateFormatter.string(from: asleepEnd),
-                "source": "wellpath_input",
-                "event_instance_id": asleepEventId,
-                "metadata": asleepMetadata
-            ]).execute()
-
-            // Period type (reference to asleep)
-            try await supabase.from("patient_data_entries").insert([
-                "patient_id": userId,
-                "field_id": "DEF_SLEEP_PERIOD_TYPE",
-                "entry_date": entryDateString,
-                "value_reference": asleepTypeId,
-                "source": "wellpath_input",
-                "event_instance_id": asleepEventId,
-                "metadata": asleepMetadata
-            ]).execute()
+            try await supabase
+                .from("patient_sleep_data_entries")
+                .insert(sleepEntries)
+                .execute()
 
             isLoading = false
             return true

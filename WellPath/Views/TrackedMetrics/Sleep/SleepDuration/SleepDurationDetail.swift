@@ -28,7 +28,9 @@ struct SleepDurationDetail: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Tab content
             ScrollView {

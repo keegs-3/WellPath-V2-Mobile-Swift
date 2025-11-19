@@ -25,6 +25,8 @@ struct SleepAnalysisPrimary: View {
     @State private var selectedPeriod: SleepPeriod = .day
     @State private var selectedView: PrimaryView = .chart
     @State private var showingDetailView = false
+    @State private var showingEntryView = false
+    @State private var showingDataManagement = false
 
     enum PrimaryView: String, CaseIterable {
         case chart = "Chart"
@@ -70,10 +72,26 @@ struct SleepAnalysisPrimary: View {
             )
             .navigationTitle("Sleep Analysis")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingEntryView = true
+                    }) {
+                        Image(systemName: "plus")
+                            .foregroundColor(color)
+                    }
+                }
+            }
             .sheet(isPresented: $showingDetailView) {
                 NavigationStack {
                     SleepDetailView()
                 }
+            }
+            .sheet(isPresented: $showingEntryView) {
+                SleepEntryView()
+            }
+            .sheet(isPresented: $showingDataManagement) {
+                SleepDataManagementView(color: color)
             }
     }
 
@@ -102,74 +120,95 @@ struct SleepAnalysisPrimary: View {
 
     private var chartView: some View {
         VStack(spacing: 0) {
-            // Period selector
-            Picker("Period", selection: $selectedPeriod) {
-                ForEach(SleepPeriod.allCases, id: \.self) { period in
-                    Text(period.rawValue).tag(period)
+            VStack(spacing: 0) {
+                // Period selector
+                Picker("Period", selection: $selectedPeriod) {
+                    ForEach(SleepPeriod.allCases, id: \.self) { period in
+                        Text(period.rawValue).tag(period)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-            .onChange(of: selectedPeriod) { oldValue, newValue in
-                Task {
-                    switch newValue {
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .onChange(of: selectedPeriod) { oldValue, newValue in
+                    Task {
+                        switch newValue {
+                        case .day:
+                            // Day view: 7 days back, 0 ahead (edge detection loads more)
+                            await chartViewModel.loadInitialSleepStages(daysBack: 7, daysAhead: 0)
+                        case .week:
+                            // Week view: 14 days back, 7 ahead
+                            await chartViewModel.loadInitialSleepStages(daysBack: 14, daysAhead: 7)
+                        case .month:
+                            // Month view: 60 days back, 30 ahead
+                            await chartViewModel.loadInitialSleepStages(daysBack: 60, daysAhead: 30)
+                        default:
+                            // 6 Month and Year views coming soon
+                            break
+                        }
+                    }
+                }
+                // Chart content based on period
+                if chartViewModel.isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading sleep data...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 300)
+                } else {
+                    switch selectedPeriod {
                     case .day:
-                        // Day view: 7 days back, 0 ahead (edge detection loads more)
-                        await chartViewModel.loadInitialSleepStages(daysBack: 7, daysAhead: 0)
+                        DayViewChart(color: color, viewModel: chartViewModel, selectedStage: .constant(nil))
                     case .week:
-                        // Week view: 14 days back, 7 ahead
-                        await chartViewModel.loadInitialSleepStages(daysBack: 14, daysAhead: 7)
+                        ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: .constant(nil))
                     case .month:
-                        // Month view: 60 days back, 30 ahead
-                        await chartViewModel.loadInitialSleepStages(daysBack: 60, daysAhead: 30)
-                    default:
-                        // 6 Month and Year views coming soon
-                        break
+                        ScrollableSleepChart(viewMode: .month, viewModel: chartViewModel, selectedStage: .constant(nil))
+                    case .sixMonth:
+                        WeeklySleepChart(viewModel: chartViewModel, selectedStage: .constant(nil))
                     }
                 }
             }
-            // Chart content based on period
-            if chartViewModel.isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading sleep data...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 300)
-            } else {
-                switch selectedPeriod {
-                case .day:
-                    DayViewChart(color: color, viewModel: chartViewModel, selectedStage: .constant(nil))
-                case .week:
-                    ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: .constant(nil))
-                case .month:
-                    ScrollableSleepChart(viewMode: .month, viewModel: chartViewModel, selectedStage: .constant(nil))
-                case .sixMonth:
-                    WeeklySleepChart(viewModel: chartViewModel, selectedStage: .constant(nil))
-                }
-            }
+            .background(Color(uiColor: .systemGroupedBackground))
 
-            // View More Sleep Data button
-            Button(action: {
-                showingDetailView = true
-            }) {
-                Text("View More Sleep Data")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.blue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .cornerRadius(10)
+            // Buttons outside the grey area
+            VStack(spacing: 8) {
+                // View More Sleep Data button
+                Button(action: {
+                    showingDetailView = true
+                }) {
+                    Text("View More Sleep Data")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
+
+                // Show All Data button
+                Button(action: {
+                    showingDataManagement = true
+                }) {
+                    Text("Show All Data")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(color)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .task {
             // Initial load defaults to day view range (7 days)
             await chartViewModel.loadInitialSleepStages(daysBack: 7, daysAhead: 0)
@@ -305,7 +344,11 @@ struct DayViewChart: View {
                     viewModel.calculateSummaryMetrics(for: session.segments)
                 }
 
-                // Don't notify parent during scroll - causes snap-back issues
+                // Notify parent of visible date range (for stage totals calculation)
+                let calendar = Calendar.current
+                let dayStart = calendar.startOfDay(for: session.date)
+                let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+                onVisibleRangeChange?(dayStart, dayEnd)
             }
             // Load more data at edges
             checkIfNeedToLoadMore(sessionIndex: newValue)
@@ -325,8 +368,11 @@ struct DayViewChart: View {
                         viewModel.calculateSummaryMetrics(for: firstSession.segments)
                     }
 
-                    // Don't notify parent - causes recalculation and snap-back issues
-                    // Parent loads static totals for today instead
+                    // Notify parent of initial visible date range (for stage totals calculation)
+                    let calendar = Calendar.current
+                    let dayStart = calendar.startOfDay(for: firstSession.date)
+                    let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+                    onVisibleRangeChange?(dayStart, dayEnd)
                 }
             }
         }
@@ -439,14 +485,64 @@ struct HypnogramView: View {
     @Binding var selectedSegment: SleepStageSegment?
     var selectedStage: SleepStage? = nil
     var height: CGFloat = 300 // Default height, can be overridden
-    // Filter to only show sleep stages (exclude In Bed and Asleep Unspecified)
+    // Filter to only show sleep stages (exclude In Bed to avoid double-counting)
+    // Include asleep for basic sessions
     private var displaySegments: [SleepStageSegment] {
         session.segments.filter { segment in
-            segment.stage != .inBed && segment.stage != .asleepUnspecified
+            segment.stage != .inBed
         }
     }
-    // Y-axis order: Awake at top, Deep at bottom
-    private let orderedSleepStages: [SleepStage] = [.awake, .rem, .core, .deep]
+
+    // Asleep Summary segments - merged sleep periods (shows gaps for awake)
+    private var asleepSummarySegments: [SleepStageSegment] {
+        // Get all actual sleep segments (not awake, not in_bed)
+        let sleepSegments = displaySegments.filter { segment in
+            segment.stage == .rem ||
+            segment.stage == .core ||
+            segment.stage == .deep ||
+            segment.stage == .asleep
+        }.sorted { $0.startTime < $1.startTime }
+
+        guard !sleepSegments.isEmpty else { return [] }
+
+        // Merge contiguous segments into unified "asleep" periods
+        var merged: [SleepStageSegment] = []
+        var currentStart = sleepSegments[0].startTime
+        var currentEnd = sleepSegments[0].endTime
+        let userTimezone = sleepSegments[0].userTimezone // Use timezone from source segments
+
+        for i in 1..<sleepSegments.count {
+            let segment = sleepSegments[i]
+
+            // If this segment is contiguous (no gap), extend current period
+            if segment.startTime <= currentEnd {
+                currentEnd = max(currentEnd, segment.endTime)
+            } else {
+                // Gap found - save current period and start new one
+                merged.append(SleepStageSegment(
+                    stage: .asleepSummary,
+                    startTime: currentStart,
+                    endTime: currentEnd,
+                    userTimezone: userTimezone
+                ))
+                currentStart = segment.startTime
+                currentEnd = segment.endTime
+            }
+        }
+
+        // Add final period
+        merged.append(SleepStageSegment(
+            stage: .asleepSummary,
+            startTime: currentStart,
+            endTime: currentEnd,
+            userTimezone: userTimezone
+        ))
+
+        return merged
+    }
+
+    // Y-axis order: Asleep Summary at top, then Awake, REM, Core, Deep
+    private let orderedSleepStages: [SleepStage] = [.asleepSummary, .awake, .rem, .core, .deep]
     
     private func getSegmentColor(for segment: SleepStageSegment) -> Color {
         // If a stage is selected, highlight matching segments, dim non-matching ones
@@ -515,7 +611,29 @@ struct HypnogramView: View {
             ZStack {
                 // Base chart with bars and axes
                 Chart {
-                    // Solid bars for each segment
+                    // ASLEEP SUMMARY BAR - Segments with gaps for awake periods
+                    ForEach(asleepSummarySegments) { segment in
+                        RectangleMark(
+                            xStart: .value("Start", segment.startTime),
+                            xEnd: .value("End", segment.endTime),
+                            y: .value("Stage", SleepStage.asleepSummary),
+                            height: .ratio(0.5)
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color(hex: "80CBC4") ?? .teal, // Sleep pillar color
+                                    Color(hex: "60ABA4") ?? .teal  // Darker variant
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(8)
+                        .opacity(0.95)
+                    }
+
+                    // Solid bars for each segment (existing stages)
                     ForEach(displaySegments) { segment in
                         RectangleMark(
                             xStart: .value("Start", segment.startTime),
@@ -523,7 +641,23 @@ struct HypnogramView: View {
                             y: .value("Stage", segment.stage),
                             height: .ratio(0.7)
                         )
-                        .foregroundStyle(getSegmentColor(for: segment))
+                        .foregroundStyle(
+                            // Use gradient for basic asleep (match Asleep Summary bar), solid color for detailed stages
+                            segment.stage == .asleep ?
+                                LinearGradient(
+                                    colors: [
+                                        Color(hex: "80CBC4") ?? .teal,  // Sleep pillar color (light teal)
+                                        Color(hex: "60ABA4") ?? .teal   // Darker teal variant
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ) :
+                                LinearGradient(
+                                    colors: [getSegmentColor(for: segment), getSegmentColor(for: segment)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                        )
                         .opacity(1.0)
                         .cornerRadius(6)
                         .shadow(color: getSegmentColor(for: segment).opacity(0.4), radius: 5, x: 0, y: 0)
@@ -675,17 +809,17 @@ struct HypnogramView: View {
                 // Check for gap - if gap > 2 hours, don't connect (separate sessions)
                 let gap = segment.startTime.timeIntervalSince(prevSegment.endTime)
                 if gap <= gapThreshold {
-                    segmentPath.move(to: CGPoint(x: prevEndX, y: prevYPos))
-                    segmentPath.addLine(to: CGPoint(x: startX, y: yPos))
+                    segmentPath.move(to: CGPoint(x: prevEndX, y: prevYPos + 5))
+                    segmentPath.addLine(to: CGPoint(x: startX, y: yPos + 5))
                 } else {
                     // Gap > 2 hours - start new path (don't connect separate sessions)
-                    segmentPath.move(to: CGPoint(x: startX, y: yPos))
+                    segmentPath.move(to: CGPoint(x: startX, y: yPos + 5))
                 }
             } else {
-                segmentPath.move(to: CGPoint(x: startX, y: yPos))
+                segmentPath.move(to: CGPoint(x: startX, y: yPos + 5))
             }
             // Horizontal line for this segment
-            segmentPath.addLine(to: CGPoint(x: endX, y: yPos))
+            segmentPath.addLine(to: CGPoint(x: endX, y: yPos + 5))
             
             // Use segment-specific color if highlighting, otherwise use gradient
             // GraphicsContext.stroke() expects GraphicsContext.Shading, not AnyShapeStyle
@@ -740,8 +874,8 @@ struct HypnogramView: View {
            let endX: CGFloat = proxy.position(forX: selected.endTime),
            let yPos: CGFloat = proxy.position(forY: selected.stage) {
             var highlightPath = Path()
-            highlightPath.move(to: CGPoint(x: startX, y: yPos))
-            highlightPath.addLine(to: CGPoint(x: endX, y: yPos))
+            highlightPath.move(to: CGPoint(x: startX, y: yPos + 5))
+            highlightPath.addLine(to: CGPoint(x: endX, y: yPos + 5))
             
             // GraphicsContext.Shading.linearGradient expects CGPoint (absolute coordinates)
             let startPoint = CGPoint(x: 0, y: awakeY)
@@ -1196,8 +1330,9 @@ struct ScrollableSleepChart: View {
                 let fallbackTimeInBed = fallbackAverages.timeInBed
                 let fallbackTimeAsleep = fallbackAverages.timeAsleep
 
-                let period = viewMode == .week ? "daily" : "daily"
-                if let avg = await viewModel.fetchAveragesFromCache(startDate: leadingDate, endDate: endDate, periodType: period, calculationType: "SUM"), avg.timeInBed > 0 || avg.timeAsleep > 0 {
+                // For Week and Month views, fetch daily SUM values and average them
+                // (not pre-aggregated weekly/monthly averages which span different date ranges)
+                if let avg = await viewModel.fetchAveragesFromCache(startDate: leadingDate, endDate: endDate, periodType: "daily", calculationType: "SUM"), avg.timeInBed > 0 || avg.timeAsleep > 0 {
                     await MainActor.run {
                         if visibleDateRange?.start == leadingDate {
                             viewModel.totalTimeInBed = formatDuration(avg.timeInBed * 60)
@@ -1282,23 +1417,86 @@ struct ScrollableSleepChart: View {
             // Handle HealthKit data (segments)
             guard !session.segments.isEmpty else { continue }
 
-            for segment in session.segments.sorted(by: { $0.startTime < $1.startTime }) {
-                guard segment.stage != .inBed && segment.stage != .asleepUnspecified else { continue }
+            // Check if we have detailed stage data (REM/Core/Deep) or just basic (asleep/awake)
+            let hasDetailedStages = session.segments.contains {
+                $0.stage == .rem || $0.stage == .core || $0.stage == .deep
+            }
 
-                let segmentStart = adjustedHour(from: segment.startTime)
-                let segmentEnd = adjustedHour(from: segment.endTime)
-                let segmentDuration = segmentEnd - segmentStart
+            if hasDetailedStages {
+                // Draw all segments including in bed (light green background)
+                for segment in session.segments.sorted(by: { $0.startTime < $1.startTime }) {
+                    let segmentStart = adjustedHour(from: segment.startTime)
+                    let segmentEnd = adjustedHour(from: segment.endTime)
+                    let segmentDuration = segmentEnd - segmentStart
 
-                let yPosition = ((segmentStart - timeRange.startHour) / timeRange.totalHours) * size.height
-                let height = max((segmentDuration / timeRange.totalHours) * size.height, 1.0)
+                    let yPosition = ((segmentStart - timeRange.startHour) / timeRange.totalHours) * size.height
+                    let height = max((segmentDuration / timeRange.totalHours) * size.height, 1.0)
 
-                let segmentWidth = segment.stage == .awake ? barWidth * 1.1 : barWidth
-                let segmentXOffset = barXOffset - (segmentWidth - barWidth) / 2
+                    let segmentWidth = segment.stage == .awake ? barWidth * 1.1 : barWidth
+                    let segmentXOffset = barXOffset - (segmentWidth - barWidth) / 2
 
-                let rect = CGRect(x: segmentXOffset, y: yPosition, width: segmentWidth, height: height)
-                var segmentContext = context
-                if isSelected { segmentContext.opacity = 1.0 }
-                segmentContext.fill(Path(rect), with: .color(stageColor(segment.stage)))
+                    let rect = CGRect(x: segmentXOffset, y: yPosition, width: segmentWidth, height: height)
+                    var segmentContext = context
+
+                    // In bed segments: light green with lower opacity (background layer)
+                    if segment.stage == .inBed {
+                        if isSelected { segmentContext.opacity = 0.5 } else { segmentContext.opacity = 0.3 }
+                        segmentContext.fill(Path(rect), with: .color(Color(hex: "C8E6C9") ?? .green)) // Very light green
+                    } else {
+                        // Other stages: normal rendering
+                        if isSelected { segmentContext.opacity = 1.0 }
+                        segmentContext.fill(Path(rect), with: .color(stageColor(segment.stage)))
+                    }
+                }
+            } else {
+                // Basic sessions: Draw three layers
+                // 1. Time in bed (light green background) - shows full session time
+                // 2. Time asleep (teal middle layer)
+                // 3. Awake periods (red on top)
+
+                // Layer 1: Draw "in bed" bar as background (light green) for the full session
+                let sessionStart = adjustedHour(from: session.sessionStart)
+                let sessionEnd = adjustedHour(from: session.sessionEnd)
+                let sessionDuration = sessionEnd - sessionStart
+                let sessionYPosition = ((sessionStart - timeRange.startHour) / timeRange.totalHours) * size.height
+                let sessionHeight = max((sessionDuration / timeRange.totalHours) * size.height, 1.0)
+
+                let inBedRect = CGRect(x: barXOffset, y: sessionYPosition, width: barWidth, height: sessionHeight)
+                var inBedContext = context
+                if isSelected { inBedContext.opacity = 0.5 } else { inBedContext.opacity = 0.3 }
+                inBedContext.fill(Path(inBedRect), with: .color(Color(hex: "C8E6C9") ?? .green)) // Very light green
+
+                let awakeSegments = session.segments.filter { $0.stage == .awake }
+                let sleepSegments = session.segments.filter { $0.stage != .inBed && $0.stage != .awake }
+
+                // Layer 2: Draw time asleep as middle layer (sleep pillar color)
+                if let sleepStart = sleepSegments.map({ $0.startTime }).min(),
+                   let sleepEnd = sleepSegments.map({ $0.endTime }).max() {
+                    let start = adjustedHour(from: sleepStart)
+                    let end = adjustedHour(from: sleepEnd)
+                    let yPosition = ((start - timeRange.startHour) / timeRange.totalHours) * size.height
+                    let height = max((end - start) / timeRange.totalHours * size.height, 1.0)
+
+                    let rect = CGRect(x: barXOffset, y: yPosition, width: barWidth, height: height)
+                    var asleepContext = context
+                    if isSelected { asleepContext.opacity = 1.0 } else { asleepContext.opacity = 0.8 }
+                    asleepContext.fill(Path(rect), with: .color(Color(hex: "80CBC4") ?? .teal))
+                }
+
+                // Layer 3: Draw awake periods (red) on top
+                for awakeSegment in awakeSegments {
+                    let segmentStart = adjustedHour(from: awakeSegment.startTime)
+                    let segmentEnd = adjustedHour(from: awakeSegment.endTime)
+                    let segmentDuration = segmentEnd - segmentStart
+
+                    let yPosition = ((segmentStart - timeRange.startHour) / timeRange.totalHours) * size.height
+                    let height = max((segmentDuration / timeRange.totalHours) * size.height, 1.0)
+
+                    let rect = CGRect(x: barXOffset, y: yPosition, width: barWidth, height: height)
+                    var awakeContext = context
+                    if isSelected { awakeContext.opacity = 1.0 } else { awakeContext.opacity = 0.8 }
+                    awakeContext.fill(Path(rect), with: .color(.red))
+                }
             }
         }
     }
@@ -1472,45 +1670,72 @@ struct ScrollableSleepChart: View {
     }
 
     private func createSleepBar(from sessions: [SleepSession], date: Date) -> SleepBar? {
-        guard let session = sessions.first else { return nil }
+        guard !sessions.isEmpty else { return nil }
 
-        // Handle manual entries (no segments)
-        if session.isManual, let manualEntry = session.manualEntry {
-            // For manual entries, put all duration in coreDuration (blue color)
-            return SleepBar(
-                sleepDate: session.date,
-                sessionStart: manualEntry.bedtime,
-                sessionEnd: manualEntry.waketime,
-                isNap: false,
-                deepDuration: 0,
-                coreDuration: manualEntry.sleepDuration,
-                remDuration: 0,
-                awakeDuration: 0
-            )
+        // Combine all sessions for this date
+        var totalDeep: TimeInterval = 0
+        var totalCore: TimeInterval = 0
+        var totalRem: TimeInterval = 0
+        var totalAwake: TimeInterval = 0
+        var totalAsleep: TimeInterval = 0
+        var totalInBed: TimeInterval = 0
+        var earliestStart: Date?
+        var latestEnd: Date?
+
+        for session in sessions {
+            // Handle manual entries (no segments)
+            if session.isManual, let manualEntry = session.manualEntry {
+                // For manual entries, add all duration to asleep (not core)
+                totalAsleep += manualEntry.sleepDuration
+
+                if earliestStart == nil || manualEntry.bedtime < earliestStart! {
+                    earliestStart = manualEntry.bedtime
+                }
+                if latestEnd == nil || manualEntry.waketime > latestEnd! {
+                    latestEnd = manualEntry.waketime
+                }
+            } else if !session.segments.isEmpty {
+                // Handle HealthKit data (segments)
+                let durations = calculateStageDurations(for: session.segments)
+                totalDeep += durations.deep
+                totalCore += durations.core
+                totalRem += durations.rem
+                totalAwake += durations.awake
+                totalAsleep += durations.asleep
+                totalInBed += durations.inBed
+
+                if earliestStart == nil || session.sessionStart < earliestStart! {
+                    earliestStart = session.sessionStart
+                }
+                if latestEnd == nil || session.sessionEnd > latestEnd! {
+                    latestEnd = session.sessionEnd
+                }
+            }
         }
 
-        // Handle HealthKit data (segments)
-        guard !session.segments.isEmpty else { return nil }
-
-        let durations = calculateStageDurations(for: session.segments)
+        guard let start = earliestStart, let end = latestEnd else { return nil }
 
         return SleepBar(
-            sleepDate: session.date,
-            sessionStart: session.sessionStart,
-            sessionEnd: session.sessionEnd,
+            sleepDate: date,
+            sessionStart: start,
+            sessionEnd: end,
             isNap: false,
-            deepDuration: durations.deep,
-            coreDuration: durations.core,
-            remDuration: durations.rem,
-            awakeDuration: durations.awake
+            deepDuration: totalDeep,
+            coreDuration: totalCore,
+            remDuration: totalRem,
+            awakeDuration: totalAwake,
+            asleepDuration: totalAsleep,
+            inBedDuration: totalInBed
         )
     }
 
-    private func calculateStageDurations(for segments: [SleepStageSegment]) -> (deep: TimeInterval, core: TimeInterval, rem: TimeInterval, awake: TimeInterval) {
+    private func calculateStageDurations(for segments: [SleepStageSegment]) -> (deep: TimeInterval, core: TimeInterval, rem: TimeInterval, awake: TimeInterval, asleep: TimeInterval, inBed: TimeInterval) {
         var deep: TimeInterval = 0
         var core: TimeInterval = 0
         var rem: TimeInterval = 0
         var awake: TimeInterval = 0
+        var asleep: TimeInterval = 0
+        var inBed: TimeInterval = 0
 
         for segment in segments {
             let duration = segment.endTime.timeIntervalSince(segment.startTime)
@@ -1519,11 +1744,13 @@ struct ScrollableSleepChart: View {
             case .core: core += duration
             case .rem: rem += duration
             case .awake: awake += duration
-            default: break
+            case .asleep: asleep += duration  // Track basic sleep separately
+            case .inBed: inBed += duration     // Track in bed time
+            case .asleepSummary: break  // Don't count summary
             }
         }
 
-        return (deep, core, rem, awake)
+        return (deep, core, rem, awake, asleep, inBed)
     }
 
     private func stageColor(_ stage: SleepStage) -> Color {
@@ -1542,14 +1769,9 @@ struct ScrollableSleepChart: View {
     }
     
     private func getBaseStageColor(_ stage: SleepStage) -> Color {
-        switch stage {
-        case .deep: return Color(red: 0.0, green: 0.4, blue: 0.8)
-        case .core: return Color(red: 0.3, green: 0.6, blue: 1.0)
-        case .rem: return Color(red: 0.6, green: 0.8, blue: 1.0)
-        case .awake: return Color.red.opacity(0.7)
-        case .inBed: return Color.gray.opacity(0.3)
-        case .asleepUnspecified: return Color.blue.opacity(0.3)
-        }
+        // Use the standard colors from SleepStageData.swift
+        // (These colors are used for both Day view hypnogram and Week/Month bar charts)
+        return stage.color
     }
 
     private func formatDateLabel(_ date: Date) -> String {
@@ -1893,22 +2115,25 @@ class WeeklySleepDataManager: ObservableObject {
                 let periodStart: Date
                 let periodEnd: Date
                 let valueTime: String?
-                
+                let value: Double?  // For duration-based metrics (AGG_SLEEP_DURATION, AGG_TIME_IN_BED)
+
                 enum CodingKeys: String, CodingKey {
                     case aggMetricId = "agg_metric_id"
                     case periodStart = "period_start"
                     case periodEnd = "period_end"
                     case valueTime = "value_time"
+                    case value = "value"
                 }
             }
             
             // Fetch ALL weekly data (no date filters for infinite scroll)
             // Note: value_time is absolute (e.g., "23:00:00" = 11 PM always, no timezone conversion needed)
+            // Include duration metrics as fallback for basic sessions without bedtime/waketime
             let cacheResults: [WeeklyCacheEntry] = try await supabase
                 .from("aggregation_results_cache")
-                .select("agg_metric_id, period_start, period_end, value_time")
+                .select("agg_metric_id, period_start, period_end, value_time, value")
                 .eq("patient_id", value: userId)
-                .in("agg_metric_id", values: ["AGG_SLEEP_BEDTIME", "AGG_SLEEP_WAKETIME"])
+                .in("agg_metric_id", values: ["AGG_SLEEP_BEDTIME", "AGG_SLEEP_WAKETIME", "AGG_SLEEP_DURATION", "AGG_TIME_IN_BED"])
                 .eq("period_type", value: "weekly")
                 .eq("calculation_type_id", value: "AVG")
                 .order("period_start", ascending: true)
@@ -1928,31 +2153,59 @@ class WeeklySleepDataManager: ObservableObject {
             for (weekStart, entries) in groupedByWeek {
                 let bedtimeEntries = entries.filter { $0.aggMetricId == "AGG_SLEEP_BEDTIME" }
                 let waketimeEntries = entries.filter { $0.aggMetricId == "AGG_SLEEP_WAKETIME" }
-                
-                guard bedtimeEntries.count == 1, waketimeEntries.count == 1,
-                      let bedtimeEntry = bedtimeEntries.first,
-                      let waketimeEntry = waketimeEntries.first,
-                      let bedtimeTime = bedtimeEntry.valueTime, !bedtimeTime.isEmpty,
-                      let waketimeTime = waketimeEntry.valueTime, !waketimeTime.isEmpty else {
+                let durationEntries = entries.filter { $0.aggMetricId == "AGG_SLEEP_DURATION" }
+                let _ = entries.filter { $0.aggMetricId == "AGG_TIME_IN_BED" } // Reserved for future use
+
+                // Try to get bedtime/waketime first (for full analysis sessions)
+                let hasBedtimeData = bedtimeEntries.count == 1 && waketimeEntries.count == 1
+                let bedtimeEntry = bedtimeEntries.first
+                let waketimeEntry = waketimeEntries.first
+                let bedtimeTime = bedtimeEntry?.valueTime
+                let waketimeTime = waketimeEntry?.valueTime
+
+                // Fallback: If no bedtime/waketime, try to use duration data (for basic sessions)
+                let hasDurationData = durationEntries.count == 1
+
+                // Skip week if we have neither bedtime/waketime nor duration data
+                guard hasBedtimeData || hasDurationData else {
+                    NSLog("[SLEEP] ⚠️ Skipping week \(weekStart) - no bedtime/waketime or duration data")
                     continue
                 }
                 
                 // Calculate week end like MetricDetailView: period_start + 6 days
                 // (period_start is Monday, so +6 days = Sunday)
                 let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
-                
+
                 NSLog("[SLEEP] 📅 fetchWeeklyData: Week - period_start: \(weekStart), calculated weekEnd: \(weekEnd) (weekStart + 6 days)")
-                
-                // Parse time strings - value_time is absolute (e.g., "23:00:00" = 11 PM always)
-                let bedtime = parseTimeString(bedtimeTime)
-                let waketime = parseTimeString(waketimeTime)
-                
-                NSLog("[SLEEP] 📅 fetchWeeklyData: Times - bedtime: '\(bedtimeTime)' → \(bedtime), waketime: '\(waketimeTime)' → \(waketime)")
-                
+
+                // Parse times or generate defaults
+                let bedtime: Date
+                let waketime: Date
+
+                if hasBedtimeData, let bedtimeStr = bedtimeTime, !bedtimeStr.isEmpty,
+                   let waketimeStr = waketimeTime, !waketimeStr.isEmpty {
+                    // Use actual bedtime/waketime from full analysis sessions
+                    bedtime = parseTimeString(bedtimeStr)
+                    waketime = parseTimeString(waketimeStr)
+                    NSLog("[SLEEP] 📅 fetchWeeklyData: Using actual times - bedtime: '\(bedtimeStr)' → \(bedtime), waketime: '\(waketimeStr)' → \(waketime)")
+                } else if let durationEntry = durationEntries.first, let durationMinutes = durationEntry.value {
+                    // Fallback: Generate default bedtime/waketime from duration
+                    // Assume 11 PM bedtime (23:00) and calculate waketime based on duration
+                    bedtime = parseTimeString("23:00:00")
+                    let durationHours = durationMinutes / 60.0
+                    waketime = calendar.date(byAdding: .hour, value: Int(durationHours), to: bedtime) ?? bedtime
+                    NSLog("[SLEEP] 📅 fetchWeeklyData: Using fallback - duration: \(durationMinutes) min, bedtime: 11 PM, waketime: \(waketime)")
+                } else {
+                    // Should not reach here due to guard, but provide defaults just in case
+                    bedtime = parseTimeString("23:00:00")
+                    waketime = parseTimeString("07:00:00")
+                    NSLog("[SLEEP] ⚠️ fetchWeeklyData: Using hardcoded defaults")
+                }
+
                 // Use dates directly - no timezone conversion needed
                 let localWeekStart = weekStart
                 let localWeekEnd = weekEnd
-                
+
                 averages.append((
                     weekStartDate: localWeekStart,
                     week: WeeklyAverage(
@@ -1964,7 +2217,7 @@ class WeeklySleepDataManager: ObservableObject {
                         avgWaketime: waketime
                     )
                 ))
-                
+
                 NSLog("[SLEEP] 📅 fetchWeeklyData: Added week - \(localWeekStart) to \(localWeekEnd)")
             }
             

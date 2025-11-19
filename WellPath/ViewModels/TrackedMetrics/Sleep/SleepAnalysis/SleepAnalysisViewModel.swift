@@ -56,9 +56,15 @@ struct SleepBar: Identifiable {
     let coreDuration: TimeInterval
     let remDuration: TimeInterval
     let awakeDuration: TimeInterval
+    let asleepDuration: TimeInterval  // Basic asleep (no detailed stages)
+    let inBedDuration: TimeInterval   // Time in bed (before sleep/after wake)
 
     var totalDuration: TimeInterval {
-        deepDuration + coreDuration + remDuration + awakeDuration
+        deepDuration + coreDuration + remDuration + awakeDuration + asleepDuration
+    }
+
+    var totalTimeInBed: TimeInterval {
+        sessionEnd.timeIntervalSince(sessionStart)
     }
 }
 
@@ -82,6 +88,14 @@ struct MonthlyAverage: Identifiable {
     let avgTimeAsleep: TimeInterval // Average time asleep for the month
     let avgBedtime: Date // Average bedtime as UTC timestamp
     let avgWaketime: Date // Average waketime as UTC timestamp
+}
+
+// MARK: - Sleep Session Data Type Classification
+/// Classifies the type of sleep data available in a session
+enum SleepSessionDataType {
+    case fullStages          // Has REM, Core, or Deep stages
+    case basicSleep(hasInBed: Bool)  // Only asleep ± in_bed (HealthKit limited)
+    case manual(hasInBed: Bool)      // Manual entry from wellpath_input
 }
 
 @MainActor
@@ -780,77 +794,27 @@ class SleepAnalysisViewModel: ObservableObject {
             }
         }
 
-        // Fetch OUTPUT_SLEEP_WAKETIME first to get sessions in this date range
-        // Like HealthKit, we assign sessions to their wake-up date
-        let waketimeResponse = try await supabase
-            .from("patient_data_entries")
-            .select("field_id, value_timestamp, value_quantity, event_instance_id, source")
+        // Query patient_sleep_sessions for manual entries in date range
+        let sessionsResponse = try await supabase
+            .from("patient_sleep_sessions")
+            .select()
             .eq("patient_id", value: userId)
-            .gte("value_timestamp", value: startDate.ISO8601Format())
-            .lte("value_timestamp", value: endDate.ISO8601Format())
-            .eq("field_id", value: "OUTPUT_SLEEP_WAKETIME")
-            .eq("source", value: "auto_calculated") // Only get entries from manual entry trigger
-            .order("value_timestamp", ascending: true)
+            .gte("session_waketime", value: startDate.ISO8601Format())
+            .lte("session_waketime", value: endDate.ISO8601Format())
+            .order("session_waketime", ascending: true)
             .execute()
 
-        let waketimeEntries = try decoder.decode([SleepOutputEntry].self, from: waketimeResponse.data)
-
-        // Extract unique event_instance_ids from waketimes
-        let eventInstanceIds = Array(Set(waketimeEntries.map { $0.eventInstanceId }))
-
-        guard !eventInstanceIds.isEmpty else {
-            return []
-        }
-
-        // Now fetch BEDTIME entries for those specific event instances
-        let bedtimeResponse = try await supabase
-            .from("patient_data_entries")
-            .select("field_id, value_timestamp, value_quantity, event_instance_id, source")
-            .eq("patient_id", value: userId)
-            .eq("field_id", value: "OUTPUT_SLEEP_BEDTIME")
-            .in("event_instance_id", values: eventInstanceIds)
-            .execute()
-
-        let bedtimeEntries = try decoder.decode([SleepOutputEntry].self, from: bedtimeResponse.data)
-
-        // Fetch DURATION entries for those specific event instances
-        let durationResponse = try await supabase
-            .from("patient_data_entries")
-            .select("field_id, value_timestamp, value_quantity, event_instance_id, source")
-            .eq("patient_id", value: userId)
-            .eq("field_id", value: "OUTPUT_SLEEP_DURATION")
-            .in("event_instance_id", values: eventInstanceIds)
-            .execute()
-
-        let durationEntries = try decoder.decode([SleepOutputEntry].self, from: durationResponse.data)
-
-        // Combine all entries
-        let entries = waketimeEntries + bedtimeEntries + durationEntries
-
-        // Group by event_instance_id
-        var instanceMap: [String: [SleepOutputEntry]] = [:]
-        for entry in entries {
-            instanceMap[entry.eventInstanceId, default: []].append(entry)
-        }
+        let sessions = try decoder.decode([PatientSleepSession].self, from: sessionsResponse.data)
 
         var manualEntries: [ManualSleepEntry] = []
 
-        for (instanceId, instanceEntries) in instanceMap {
-            guard let bedtimeEntry = instanceEntries.first(where: { $0.fieldId == "OUTPUT_SLEEP_BEDTIME" }),
-                  let waketimeEntry = instanceEntries.first(where: { $0.fieldId == "OUTPUT_SLEEP_WAKETIME" }),
-                  let durationEntry = instanceEntries.first(where: { $0.fieldId == "OUTPUT_SLEEP_DURATION" }),
-                  let bedtime = bedtimeEntry.valueTimestamp,
-                  let waketime = waketimeEntry.valueTimestamp,
-                  let durationMinutes = durationEntry.valueQuantity else {
-                continue
-            }
-
+        for session in sessions {
             manualEntries.append(ManualSleepEntry(
-                bedtime: bedtime,
-                waketime: waketime,
-                sleepDuration: durationMinutes * 60, // Convert minutes to seconds
-                source: bedtimeEntry.source,
-                eventInstanceId: instanceId
+                bedtime: session.sessionBedtime,
+                waketime: session.sessionWaketime,
+                sleepDuration: session.totalDurationMinutes * 60, // Convert minutes to seconds
+                source: "auto_calculated", // Sessions are always auto-calculated from data entries
+                eventInstanceId: session.sleepSessionId.uuidString
             ))
         }
 
@@ -863,69 +827,24 @@ class SleepAnalysisViewModel: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        struct Entry: Codable {
-            let fieldId: String
-            let valueTimestamp: Date?
-            let valueReference: String?
-            let eventInstanceId: String
-
-            enum CodingKeys: String, CodingKey {
-                case fieldId = "field_id"
-                case valueTimestamp = "value_timestamp"
-                case valueReference = "value_reference"
-                case eventInstanceId = "event_instance_id"
-            }
-        }
-
-        // First, get START and END entries in date range (they have timestamps)
-        let startEndResponse = try await supabase
-            .from("patient_data_entries")
-            .select("field_id, value_timestamp, value_reference, event_instance_id")
+        // Query patient_sleep_data_entries directly
+        let sleepDataResponse = try await supabase
+            .from("patient_sleep_data_entries")
+            .select()
             .eq("patient_id", value: userId)
-            .gte("value_timestamp", value: startDate.ISO8601Format())
-            .lte("value_timestamp", value: endDate.ISO8601Format())
-            .in("field_id", values: [
-                "DEF_SLEEP_PERIOD_START",
-                "DEF_SLEEP_PERIOD_END"
-            ])
-            .order("value_timestamp", ascending: true)
+            .gte("period_start", value: startDate.ISO8601Format())
+            .lte("period_end", value: endDate.ISO8601Format())
+            .order("period_start", ascending: true)
             .execute()
 
-        let startEndEntries = try decoder.decode([Entry].self, from: startEndResponse.data)
+        let sleepDataEntries = try decoder.decode([PatientSleepDataEntry].self, from: sleepDataResponse.data)
 
-        // Extract unique event_instance_ids from the START/END entries
-        let eventInstanceIds = Array(Set(startEndEntries.map { $0.eventInstanceId }))
-
-        guard !eventInstanceIds.isEmpty else {
+        guard !sleepDataEntries.isEmpty else {
             return []
         }
 
-        // Now fetch TYPE entries for those specific event instances
-        let typeResponse = try await supabase
-            .from("patient_data_entries")
-            .select("field_id, value_timestamp, value_reference, event_instance_id")
-            .eq("patient_id", value: userId)
-            .eq("field_id", value: "DEF_SLEEP_PERIOD_TYPE")
-            .in("event_instance_id", values: eventInstanceIds)
-            .execute()
-
-        let typeEntries = try decoder.decode([Entry].self, from: typeResponse.data)
-
-        // Combine all entries
-        let entries = startEndEntries + typeEntries
-
-        // Group entries by event_instance_id
-        var instanceMap: [String: [Entry]] = [:]
-        for entry in entries {
-            instanceMap[entry.eventInstanceId, default: []].append(entry)
-        }
-
         // Fetch sleep period types from universal reference table
-        let typesResponse = try await supabase
-            .from("data_entry_fields_reference")
-            .select("id, reference_key, display_name")
-            .eq("reference_category", value: "sleep_period_types")
-            .execute()
+        let uniqueTypeIds = Set(sleepDataEntries.compactMap { $0.periodTypeId }).compactMap { UUID(uuidString: $0) }
 
         struct PeriodType: Codable {
             let id: String
@@ -939,22 +858,22 @@ class SleepAnalysisViewModel: ObservableObject {
             }
         }
 
-        let periodTypes = try decoder.decode([PeriodType].self, from: typesResponse.data)
-        let typeMap = Dictionary(uniqueKeysWithValues: periodTypes.map { ($0.id, $0.referenceKey) })
+        var typeMap: [String: String] = [:]
+        if !uniqueTypeIds.isEmpty {
+            let typesResponse = try await supabase
+                .from("data_entry_fields_reference")
+                .select("id, reference_key, display_name")
+                .in("id", values: uniqueTypeIds.map { $0.uuidString })
+                .execute()
+
+            let periodTypes = try decoder.decode([PeriodType].self, from: typesResponse.data)
+            typeMap = Dictionary(uniqueKeysWithValues: periodTypes.map { ($0.id, $0.referenceKey) })
+        }
 
         var segments: [SleepStageSegment] = []
 
-        for (_, instanceEntries) in instanceMap {
-            guard instanceEntries.count == 3 else {
-                continue
-            }
-
-            guard let startEntry = instanceEntries.first(where: { $0.fieldId == "DEF_SLEEP_PERIOD_START" }),
-                  let endEntry = instanceEntries.first(where: { $0.fieldId == "DEF_SLEEP_PERIOD_END" }),
-                  let typeEntry = instanceEntries.first(where: { $0.fieldId == "DEF_SLEEP_PERIOD_TYPE" }),
-                  let startTime = startEntry.valueTimestamp,
-                  let endTime = endEntry.valueTimestamp,
-                  let typeId = typeEntry.valueReference,
+        for entry in sleepDataEntries {
+            guard let typeId = entry.periodTypeId,
                   let periodName = typeMap[typeId] else {
                 continue
             }
@@ -964,8 +883,8 @@ class SleepAnalysisViewModel: ObservableObject {
             switch periodName.lowercased() {
             case "in_bed":
                 stage = .inBed
-            case "unspecified", "asleep":
-                stage = .asleepUnspecified
+            case "asleep":
+                stage = .asleep
             case "core":
                 stage = .core
             case "deep":
@@ -981,8 +900,9 @@ class SleepAnalysisViewModel: ObservableObject {
 
             segments.append(SleepStageSegment(
                 stage: stage,
-                startTime: startTime,
-                endTime: endTime
+                startTime: entry.periodStart,
+                endTime: entry.periodEnd,
+                userTimezone: entry.userTimezone ?? "America/Los_Angeles"
             ))
         }
 
@@ -1012,9 +932,10 @@ class SleepAnalysisViewModel: ObservableObject {
     func calculateSummaryMetrics(for visibleSegments: [SleepStageSegment]) {
         // If there are segments, calculate normally
         if !visibleSegments.isEmpty {
-            // TIME IN BED = sum of Deep + Core + REM + Awake in view window (excludes In Bed and Asleep Unspecified)
+            // TIME IN BED = sum of all sleep stages in view window (excludes only In Bed to avoid double-counting)
+            // Includes asleepUnspecified for basic sessions
             let timeInBedSeconds = visibleSegments
-                .filter { $0.stage == .deep || $0.stage == .core || $0.stage == .rem || $0.stage == .awake }
+                .filter { $0.stage != .inBed }
                 .reduce(0.0) { total, segment in
                     total + segment.endTime.timeIntervalSince(segment.startTime)
                 }
@@ -1089,8 +1010,11 @@ class SleepAnalysisViewModel: ObservableObject {
                 rem += duration
             case .awake:
                 awake += duration
-            case .inBed, .asleepUnspecified:
-                // Don't count In Bed or Asleep Unspecified in duration calculations
+            case .asleep:
+                // Map basic sleep to core for rendering
+                core += duration
+            case .inBed, .asleepSummary:
+                // Don't count In Bed or Asleep Summary in duration calculations
                 break
             }
         }
@@ -1655,8 +1579,30 @@ class SleepAnalysisViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Helper: Session Type Detection
+
+    /// Detects the type of sleep data available in a session
+    /// - Parameter session: The sleep session to analyze
+    /// - Returns: Classification of the session data type
+    private func detectSessionType(_ session: SleepSession) -> SleepSessionDataType {
+        let stages = Set(session.segments.map { $0.stage })
+
+        // Check if manual entry (from wellpath_input source)
+        if session.isManual {
+            return .manual(hasInBed: stages.contains(.inBed))
+        }
+
+        // Check for detailed HealthKit stages (REM, Core, or Deep)
+        if stages.intersection([.deep, .core, .rem]).isEmpty == false {
+            return .fullStages
+        }
+
+        // Basic sleep only (asleep ± in_bed from limited HealthKit)
+        return .basicSleep(hasInBed: stages.contains(.inBed))
+    }
+
     // MARK: - Helper: Parse time string to Date
-    
+
     /// Parses a time string (e.g., "23:00:00" or "07:00") and returns a Date with today's date and that time
     private func parseTimeString(_ timeString: String) -> Date {
         let components = timeString.split(separator: ":").map { String($0) }

@@ -13,6 +13,9 @@ struct SleepConsistencyPrimary: View {
     @State private var selectedDate: Date?
     @State private var selectedWeek: WeeklySleepAverage?
     @State private var selectedMonth: MonthlySleepAverage?
+    @State private var showingEntryView = false
+    @State private var showingDataManagement = false
+    @State private var hasInitializedScroll = false  // Track if we've set initial scroll position
 
     init(pillar: String, color: Color) {
         self.pillar = pillar
@@ -35,6 +38,9 @@ struct SleepConsistencyPrimary: View {
         case sixMonth = "6M"
         case year = "Y"
     }
+
+    // Use same bar color as SleepAnalysisPrimary
+    private let barColor = Color(red: 0x6E / 255.0, green: 0x7C / 255.0, blue: 0xFF / 255.0)
 
     var body: some View {
         chartContent
@@ -66,6 +72,22 @@ struct SleepConsistencyPrimary: View {
             )
             .navigationTitle("Sleep Consistency")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingEntryView = true
+                    }) {
+                        Image(systemName: "plus")
+                            .foregroundColor(color)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingEntryView) {
+                SleepEntryView()
+            }
+            .sheet(isPresented: $showingDataManagement) {
+                SleepDataManagementView(color: color)
+            }
     }
 
     private var chartContent: some View {
@@ -84,6 +106,22 @@ struct SleepConsistencyPrimary: View {
 
                 if selectedView == .chart {
                     chartView
+
+                    // Show All Data button
+                    Button(action: {
+                        showingDataManagement = true
+                    }) {
+                        Text("Show All Data")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(color)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .cornerRadius(10)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 16)
                 } else {
                     aboutView
                 }
@@ -109,20 +147,27 @@ struct SleepConsistencyPrimary: View {
                 selectedWeek = nil
                 selectedMonth = nil
 
+                // Reset scroll position for new period
+                hasInitializedScroll = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    initializeScrollPosition()
+                    hasInitializedScroll = true
+                }
+
                 Task {
                     switch newValue {
                     case .week:
                         // W view: 5 weeks of daily data (35 days)
-                        await viewModel.loadDailySleepTimes(daysBack: 35, daysAhead: 0)
+                        await viewModel.loadDailySleepTimes()
                     case .month:
                         // M view: 33 days of daily data
-                        await viewModel.loadDailySleepTimes(daysBack: 33, daysAhead: 0)
+                        await viewModel.loadDailySleepTimes()
                     case .sixMonth:
                         // 6M view: 26 weeks of weekly averages
-                        await viewModel.loadWeeklySleepAverages(weeksBack: 26, weeksAhead: 0)
+                        await viewModel.loadWeeklySleepAverages()
                     case .year:
                         // Y view: 12 months of monthly averages
-                        await viewModel.loadMonthlySleepAverages(monthsBack: 12, monthsAhead: 0)
+                        await viewModel.loadMonthlySleepAverages()
                     }
                 }
             }
@@ -145,7 +190,7 @@ struct SleepConsistencyPrimary: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .task {
             // Initial load defaults to week view (35 days)
-            await viewModel.loadDailySleepTimes(daysBack: 35, daysAhead: 0)
+            await viewModel.loadDailySleepTimes()
             // Also load About content
             await primaryViewModel.loadPrimaryScreen()
         }
@@ -192,6 +237,7 @@ struct SleepConsistencyPrimary: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .padding(.top, 16)
         .padding(.bottom, 8)
@@ -203,102 +249,76 @@ struct SleepConsistencyPrimary: View {
         let visibleLength = getVisibleDomainLength()
 
         return Chart {
-            // Consistency box (±30 min from visible average)
-            if !isAnyItemSelected(), let avg = calculateVisibleAverages() {
-                consistencyBox(avg: avg)
-            }
-
             // Sleep bars based on period
             switch selectedPeriod {
             case .week, .month:
-                ForEach(dailyChartData) { dayData in
-                    if dayData.hasData {
-                        BarMark(
-                            x: .value("Date", dayData.date, unit: .day),
-                            yStart: .value("Bedtime", dayData.chartBedtime),
-                            yEnd: .value("Waketime", dayData.chartWaketime),
-                            width: .ratio(0.6)
-                        )
-                        .foregroundStyle(getDailyBarColor(for: dayData))
-                    }
-                }
+                dailyBarMarks()
             case .sixMonth:
-                ForEach(weeklyChartData) { weekData in
-                    if weekData.hasData {
-                        BarMark(
-                            x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
-                            yStart: .value("Bedtime", weekData.chartBedtime),
-                            yEnd: .value("Waketime", weekData.chartWaketime),
-                            width: .ratio(0.6)
-                        )
-                        .foregroundStyle(getWeeklyBarColor(for: weekData))
-                    }
-                }
+                weeklyBarMarks()
             case .year:
-                ForEach(monthlyChartData) { monthData in
-                    if monthData.hasData {
-                        BarMark(
-                            x: .value("Month", monthData.monthStartDate, unit: .month),
-                            yStart: .value("Bedtime", monthData.chartBedtime),
-                            yEnd: .value("Waketime", monthData.chartWaketime),
-                            width: .ratio(0.6)
-                        )
-                        .foregroundStyle(getMonthlyBarColor(for: monthData))
-                    }
-                }
+                monthlyBarMarks()
             }
         }
         .chartXAxis {
             switch selectedPeriod {
-            case .week, .month:
+            case .week:
+                AxisMarks(values: .stride(by: .day)) { value in
+                    AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                    AxisGridLine()
+                }
+            case .month:
                 AxisMarks(values: .stride(by: .day, count: 7)) { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                    }
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                     AxisGridLine()
                 }
             case .sixMonth:
-                AxisMarks(values: .stride(by: .month)) { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel(format: .dateTime.month(.abbreviated))
-                    }
+                AxisMarks(values: .stride(by: .month, count: 1)) { value in
+                    AxisValueLabel(format: .dateTime.month(.abbreviated))
                     AxisGridLine()
+                    AxisTick()
                 }
             case .year:
-                AxisMarks(values: .stride(by: .month, count: 2)) { value in
-                    if let date = value.as(Date.self) {
-                        AxisValueLabel(format: .dateTime.month(.abbreviated))
-                    }
+                AxisMarks(values: .stride(by: .month, count: 1)) { value in
+                    AxisValueLabel(format: .dateTime.month(.narrow))
                     AxisGridLine()
+                    AxisTick()
                 }
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: .stride(by: 3600)) { value in
-                if let date = value.as(Date.self) {
-                    AxisValueLabel(formatYAxisLabel(date))
-                }
-                AxisGridLine()
-            }
-        }
-        .chartYScale(domain: yAxisDomain)
-        .chartScrollableAxes(.horizontal)
-        .chartXVisibleDomain(length: visibleLength)
-        .chartScrollPosition(x: $scrollPosition)
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        handleChartTap(proxy: proxy, location: location)
-                    }
             }
         }
         .frame(height: 280)
+        .chartYScale(domain: yAxisDomain)
+        .chartScrollableAxes(.horizontal)
+        .chartScrollPosition(x: $scrollPosition)
+        .chartXVisibleDomain(length: visibleLength)
+        .chartGesture { proxy in
+            SpatialTapGesture()
+                .onEnded { value in
+                    handleChartTap(proxy: proxy, location: value.location)
+                }
+        }
+        .chartYAxis {
+            AxisMarks(position: .trailing) { value in
+                if let dateValue = value.as(Date.self) {
+                    AxisValueLabel {
+                        Text(formatYAxisLabel(dateValue))
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    AxisGridLine()
+                        .foregroundStyle(Color.gray.opacity(0.2))
+                }
+            }
+        }
         .padding(.horizontal)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
         .onAppear {
-            initializeScrollPosition()
+            // Only initialize scroll position if we haven't already
+            guard !hasInitializedScroll else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                initializeScrollPosition()
+                hasInitializedScroll = true
+            }
         }
     }
 
@@ -333,6 +353,81 @@ struct SleepConsistencyPrimary: View {
         .foregroundStyle(color.opacity(0.15))
     }
 
+    @ChartContentBuilder
+    private func dailyBarMarks() -> some ChartContent {
+        ForEach(dailyChartData) { dayData in
+            if dayData.hasData {
+                BarMark(
+                    x: .value("Date", dayData.date, unit: .day),
+                    yStart: .value("Bedtime", dayData.chartBedtime),
+                    yEnd: .value("Waketime", dayData.chartWaketime),
+                    width: .ratio(0.6)
+                )
+                .foregroundStyle(getDailyBarColor(for: dayData))
+                .cornerRadius(4)
+            } else {
+                // Render invisible bar for empty days to maintain X-axis structure
+                BarMark(
+                    x: .value("Date", dayData.date, unit: .day),
+                    yStart: .value("Bedtime", dayData.chartBedtime),
+                    yEnd: .value("Waketime", dayData.chartWaketime),
+                    width: .ratio(0.6)
+                )
+                .foregroundStyle(Color.clear)
+            }
+        }
+    }
+
+    @ChartContentBuilder
+    private func weeklyBarMarks() -> some ChartContent {
+        ForEach(weeklyChartData) { weekData in
+            if weekData.hasData {
+                BarMark(
+                    x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
+                    yStart: .value("Bedtime", weekData.chartBedtime),
+                    yEnd: .value("Waketime", weekData.chartWaketime),
+                    width: .ratio(0.6)
+                )
+                .foregroundStyle(getWeeklyBarColor(for: weekData))
+                .cornerRadius(4)
+            } else {
+                // Render invisible bar for empty weeks to maintain X-axis structure
+                BarMark(
+                    x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
+                    yStart: .value("Bedtime", weekData.chartBedtime),
+                    yEnd: .value("Waketime", weekData.chartWaketime),
+                    width: .ratio(0.6)
+                )
+                .foregroundStyle(Color.clear)
+            }
+        }
+    }
+
+    @ChartContentBuilder
+    private func monthlyBarMarks() -> some ChartContent {
+        ForEach(monthlyChartData) { monthData in
+            if monthData.hasData {
+                BarMark(
+                    x: .value("Month", monthData.monthStartDate, unit: .month),
+                    yStart: .value("Bedtime", monthData.chartBedtime),
+                    yEnd: .value("Waketime", monthData.chartWaketime),
+                    width: .ratio(0.6)
+                )
+                .foregroundStyle(getMonthlyBarColor(for: monthData))
+                .cornerRadius(4)
+            } else {
+                // Render invisible bar for empty months to maintain X-axis structure
+                BarMark(
+                    x: .value("Month", monthData.monthStartDate, unit: .month),
+                    yStart: .value("Bedtime", monthData.chartBedtime),
+                    yEnd: .value("Waketime", monthData.chartWaketime),
+                    width: .ratio(0.6)
+                )
+                .foregroundStyle(Color.clear)
+            }
+        }
+    }
+
     // MARK: - Chart Data Structures
 
     private struct ChartDayData: Identifiable {
@@ -364,22 +459,33 @@ struct SleepConsistencyPrimary: View {
     // MARK: - Chart Data Generation
 
     private var dailyChartData: [ChartDayData] {
-        let daysCount = selectedPeriod == .week ? 35 : 33
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-
+        let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        guard let startDate = calendar.date(byAdding: .day, value: -daysCount, to: today) else {
+
+        // Load more data than visible window for scrolling
+        // W view visible: 7 days, load 5 weeks (35 days back)
+        // M view visible: 33 days, load 2 months (60 days back)
+        let daysToLoad = selectedPeriod == .week ? 35 : 60
+
+        guard let startDate = calendar.date(byAdding: .day, value: -daysToLoad, to: today) else {
+            return []
+        }
+
+        // For W/M views: Load generously into future for forward scrolling (2 weeks ahead)
+        guard let endDate = calendar.date(byAdding: .weekOfYear, value: 2, to: today) else {
             return []
         }
 
         let sixPMReference = createSixPMReference()
         var allDays: [ChartDayData] = []
 
-        for dayOffset in 0..<daysCount {
-            guard let date = calendar.date(byAdding: .day, value: dayOffset, to: startDate) else {
-                continue
-            }
+        let totalDays = calendar.dateComponents([.day], from: startDate, to: endDate).day ?? daysToLoad
+        NSLog("[CONSISTENCY] 📊 dailyChartData: Generating ~\(totalDays) days from \(startDate) to \(endDate)")
+        NSLog("[CONSISTENCY] 📊 dailyChartData: viewModel has \(viewModel.dailySleepTimes.count) daily entries")
+
+        var currentDate = startDate
+        while currentDate <= endDate {
+            let date = calendar.startOfDay(for: currentDate)
 
             if let sleepData = viewModel.dailySleepTimes.first(where: {
                 calendar.isDate($0.date, inSameDayAs: date)
@@ -404,37 +510,59 @@ struct SleepConsistencyPrimary: View {
                     hasData: false
                 ))
             }
+
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
+            currentDate = nextDay
         }
+
+        let daysWithData = allDays.filter { $0.hasData }
+        NSLog("[CONSISTENCY] 📊 dailyChartData: Generated \(allDays.count) days, \(daysWithData.count) with data")
 
         return allDays
     }
 
     private var weeklyChartData: [ChartWeekData] {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.firstWeekday = 2 // Monday
+        let calendar = Calendar.current
 
         let today = calendar.startOfDay(for: Date())
-        guard let startDate = calendar.date(byAdding: .weekOfYear, value: -26, to: today) else {
+        // Load 52 weeks (1 year) of data, like SleepAnalysisPrimary does
+        // Visible window is only 26 weeks, but we need more for scrolling
+        guard let startDate = calendar.date(byAdding: .weekOfYear, value: -52, to: today) else {
+            return []
+        }
+
+        // For 6M view: Load generously into future for forward scrolling (8 weeks ahead)
+        guard let endDate = calendar.date(byAdding: .weekOfYear, value: 8, to: today) else {
             return []
         }
 
         let sixPMReference = createSixPMReference()
         var allWeeks: [ChartWeekData] = []
 
-        for weekOffset in 0..<26 {
-            guard let weekStart = calendar.date(byAdding: .weekOfYear, value: weekOffset, to: startDate) else {
-                continue
-            }
+        let weeksToGenerate = calendar.dateComponents([.weekOfYear], from: startDate, to: endDate).weekOfYear ?? 52
+        NSLog("[CONSISTENCY] 📊 weeklyChartData: Generating ~\(weeksToGenerate) weeks from \(startDate) to \(endDate)")
+        NSLog("[CONSISTENCY] 📊 weeklyChartData: viewModel has \(viewModel.weeklySleepAverages.count) weekly averages")
 
-            if let weekAverage = viewModel.weeklySleepAverages.first(where: {
-                calendar.isDate($0.weekStartDate, equalTo: weekStart, toGranularity: .day)
+        // Log database dates for debugging
+        for avg in viewModel.weeklySleepAverages.prefix(3) {
+            NSLog("[CONSISTENCY] 📊 DB Week: \(avg.weekStartDate) to \(avg.weekEndDate)")
+        }
+
+        var currentWeek = startDate
+        while currentWeek <= endDate {
+            let weekStart = calendar.startOfDay(for: currentWeek)
+
+            // Match using weekOfYear granularity (same as SleepAnalysisPrimary)
+            if let weekAverage = viewModel.weeklySleepAverages.first(where: { dbWeek in
+                calendar.isDate(dbWeek.weekStartDate, equalTo: weekStart, toGranularity: .weekOfYear)
             }) {
                 let bedtimeOffset = calculateOffsetFromSixPM(weekAverage.avgBedtime)
                 let waketimeOffset = calculateOffsetFromSixPM(weekAverage.avgWaketime)
 
                 let chartBedtime = calendar.date(byAdding: .minute, value: bedtimeOffset, to: sixPMReference) ?? sixPMReference
                 let chartWaketime = calendar.date(byAdding: .minute, value: waketimeOffset, to: sixPMReference) ?? sixPMReference
+
+                NSLog("[CONSISTENCY] ✅ Matched week \(weekStart): bedtime=\(bedtimeOffset)min, waketime=\(waketimeOffset)min")
 
                 allWeeks.append(ChartWeekData(
                     weekStartDate: weekStart,
@@ -452,17 +580,24 @@ struct SleepConsistencyPrimary: View {
                     hasData: false
                 ))
             }
+
+            guard let nextWeek = calendar.date(byAdding: .weekOfYear, value: 1, to: currentWeek) else { break }
+            currentWeek = nextWeek
         }
+
+        let weeksWithData = allWeeks.filter { $0.hasData }
+        NSLog("[CONSISTENCY] 📊 weeklyChartData: Generated \(allWeeks.count) weeks, \(weeksWithData.count) with data")
 
         return allWeeks
     }
 
     private var monthlyChartData: [ChartMonthData] {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         let today = calendar.startOfDay(for: Date())
-        guard let startDate = calendar.date(byAdding: .month, value: -12, to: today) else {
+        // Load 24 months (2 years) of data for scrolling
+        // Visible window is only 12 months, but we need more
+        guard let startDate = calendar.date(byAdding: .month, value: -24, to: today) else {
             return []
         }
 
@@ -471,24 +606,38 @@ struct SleepConsistencyPrimary: View {
             return []
         }
 
+        // For Y view: Load generously into future for forward scrolling (6 months ahead)
+        guard let endDate = calendar.date(byAdding: .month, value: 6, to: today) else {
+            return []
+        }
+
         let sixPMReference = createSixPMReference()
         var allMonths: [ChartMonthData] = []
 
-        for monthOffset in 0..<12 {
-            guard let monthStart = calendar.date(byAdding: .month, value: monthOffset, to: alignedStart) else {
-                continue
-            }
+        let monthsToGenerate = calendar.dateComponents([.month], from: alignedStart, to: endDate).month ?? 24
+        NSLog("[CONSISTENCY] 📊 monthlyChartData: Generating ~\(monthsToGenerate) months from \(alignedStart) to \(endDate)")
+        NSLog("[CONSISTENCY] 📊 monthlyChartData: viewModel has \(viewModel.monthlySleepAverages.count) monthly averages")
 
-            if let monthAverage = viewModel.monthlySleepAverages.first(where: {
-                let components1 = calendar.dateComponents([.year, .month], from: $0.monthStartDate)
-                let components2 = calendar.dateComponents([.year, .month], from: monthStart)
-                return components1.year == components2.year && components1.month == components2.month
+        // Log database dates for debugging
+        for avg in viewModel.monthlySleepAverages.prefix(3) {
+            NSLog("[CONSISTENCY] 📊 DB Month: \(avg.monthStartDate) to \(avg.monthEndDate)")
+        }
+
+        var currentMonth = alignedStart
+        while currentMonth <= endDate {
+            let monthStart = currentMonth
+
+            // Match using month granularity
+            if let monthAverage = viewModel.monthlySleepAverages.first(where: { dbMonth in
+                calendar.isDate(dbMonth.monthStartDate, equalTo: monthStart, toGranularity: .month)
             }) {
                 let bedtimeOffset = calculateOffsetFromSixPM(monthAverage.avgBedtime)
                 let waketimeOffset = calculateOffsetFromSixPM(monthAverage.avgWaketime)
 
                 let chartBedtime = calendar.date(byAdding: .minute, value: bedtimeOffset, to: sixPMReference) ?? sixPMReference
                 let chartWaketime = calendar.date(byAdding: .minute, value: waketimeOffset, to: sixPMReference) ?? sixPMReference
+
+                NSLog("[CONSISTENCY] ✅ Matched month \(monthStart): bedtime=\(bedtimeOffset)min, waketime=\(waketimeOffset)min")
 
                 allMonths.append(ChartMonthData(
                     monthStartDate: monthStart,
@@ -506,7 +655,13 @@ struct SleepConsistencyPrimary: View {
                     hasData: false
                 ))
             }
+
+            guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) else { break }
+            currentMonth = nextMonth
         }
+
+        let monthsWithData = allMonths.filter { $0.hasData }
+        NSLog("[CONSISTENCY] 📊 monthlyChartData: Generated \(allMonths.count) months, \(monthsWithData.count) with data")
 
         return allMonths
     }
@@ -561,18 +716,9 @@ struct SleepConsistencyPrimary: View {
     // MARK: - Helper Functions
 
     private func createSixPMReference() -> Date {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-
-        var components = DateComponents()
-        components.year = 2000
-        components.month = 1
-        components.day = 1
-        components.hour = 18
-        components.minute = 0
-        components.second = 0
-
-        return calendar.date(from: components) ?? Date()
+        let calendar = Calendar.current
+        let referenceDate = calendar.startOfDay(for: Date())
+        return calendar.date(bySettingHour: 18, minute: 0, second: 0, of: referenceDate) ?? Date()
     }
 
     private func calculateOffsetFromSixPM(_ time: Date) -> Int {
@@ -613,7 +759,7 @@ struct SleepConsistencyPrimary: View {
     private func getVisibleDomainLength() -> TimeInterval {
         switch selectedPeriod {
         case .week:
-            return 35 * 24 * 60 * 60
+            return 7 * 24 * 60 * 60
         case .month:
             return 33 * 24 * 60 * 60
         case .sixMonth:
@@ -632,11 +778,42 @@ struct SleepConsistencyPrimary: View {
 
     private func initializeScrollPosition() {
         let calendar = Calendar.current
-        let today = Date()
+        let today = calendar.startOfDay(for: Date())
         let visibleLength = getVisibleDomainLength()
 
-        let ninetyPercentOffset = visibleLength * 0.90
-        scrollPosition = calendar.date(byAdding: .second, value: -Int(ninetyPercentOffset), to: today) ?? today
+        // Calculate the boundary where the visible window should END
+        let visibleBoundary: Date
+
+        switch selectedPeriod {
+        case .week, .month:
+            // W/M views: visible boundary at noon tomorrow (12 hours past midnight today)
+            visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: today) ?? today
+
+        case .sixMonth:
+            // 6M view: visible boundary at Sunday of current week + 12 hours
+            var sundayComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
+            sundayComponents.weekday = 1 // Sunday
+            if let thisSunday = calendar.date(from: sundayComponents) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: thisSunday) ?? today
+            } else {
+                visibleBoundary = today
+            }
+
+        case .year:
+            // Y view: visible boundary at end of current month + 12 hours
+            let currentMonthComponents = calendar.dateComponents([.year, .month], from: today)
+            if let firstDayOfCurrentMonth = calendar.date(from: currentMonthComponents),
+               let firstDayOfNextMonth = calendar.date(byAdding: .month, value: 1, to: firstDayOfCurrentMonth) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: firstDayOfNextMonth) ?? today
+            } else {
+                visibleBoundary = today
+            }
+        }
+
+        // Scroll position = boundary - visible length (so window ends at boundary)
+        scrollPosition = calendar.date(byAdding: .second, value: -Int(visibleLength), to: visibleBoundary) ?? today
+
+        NSLog("[CONSISTENCY] 📍 initializeScrollPosition: period=\(selectedPeriod.rawValue), boundary=\(visibleBoundary), scrollPos=\(scrollPosition)")
     }
 
     private func isAnyItemSelected() -> Bool {
@@ -672,55 +849,39 @@ struct SleepConsistencyPrimary: View {
     }
 
     private func formatDateOnly(_ date: Date) -> String {
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
-        formatter.timeZone = TimeZone(identifier: "UTC")!
-
         return formatter.string(from: date)
     }
 
     private func formatWeekRange(_ start: Date, _ end: Date) -> String {
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-
+        let calendar = Calendar.current
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
-        formatter.timeZone = TimeZone(identifier: "UTC")!
 
-        let year = utcCalendar.component(.year, from: end)
+        let year = calendar.component(.year, from: end)
         return "\(formatter.string(from: start)) - \(formatter.string(from: end)), \(year)"
     }
 
     private func formatMonthRange(_ date: Date) -> String {
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
-        formatter.timeZone = TimeZone(identifier: "UTC")!
-
         return formatter.string(from: date)
     }
 
     private func visibleDateRangeString() -> String {
         let range = getVisibleDateRange()
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-
+        let calendar = Calendar.current
         let formatter = DateFormatter()
-        formatter.timeZone = TimeZone(identifier: "UTC")!
 
         switch selectedPeriod {
         case .week, .month:
             formatter.dateFormat = "MMM d"
-            let year = utcCalendar.component(.year, from: range.end)
+            let year = calendar.component(.year, from: range.end)
             return "\(formatter.string(from: range.start)) - \(formatter.string(from: range.end)), \(year)"
         case .sixMonth:
             formatter.dateFormat = "MMM d"
-            let year = utcCalendar.component(.year, from: range.end)
+            let year = calendar.component(.year, from: range.end)
             return "\(formatter.string(from: range.start)) - \(formatter.string(from: range.end)), \(year)"
         case .year:
             formatter.dateFormat = "MMM yyyy"
@@ -806,23 +967,23 @@ struct SleepConsistencyPrimary: View {
 
     private func getDailyBarColor(for dayData: ChartDayData) -> Color {
         if let date = selectedDate, Calendar.current.isDate(dayData.date, inSameDayAs: date) {
-            return color.opacity(0.6)
+            return barColor.opacity(0.6)
         }
-        return color
+        return barColor
     }
 
     private func getWeeklyBarColor(for weekData: ChartWeekData) -> Color {
         if let week = weekData.week, selectedWeek?.id == week.id {
-            return color.opacity(0.6)
+            return barColor.opacity(0.6)
         }
-        return color
+        return barColor
     }
 
     private func getMonthlyBarColor(for monthData: ChartMonthData) -> Color {
         if let month = monthData.month, selectedMonth?.id == month.id {
-            return color.opacity(0.6)
+            return barColor.opacity(0.6)
         }
-        return color
+        return barColor
     }
 
     private func handleChartTap(proxy: ChartProxy, location: CGPoint) {

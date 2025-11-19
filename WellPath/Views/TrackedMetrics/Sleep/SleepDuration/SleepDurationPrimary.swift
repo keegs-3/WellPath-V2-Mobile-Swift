@@ -13,6 +13,7 @@ struct SleepDurationPrimary: View {
     let color: Color
     @StateObject private var viewModel = SleepDurationPrimaryViewModel(metricId: "DISP_SLEEP_DURATION")
     @State private var showingDetailView = false
+    @State private var showingDataManagement = false
     @State private var selectedView: PrimaryView = .chart
 
     enum PrimaryView: String, CaseIterable {
@@ -59,6 +60,9 @@ struct SleepDurationPrimary: View {
                     SleepDurationDetail(screenId: "SCREEN_SLEEP")
                 }
             }
+            .sheet(isPresented: $showingDataManagement) {
+                SleepDataManagementView(color: color)
+            }
             .task {
                 await viewModel.loadPrimaryScreen()
             }
@@ -101,6 +105,22 @@ struct SleepDurationPrimary: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
+                .padding(.top, 16)
+
+                // Show All Data button
+                Button(action: {
+                    showingDataManagement = true
+                }) {
+                    Text("Show All Data")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(color)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(Color(uiColor: .secondarySystemGroupedBackground))

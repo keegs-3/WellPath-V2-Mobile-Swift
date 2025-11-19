@@ -4,27 +4,27 @@ import Supabase
 // Daily sleep time model for W/M views
 struct DailySleepTime: Identifiable {
     let id = UUID()
-    let date: Date // UTC date
-    let bedtime: Date // UTC timestamp for chart positioning
-    let waketime: Date // UTC timestamp for chart positioning
+    let date: Date
+    let bedtime: Date  // Absolute time (e.g., 11 PM)
+    let waketime: Date // Absolute time (e.g., 7 AM)
 }
 
 // Weekly average model for 6M view
 struct WeeklySleepAverage: Identifiable {
     let id = UUID()
-    let weekStartDate: Date // UTC start-of-day Monday
-    let weekEndDate: Date // UTC start-of-day Sunday
-    let avgBedtime: Date // UTC timestamp
-    let avgWaketime: Date // UTC timestamp
+    let weekStartDate: Date
+    let weekEndDate: Date
+    let avgBedtime: Date
+    let avgWaketime: Date
 }
 
 // Monthly average model for Y view
 struct MonthlySleepAverage: Identifiable {
     let id = UUID()
-    let monthStartDate: Date // UTC start-of-month
-    let monthEndDate: Date // UTC end-of-month
-    let avgBedtime: Date // UTC timestamp
-    let avgWaketime: Date // UTC timestamp
+    let monthStartDate: Date
+    let monthEndDate: Date
+    let avgBedtime: Date
+    let avgWaketime: Date
 }
 
 @MainActor
@@ -36,6 +36,7 @@ class SleepConsistencyViewModel: ObservableObject {
     @Published var error: String?
 
     private let supabase = SupabaseManager.shared.client
+    private let calendar = Calendar.current
 
     // MARK: - Cache Entry Models
 
@@ -43,49 +44,46 @@ class SleepConsistencyViewModel: ObservableObject {
         let aggMetricId: String
         let periodStart: Date
         let periodEnd: Date?
-        let value: Double?
         let valueTime: String?
 
         enum CodingKeys: String, CodingKey {
             case aggMetricId = "agg_metric_id"
             case periodStart = "period_start"
             case periodEnd = "period_end"
-            case value
             case valueTime = "value_time"
         }
     }
 
+    // MARK: - Parse Time String (exactly like SleepAnalysisPrimary)
+
+    private func parseTimeString(_ timeString: String) -> Date {
+        let components = timeString.split(separator: ":")
+
+        guard components.count >= 2,
+              let hour = Int(components[0]),
+              let minute = Int(components[1]) else {
+            // Default to 8 PM
+            return calendar.date(bySettingHour: 20, minute: 0, second: 0, of: Date()) ?? Date()
+        }
+
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+
     // MARK: - Daily Sleep Times (for W and M views)
 
-    func loadDailySleepTimes(daysBack: Int, daysAhead: Int) async {
+    func loadDailySleepTimes() async {
         isLoading = true
         error = nil
 
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-
-        // Calculate date range
-        let today = utcCalendar.startOfDay(for: Date())
-        guard let startDate = utcCalendar.date(byAdding: .day, value: -daysBack, to: today),
-              let endDate = utcCalendar.date(byAdding: .day, value: daysAhead, to: today) else {
-            error = "Failed to calculate date range"
-            isLoading = false
-            return
-        }
-
-        let startUTCString = startDate.ISO8601Format()
-        let endUTCString = endDate.ISO8601Format()
-
-        NSLog("[CONSISTENCY] 📊 loadDailySleepTimes: Range \(startUTCString) to \(endUTCString)")
-
         do {
-            guard let userId = getUserId() else {
-                error = "User ID not found"
+            guard let userId = try? await supabase.auth.session.user.id else {
+                NSLog("[CONSISTENCY] ⚠️ No user session available")
+                self.dailySleepTimes = []
                 isLoading = false
                 return
             }
 
-            // Query daily bedtime and waketime from aggregation_results_cache
+            // Fetch ALL daily data (no date filters for infinite scroll)
             let cacheResults: [AggCacheEntry] = try await supabase
                 .from("aggregation_results_cache")
                 .select("agg_metric_id, period_start, period_end, value_time")
@@ -93,8 +91,6 @@ class SleepConsistencyViewModel: ObservableObject {
                 .in("agg_metric_id", values: ["AGG_SLEEP_BEDTIME", "AGG_SLEEP_WAKETIME"])
                 .eq("period_type", value: "daily")
                 .eq("calculation_type_id", value: "AVG")
-                .gte("period_start", value: startUTCString)
-                .lte("period_start", value: endUTCString)
                 .order("period_start", ascending: true)
                 .execute()
                 .value
@@ -103,7 +99,7 @@ class SleepConsistencyViewModel: ObservableObject {
 
             // Group by date
             let groupedByDate = Dictionary(grouping: cacheResults) { entry -> Date in
-                utcCalendar.startOfDay(for: entry.periodStart)
+                calendar.startOfDay(for: entry.periodStart)
             }
 
             var sleepTimes: [DailySleepTime] = []
@@ -116,15 +112,13 @@ class SleepConsistencyViewModel: ObservableObject {
 
                 guard let bedtimeEntry = bedtimeEntries.first,
                       let waketimeEntry = waketimeEntries.first,
-                      let bedtimeTime = bedtimeEntry.valueTime,
-                      let waketimeTime = waketimeEntry.valueTime else {
-                    NSLog("[CONSISTENCY] ⚠️ Date \(date) missing valid sleep times")
+                      let bedtimeStr = bedtimeEntry.valueTime, !bedtimeStr.isEmpty,
+                      let waketimeStr = waketimeEntry.valueTime, !waketimeStr.isEmpty else {
                     continue
                 }
 
-                // Parse time strings and create Date objects
-                let bedtime = parseTimeString(bedtimeTime)
-                let waketime = parseTimeString(waketimeTime)
+                let bedtime = parseTimeString(bedtimeStr)
+                let waketime = parseTimeString(waketimeStr)
 
                 sleepTimes.append(DailySleepTime(
                     date: date,
@@ -146,36 +140,19 @@ class SleepConsistencyViewModel: ObservableObject {
 
     // MARK: - Weekly Sleep Averages (for 6M view)
 
-    func loadWeeklySleepAverages(weeksBack: Int, weeksAhead: Int) async {
+    func loadWeeklySleepAverages() async {
         isLoading = true
         error = nil
 
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-        utcCalendar.firstWeekday = 2 // Monday
-
-        // Calculate date range
-        let today = utcCalendar.startOfDay(for: Date())
-        guard let startDate = utcCalendar.date(byAdding: .weekOfYear, value: -weeksBack, to: today),
-              let endDate = utcCalendar.date(byAdding: .weekOfYear, value: weeksAhead, to: today) else {
-            error = "Failed to calculate date range"
-            isLoading = false
-            return
-        }
-
-        let startUTCString = startDate.ISO8601Format()
-        let endUTCString = endDate.ISO8601Format()
-
-        NSLog("[CONSISTENCY] 📊 loadWeeklySleepAverages: Range \(startUTCString) to \(endUTCString)")
-
         do {
-            guard let userId = getUserId() else {
-                error = "User ID not found"
+            guard let userId = try? await supabase.auth.session.user.id else {
+                NSLog("[CONSISTENCY] ⚠️ No user session available")
+                self.weeklySleepAverages = []
                 isLoading = false
                 return
             }
 
-            // Query weekly averages from aggregation_results_cache
+            // Fetch ALL weekly data (no date filters)
             let cacheResults: [AggCacheEntry] = try await supabase
                 .from("aggregation_results_cache")
                 .select("agg_metric_id, period_start, period_end, value_time")
@@ -183,8 +160,6 @@ class SleepConsistencyViewModel: ObservableObject {
                 .in("agg_metric_id", values: ["AGG_SLEEP_BEDTIME", "AGG_SLEEP_WAKETIME"])
                 .eq("period_type", value: "weekly")
                 .eq("calculation_type_id", value: "AVG")
-                .gte("period_start", value: startUTCString)
-                .lte("period_start", value: endUTCString)
                 .order("period_start", ascending: true)
                 .execute()
                 .value
@@ -193,7 +168,7 @@ class SleepConsistencyViewModel: ObservableObject {
 
             // Group by week start date
             let groupedByWeek = Dictionary(grouping: cacheResults) { entry -> Date in
-                utcCalendar.startOfDay(for: entry.periodStart)
+                entry.periodStart
             }
 
             var averages: [WeeklySleepAverage] = []
@@ -206,18 +181,15 @@ class SleepConsistencyViewModel: ObservableObject {
 
                 guard let bedtimeEntry = bedtimeEntries.first,
                       let waketimeEntry = waketimeEntries.first,
-                      let bedtimeTime = bedtimeEntry.valueTime,
-                      let waketimeTime = waketimeEntry.valueTime else {
-                    NSLog("[CONSISTENCY] ⚠️ Week \(weekStart) missing valid average times")
+                      let bedtimeStr = bedtimeEntry.valueTime, !bedtimeStr.isEmpty,
+                      let waketimeStr = waketimeEntry.valueTime, !waketimeStr.isEmpty else {
                     continue
                 }
 
-                // Use period_end if available, otherwise calculate
-                let weekEnd = bedtimeEntry.periodEnd ?? utcCalendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+                let weekEnd = bedtimeEntry.periodEnd ?? calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
 
-                // Parse time strings
-                let bedtime = parseTimeString(bedtimeTime)
-                let waketime = parseTimeString(waketimeTime)
+                let bedtime = parseTimeString(bedtimeStr)
+                let waketime = parseTimeString(waketimeStr)
 
                 averages.append(WeeklySleepAverage(
                     weekStartDate: weekStart,
@@ -240,35 +212,19 @@ class SleepConsistencyViewModel: ObservableObject {
 
     // MARK: - Monthly Sleep Averages (for Y view)
 
-    func loadMonthlySleepAverages(monthsBack: Int, monthsAhead: Int) async {
+    func loadMonthlySleepAverages() async {
         isLoading = true
         error = nil
 
-        var utcCalendar = Calendar.current
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
-
-        // Calculate date range
-        let today = utcCalendar.startOfDay(for: Date())
-        guard let startDate = utcCalendar.date(byAdding: .month, value: -monthsBack, to: today),
-              let endDate = utcCalendar.date(byAdding: .month, value: monthsAhead, to: today) else {
-            error = "Failed to calculate date range"
-            isLoading = false
-            return
-        }
-
-        let startUTCString = startDate.ISO8601Format()
-        let endUTCString = endDate.ISO8601Format()
-
-        NSLog("[CONSISTENCY] 📊 loadMonthlySleepAverages: Range \(startUTCString) to \(endUTCString)")
-
         do {
-            guard let userId = getUserId() else {
-                error = "User ID not found"
+            guard let userId = try? await supabase.auth.session.user.id else {
+                NSLog("[CONSISTENCY] ⚠️ No user session available")
+                self.monthlySleepAverages = []
                 isLoading = false
                 return
             }
 
-            // Query monthly averages from aggregation_results_cache
+            // Fetch ALL monthly data (no date filters)
             let cacheResults: [AggCacheEntry] = try await supabase
                 .from("aggregation_results_cache")
                 .select("agg_metric_id, period_start, period_end, value_time")
@@ -276,24 +232,36 @@ class SleepConsistencyViewModel: ObservableObject {
                 .in("agg_metric_id", values: ["AGG_SLEEP_BEDTIME", "AGG_SLEEP_WAKETIME"])
                 .eq("period_type", value: "monthly")
                 .eq("calculation_type_id", value: "AVG")
-                .gte("period_start", value: startUTCString)
-                .lte("period_start", value: endUTCString)
                 .order("period_start", ascending: true)
                 .execute()
                 .value
 
             NSLog("[CONSISTENCY] 📊 Found \(cacheResults.count) monthly cache entries")
 
-            // Group by month start date
+            // Group by month start date - use UTC to extract month, then convert to local
+            var utcCalendar = Calendar.current
+            utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+
             let groupedByMonth = Dictionary(grouping: cacheResults) { entry -> Date in
-                // Get start of month for period_start
-                let components = utcCalendar.dateComponents([.year, .month], from: entry.periodStart)
-                return utcCalendar.date(from: components) ?? entry.periodStart
+                // Extract year/month from UTC periodStart
+                var utcComponents = utcCalendar.dateComponents([.year, .month], from: entry.periodStart)
+                utcComponents.day = 1
+
+                // Create month start date in LOCAL timezone
+                var localComponents = DateComponents()
+                localComponents.year = utcComponents.year
+                localComponents.month = utcComponents.month
+                localComponents.day = 1
+
+                let monthDate = calendar.date(from: localComponents) ?? entry.periodStart
+                NSLog("[CONSISTENCY] 📅 Grouping: UTC periodStart=\(entry.periodStart) -> local month=\(monthDate)")
+                return monthDate
             }
 
             var averages: [MonthlySleepAverage] = []
 
             for monthStart in groupedByMonth.keys.sorted() {
+                NSLog("[CONSISTENCY] 📅 Processing month: \(monthStart)")
                 guard let entries = groupedByMonth[monthStart] else { continue }
 
                 let bedtimeEntries = entries.filter { $0.aggMetricId == "AGG_SLEEP_BEDTIME" }
@@ -301,18 +269,15 @@ class SleepConsistencyViewModel: ObservableObject {
 
                 guard let bedtimeEntry = bedtimeEntries.first,
                       let waketimeEntry = waketimeEntries.first,
-                      let bedtimeTime = bedtimeEntry.valueTime,
-                      let waketimeTime = waketimeEntry.valueTime else {
-                    NSLog("[CONSISTENCY] ⚠️ Month \(monthStart) missing valid average times")
+                      let bedtimeStr = bedtimeEntry.valueTime, !bedtimeStr.isEmpty,
+                      let waketimeStr = waketimeEntry.valueTime, !waketimeStr.isEmpty else {
                     continue
                 }
 
-                // Use period_end if available, otherwise calculate
-                let monthEnd = bedtimeEntry.periodEnd ?? utcCalendar.date(byAdding: DateComponents(month: 1, day: -1), to: monthStart) ?? monthStart
+                let monthEnd = bedtimeEntry.periodEnd ?? calendar.date(byAdding: DateComponents(month: 1, day: -1), to: monthStart) ?? monthStart
 
-                // Parse time strings
-                let bedtime = parseTimeString(bedtimeTime)
-                let waketime = parseTimeString(waketimeTime)
+                let bedtime = parseTimeString(bedtimeStr)
+                let waketime = parseTimeString(waketimeStr)
 
                 averages.append(MonthlySleepAverage(
                     monthStartDate: monthStart,
@@ -333,35 +298,4 @@ class SleepConsistencyViewModel: ObservableObject {
         isLoading = false
     }
 
-    // MARK: - Helper Functions
-
-    private func getUserId() -> String? {
-        return UserDefaults.standard.string(forKey: "userId")
-    }
-
-    private func parseTimeString(_ timeString: String) -> Date {
-        // Parse "HH:mm:ss" or "HH:mm" format
-        // Returns a Date with time component for chart positioning
-        let components = timeString.split(separator: ":").map { Int($0) ?? 0 }
-        guard components.count >= 2 else {
-            return Date() // Fallback
-        }
-
-        let hour = components[0]
-        let minute = components[1]
-
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-
-        // Create date with time component
-        var dateComponents = DateComponents()
-        dateComponents.year = 2000
-        dateComponents.month = 1
-        dateComponents.day = 1
-        dateComponents.hour = hour
-        dateComponents.minute = minute
-        dateComponents.second = 0
-
-        return calendar.date(from: dateComponents) ?? Date()
-    }
 }

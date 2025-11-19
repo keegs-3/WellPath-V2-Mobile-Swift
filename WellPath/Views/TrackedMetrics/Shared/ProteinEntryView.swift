@@ -208,51 +208,62 @@ struct ProteinEntryView: View {
             let components = calendar.dateComponents([.year, .month, .day], from: selectedDateTime)
             let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
 
-            // Insert protein grams entry
-            try await supabase
-                .from("patient_data_entries")
-                .insert([
+            // Get device timezone
+            let deviceTimezone = TimeZone.current.identifier
+
+            // =============================================================
+            // INSERT ALL PROTEIN FIELDS IN A SINGLE BATCH
+            // =============================================================
+            // This ensures all entries are inserted together for proper
+            // aggregation trigger processing
+
+            // Build array of entries - always include protein grams
+            var batchEntries: [[String: String]] = [
+                [
                     "patient_id": userId,
                     "field_id": "DEF_PROTEIN_GRAMS",
                     "entry_date": dateString,
                     "entry_timestamp": timestampString,
                     "value_quantity": "\(amountValue)",
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
-                ])
-                .execute()
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
+                ]
+            ]
 
-            // Optional: Insert protein type
+            // Add optional type entry
             if !selectedType.isEmpty {
-                try await supabase
-                    .from("patient_data_entries")
-                    .insert([
-                        "patient_id": userId,
-                        "field_id": "DEF_PROTEIN_TYPE",
-                        "entry_date": dateString,
-                        "entry_timestamp": timestampString,
-                        "value_reference": selectedType,
-                        "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId
-                    ])
-                    .execute()
+                batchEntries.append([
+                    "patient_id": userId,
+                    "field_id": "DEF_PROTEIN_TYPE",
+                    "entry_date": dateString,
+                    "entry_timestamp": timestampString,
+                    "value_reference": selectedType,
+                    "source": "wellpath_input",
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
+                ])
             }
 
-            // Optional: Insert meal timing
+            // Add optional timing entry
             if !selectedTiming.isEmpty {
-                try await supabase
-                    .from("patient_data_entries")
-                    .insert([
-                        "patient_id": userId,
-                        "field_id": "DEF_PROTEIN_TIMING",
-                        "entry_date": dateString,
-                        "entry_timestamp": timestampString,
-                        "value_reference": selectedTiming,
-                        "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId
-                    ])
-                    .execute()
+                batchEntries.append([
+                    "patient_id": userId,
+                    "field_id": "DEF_PROTEIN_TIMING",
+                    "entry_date": dateString,
+                    "entry_timestamp": timestampString,
+                    "value_reference": selectedTiming,
+                    "source": "wellpath_input",
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
+                ])
             }
+
+            // Insert all entries in a single batch
+            try await supabase
+                .from("patient_data_entries")
+                .insert(batchEntries)
+                .execute()
 
             await MainActor.run {
                 dismiss()

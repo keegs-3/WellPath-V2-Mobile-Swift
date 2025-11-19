@@ -207,6 +207,9 @@ struct WholeGrainsEntryView: View {
             let components = calendar.dateComponents([.year, .month, .day], from: selectedDateTime)
             let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
 
+            // Get device timezone
+            let deviceTimezone = TimeZone.current.identifier
+
             // Insert whole grains servings entry
             try await supabase
                 .from("patient_data_entries")
@@ -217,7 +220,8 @@ struct WholeGrainsEntryView: View {
                     "entry_timestamp": timestampString,
                     "value_quantity": "\(amountValue)",
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
                 ])
                 .execute()
 
@@ -232,7 +236,8 @@ struct WholeGrainsEntryView: View {
                         "entry_timestamp": timestampString,
                         "value_reference": selectedType,
                         "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId
+                        "event_instance_id": eventInstanceId,
+                        "user_timezone": deviceTimezone
                     ])
                     .execute()
             }
@@ -248,7 +253,8 @@ struct WholeGrainsEntryView: View {
                         "entry_timestamp": timestampString,
                         "value_reference": selectedTiming,
                         "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId
+                        "event_instance_id": eventInstanceId,
+                        "user_timezone": deviceTimezone
                     ])
                     .execute()
             }

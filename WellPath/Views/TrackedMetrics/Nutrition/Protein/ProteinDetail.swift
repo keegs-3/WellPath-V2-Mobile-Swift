@@ -31,7 +31,9 @@ struct ProteinDetail: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content based on selected tab (each tab handles its own scrolling)
             Group {
@@ -72,7 +74,7 @@ struct ProteinDetail: View {
             .ignoresSafeArea()
         )
         .navigationTitle("Protein Details")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -97,7 +99,9 @@ struct ProteinTimingView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content
             if selectedView == .chart {
@@ -189,7 +193,9 @@ struct ProteinTypeView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content
             if selectedView == .chart {
@@ -302,7 +308,9 @@ struct ProteinPerBodyWeightView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content
             if selectedView == .chart {

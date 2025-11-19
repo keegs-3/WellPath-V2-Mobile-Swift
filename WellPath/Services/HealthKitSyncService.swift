@@ -49,10 +49,13 @@ class HealthKitSyncService: ObservableObject {
             try await syncSleep()
 
             // Update last sync date
-            lastSyncDate = Date()
+            let syncEndDate = Date()
+            let syncStartDate = lastSyncDate ?? syncEndDate.addingTimeInterval(-7*24*60*60)
+            lastSyncDate = syncEndDate
             saveLastSyncDate()
 
             print("✅ HealthKit sync completed successfully")
+            print("ℹ️ Aggregations are automatically calculated via database triggers")
 
         } catch {
             syncError = error.localizedDescription
@@ -127,17 +130,25 @@ class HealthKitSyncService: ObservableObject {
             throw HealthKitSyncError.dataTypeNotAvailable
         }
 
-        let samples = try await fetchCategorySamples(type: sleepType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
+        guard let userId = try? await supabase.auth.session.user.id else {
+            throw HealthKitSyncError.notAuthenticated
+        }
 
-        // Get field IDs for sleep period fields
-        let startFieldId = try await mapper.getFieldId(for: "HKCategoryTypeIdentifierSleepAnalysis")
-        let endFieldId = startFieldId // Same for now
-        let typeFieldId = startFieldId // Same for now
+        let samples = try await fetchCategorySamples(type: sleepType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
         // Get reference types for sleep stages
         let sleepStageTypes = try await fetchSleepStageTypes()
 
+        // Batch all sleep entries
+        var sleepEntries: [PatientSleepDataEntry] = []
+        let deviceTimezone = TimeZone.current.identifier
+
         for sample in samples {
+            // Skip if already synced
+            if try await isSleepAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+                continue
+            }
+
             let sleepValue = HKCategoryValueSleepAnalysis(rawValue: sample.value)
             let healthKitIdentifier = mapSleepValueToHealthKitIdentifier(sleepValue)
 
@@ -147,17 +158,34 @@ class HealthKitSyncService: ObservableObject {
                 continue
             }
 
-            // Write sleep period entry (start, end, type) with same event_instance_id
-            try await writeSleepPeriod(
-                sample: sample,
-                stageTypeId: stageType.id,
-                startFieldId: startFieldId,
-                endFieldId: endFieldId,
-                typeFieldId: typeFieldId
-            )
+            let eventInstanceId = UUID()
+
+            // Create sleep data entry
+            sleepEntries.append(PatientSleepDataEntry(
+                patientId: userId,
+                eventInstanceId: eventInstanceId,
+                periodStart: sample.startDate,
+                periodEnd: sample.endDate,
+                periodTypeId: stageType.id.uuidString,
+                source: "healthkit",
+                userTimezone: deviceTimezone,
+                metadata: [
+                    "healthkit_uuid": .string(sample.uuid.uuidString),
+                    "healthkit_source_name": .string(sample.sourceRevision.source.name)
+                ]
+            ))
         }
 
-        print("✅ Synced \(samples.count) sleep periods")
+        // Bulk insert all sleep entries - statement-level trigger processes them in batch
+        if !sleepEntries.isEmpty {
+            try await supabase
+                .from("patient_sleep_data_entries")
+                .insert(sleepEntries)
+                .execute()
+        }
+
+        print("✅ Synced \(sleepEntries.count) sleep periods")
+        print("ℹ️ Events, sessions, and aggregations calculated automatically by database triggers")
     }
 
     // MARK: - HealthKit Queries
@@ -237,7 +265,8 @@ class HealthKitSyncService: ObservableObject {
                 source: "healthkit",
                 healthkitUuid: sample.uuid.uuidString,
                 healthkitSourceName: sample.sourceRevision.source.name,
-                eventInstanceId: nil
+                eventInstanceId: nil,
+                userTimezone: sampleTimeZone.identifier
             ))
         }
 
@@ -249,74 +278,6 @@ class HealthKitSyncService: ObservableObject {
         }
     }
 
-    private func writeSleepPeriod(sample: HKCategorySample, stageTypeId: UUID, startFieldId: String, endFieldId: String, typeFieldId: String) async throws {
-        guard let userId = try? await supabase.auth.session.user.id else {
-            throw HealthKitSyncError.notAuthenticated
-        }
-
-        // Skip if already synced
-        if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
-            return
-        }
-
-        let eventInstanceId = UUID().uuidString
-        let dateFormatter = ISO8601DateFormatter()
-
-        // Extract date using ORIGINAL timezone from HealthKit metadata
-        let sampleTimeZone = getOriginalTimeZone(from: sample)
-        let dateOnlyFormatter = DateFormatter()
-        dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
-        dateOnlyFormatter.timeZone = sampleTimeZone  // Use original timezone
-        let dateString = dateOnlyFormatter.string(from: sample.startDate)
-
-        let entries: [PatientDataEntry] = [
-            PatientDataEntry(
-                patientId: userId.uuidString,
-                fieldId: startFieldId,
-                entryDate: dateString,
-                entryTimestamp: dateFormatter.string(from: sample.startDate),
-                valueQuantity: nil,
-                valueTimestamp: dateFormatter.string(from: sample.startDate),
-                valueReference: nil,
-                source: "healthkit",
-                healthkitUuid: sample.uuid.uuidString + "_start",
-                healthkitSourceName: sample.sourceRevision.source.name,
-                eventInstanceId: eventInstanceId
-            ),
-            PatientDataEntry(
-                patientId: userId.uuidString,
-                fieldId: endFieldId,
-                entryDate: dateString,
-                entryTimestamp: dateFormatter.string(from: sample.endDate),
-                valueQuantity: nil,
-                valueTimestamp: dateFormatter.string(from: sample.endDate),
-                valueReference: nil,
-                source: "healthkit",
-                healthkitUuid: sample.uuid.uuidString + "_end",
-                healthkitSourceName: sample.sourceRevision.source.name,
-                eventInstanceId: eventInstanceId
-            ),
-            PatientDataEntry(
-                patientId: userId.uuidString,
-                fieldId: typeFieldId,
-                entryDate: dateString,
-                entryTimestamp: dateFormatter.string(from: sample.startDate),
-                valueQuantity: nil,
-                valueTimestamp: nil,
-                valueReference: stageTypeId.uuidString,
-                source: "healthkit",
-                healthkitUuid: sample.uuid.uuidString + "_type",
-                healthkitSourceName: sample.sourceRevision.source.name,
-                eventInstanceId: eventInstanceId
-            )
-        ]
-
-        _ = try await supabase
-            .from("patient_data_entries")
-            .insert(entries)
-            .execute()
-    }
-
     private func isAlreadySynced(healthKitUUID: String) async throws -> Bool {
         let count: Int = try await supabase
             .from("patient_data_entries")
@@ -326,6 +287,18 @@ class HealthKitSyncService: ObservableObject {
             .count ?? 0
 
         return count > 0
+    }
+
+    private func isSleepAlreadySynced(healthKitUUID: String) async throws -> Bool {
+        // Check if this HealthKit UUID exists in metadata
+        let response: [PatientSleepDataEntry] = try await supabase
+            .from("patient_sleep_data_entries")
+            .select()
+            .contains("metadata", value: ["healthkit_uuid": .string(healthKitUUID)])
+            .execute()
+            .value
+
+        return !response.isEmpty
     }
 
     // MARK: - Helper Methods
@@ -346,8 +319,9 @@ class HealthKitSyncService: ObservableObject {
 
     private func fetchSleepStageTypes() async throws -> [SleepStageType] {
         return try await supabase
-            .from("def_ref_sleep_period_types")
-            .select()
+            .from("data_entry_fields_reference")
+            .select("id, reference_key")
+            .eq("reference_category", value: "sleep_period_types")
             .execute()
             .value
     }
@@ -400,6 +374,7 @@ struct PatientDataEntry: Codable {
     let healthkitUuid: String
     let healthkitSourceName: String
     let eventInstanceId: String?
+    let userTimezone: String?
 
     enum CodingKeys: String, CodingKey {
         case patientId = "patient_id"
@@ -413,18 +388,37 @@ struct PatientDataEntry: Codable {
         case healthkitUuid = "healthkit_uuid"
         case healthkitSourceName = "healthkit_source_name"
         case eventInstanceId = "event_instance_id"
+        case userTimezone = "user_timezone"
     }
 }
 
 struct SleepStageType: Codable {
     let id: UUID
-    let periodName: String
-    let healthkitIdentifier: String
+    let referenceKey: String
 
     enum CodingKeys: String, CodingKey {
         case id
-        case periodName = "period_name"
-        case healthkitIdentifier = "healthkit_identifier"
+        case referenceKey = "reference_key"
+    }
+
+    var healthkitIdentifier: String {
+        // Map reference_key to HealthKit identifier
+        switch referenceKey.lowercased() {
+        case "in_bed":
+            return "HKCategoryValueSleepAnalysisInBed"
+        case "asleep":
+            return "HKCategoryValueSleepAnalysisAsleepUnspecified"
+        case "awake":
+            return "HKCategoryValueSleepAnalysisAwake"
+        case "core":
+            return "HKCategoryValueSleepAnalysisAsleepCore"
+        case "deep":
+            return "HKCategoryValueSleepAnalysisAsleepDeep"
+        case "rem":
+            return "HKCategoryValueSleepAnalysisAsleepREM"
+        default:
+            return "HKCategoryValueSleepAnalysisAsleepUnspecified"
+        }
     }
 }
 

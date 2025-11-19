@@ -129,6 +129,9 @@ struct StepsEntryView: View {
             let components = calendar.dateComponents([.year, .month, .day], from: selectedDateTime)
             let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
 
+            // Get device timezone
+            let deviceTimezone = TimeZone.current.identifier
+
             // Insert step count entry
             try await supabase
                 .from("patient_data_entries")
@@ -139,7 +142,8 @@ struct StepsEntryView: View {
                     "entry_timestamp": timestampString,
                     "value_quantity": "\(countValue)",
                     "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId
+                    "event_instance_id": eventInstanceId,
+                    "user_timezone": deviceTimezone
                 ])
                 .execute()
 

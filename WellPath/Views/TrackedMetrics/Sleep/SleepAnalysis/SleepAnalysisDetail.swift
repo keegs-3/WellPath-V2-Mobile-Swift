@@ -40,7 +40,7 @@ struct SleepDetailView: View {
                 case .amounts:
                     AmountsTabView(color: color)
                 case .percentages:
-                    PercentagesTabView(color: color)
+                    SleepPercentagesChart(color: color)
                 case .comparisons:
                     ComparisonsTabView(color: color)
                 }
@@ -73,7 +73,7 @@ struct SleepDetailView: View {
             .ignoresSafeArea()
         )
         .navigationTitle("Sleep Analysis")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -151,8 +151,7 @@ struct AmountsTabView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 4)
+            .padding()
             .onChange(of: selectedPeriod) { _, newPeriod in
                 selectedStage = nil // Reset stage selection on period change
                 Task {
@@ -176,7 +175,15 @@ struct AmountsTabView: View {
                 // Chart content based on period (using SleepAnalysisPrimary chart views)
                 switch selectedPeriod {
                 case .day:
-                    DayViewChart(color: color, viewModel: chartViewModel, selectedStage: $selectedStage, height: 200)
+                    DayViewChart(
+                        color: color,
+                        viewModel: chartViewModel,
+                        selectedStage: $selectedStage,
+                        onVisibleRangeChange: { start, end in
+                            visibleDateRange = (start, end)
+                        },
+                        height: 200
+                    )
                 case .week:
                     ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 200)
                 case .month:
@@ -223,6 +230,7 @@ struct AmountsTabView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 20) // Extra bottom padding to ensure last item is visible
             }
         }
         .background(Color(uiColor: .systemGroupedBackground))
@@ -297,14 +305,17 @@ struct AmountsTabView: View {
         let visibleSegments: [SleepStageSegment]
 
         if selectedPeriod == .day {
-            // For day view: use only the current session's date
-            // Find the date that's currently being displayed (first session or today)
-            if let firstSession = chartViewModel.sleepSessions.first {
-                // Use segments from this specific session only
-                visibleSegments = firstSession.segments
+            // For day view: use only the currently visible session's segments
+            if let range = visibleDateRange {
+                // Find the session that matches the visible date range
+                let visibleSession = chartViewModel.sleepSessions.first { session in
+                    let sessionDate = calendar.startOfDay(for: session.date)
+                    return sessionDate >= range.start && sessionDate < range.end
+                }
+                visibleSegments = visibleSession?.segments ?? []
             } else {
-                // No sessions loaded yet
-                visibleSegments = []
+                // Fallback: use first session if no range set yet
+                visibleSegments = chartViewModel.sleepSessions.first?.segments ?? []
             }
         } else if let range = visibleDateRange {
             // For W/M/6M views: filter by visible date range from scroll
@@ -374,239 +385,6 @@ struct AmountsTabView: View {
             return "\(hours) hr \(remainingMinutes) min"
         } else {
             return "\(remainingMinutes) min"
-        }
-    }
-}
-
-// MARK: - Percentages Tab View
-
-struct PercentagesTabView: View {
-    let color: Color
-    @StateObject private var viewModel = SleepDetailViewModel()
-    @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_SLEEP_ANALYSIS_PERCENTAGES")
-    @State private var selectedView: PercentagesView = .chart
-    @State private var selectedPeriod: PeriodType = .weekly
-    @State private var selectedStage: SleepStage?
-
-    enum PercentagesView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // View picker (Chart/About)
-            Picker("View", selection: $selectedView) {
-                ForEach(PercentagesView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
-            // Content
-            if selectedView == .chart {
-                chartView
-            } else {
-                aboutView
-            }
-        }
-        .task {
-            await viewModel.loadSleepData(for: selectedPeriod)
-            await educationViewModel.loadEducation()
-        }
-    }
-
-    private var chartView: some View {
-        VStack(spacing: 0) {
-            // Period selector (D/W/M/6M)
-            Picker("Period", selection: $selectedPeriod) {
-                ForEach([PeriodType.daily, .weekly, .monthly, .sixMonth], id: \.self) { period in
-                    Text(period.rawValue).tag(period)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .onChange(of: selectedPeriod) { _, newPeriod in
-                selectedStage = nil
-                Task {
-                    await viewModel.loadSleepData(for: newPeriod)
-                }
-            }
-
-            // Fixed chart at top
-            if viewModel.isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading sleep data...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 300)
-            } else if !viewModel.sleepStageData.isEmpty {
-                VStack(spacing: 16) {
-                    // Date range label
-                    Text(viewModel.dateRangeLabel(for: selectedPeriod))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 16)
-
-                    // Percentage bar chart
-                    Chart {
-                        ForEach(stagePercentages, id: \.stage) { item in
-                            BarMark(
-                                x: .value("Stage", stageName(for: item.stage)),
-                                y: .value("Percentage", item.percentage)
-                            )
-                            .foregroundStyle(
-                                selectedStage == nil || selectedStage == item.stage
-                                    ? item.stage.color
-                                    : item.stage.color.opacity(0.3)
-                            )
-                        }
-                    }
-                    .frame(height: 200)
-                    .chartYAxis {
-                        AxisMarks(position: .leading) { value in
-                            AxisValueLabel {
-                                if let percent = value.as(Double.self) {
-                                    Text("\(Int(percent))%")
-                                        .font(.caption2)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-
-            // Scrollable stage selectors below chart
-            ScrollView {
-                VStack(spacing: 12) {
-                    ForEach(stagePercentages, id: \.stage) { item in
-                        Button(action: {
-                            if selectedStage == item.stage {
-                                selectedStage = nil
-                            } else {
-                                selectedStage = item.stage
-                            }
-                        }) {
-                            HStack {
-                                Circle()
-                                    .fill(item.stage.color)
-                                    .frame(width: 12, height: 12)
-
-                                Text(stageName(for: item.stage))
-                                    .font(.subheadline)
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Text("\(Int(item.percentage))%")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                            }
-                            .padding()
-                            .background(
-                                selectedStage == item.stage
-                                    ? item.stage.color.opacity(0.3)
-                                    : Color(uiColor: .secondarySystemGroupedBackground)
-                            )
-                            .cornerRadius(10)
-                        }
-                    }
-                }
-                .padding()
-            }
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-    }
-
-    private var aboutView: some View {
-        ScrollView {
-            if let education = educationViewModel.education {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let about = education.aboutContent {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(color)
-                                Text("About Sleep Stage Percentages")
-                                    .font(.headline)
-                            }
-                            Text(about)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let impact = education.longevityImpact {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "heart.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Health Impact")
-                                    .font(.headline)
-                            }
-                            Text(impact)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let tips = education.quickTips {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lightbulb.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Quick Tips")
-                                    .font(.headline)
-                            }
-
-                            ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text("\(index + 1).")
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(color)
-                                    Text(tip)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding()
-            }
-        }
-    }
-
-    // MARK: - Helpers
-
-    private var stagePercentages: [(stage: SleepStage, percentage: Double)] {
-        let total = viewModel.sleepStageData.reduce(0.0) { $0 + $1.duration }
-        guard total > 0 else { return [] }
-
-        let stages: [SleepStage] = [.awake, .rem, .core, .deep]
-        return stages.map { stage in
-            let duration = viewModel.sleepStageData
-                .filter { $0.stage == stage }
-                .reduce(0.0) { $0 + $1.duration }
-            let percentage = (duration / total) * 100
-            return (stage, percentage)
-        }.filter { $0.percentage > 0 }
-    }
-
-    private func stageName(for stage: SleepStage) -> String {
-        switch stage {
-        case .awake: return "Awake"
-        case .rem: return "REM"
-        case .core: return "Core"
-        case .deep: return "Deep"
-        default: return ""
         }
     }
 }
@@ -949,56 +727,52 @@ class SleepDetailViewModel: ObservableObject {
                 }
             }
 
-            let entries: [SleepDataEntry] = try await supabase
-                .from("patient_data_entries")
-                .select("field_id, value_timestamp, value_reference, event_instance_id")
+            // Query patient_sleep_data_entries directly
+            let sleepDataEntries: [PatientSleepDataEntry] = try await supabase
+                .from("patient_sleep_data_entries")
+                .select()
                 .eq("patient_id", value: userId)
-                .gte("value_timestamp", value: startDate.ISO8601Format())
-                .lte("value_timestamp", value: now.ISO8601Format())
-                .in("field_id", values: [
-                    "DEF_SLEEP_PERIOD_START",
-                    "DEF_SLEEP_PERIOD_END",
-                    "DEF_SLEEP_PERIOD_TYPE"
-                ])
-                .order("value_timestamp", ascending: true)
+                .gte("period_start", value: startDate.ISO8601Format())
+                .lte("period_end", value: now.ISO8601Format())
+                .order("period_start", ascending: true)
                 .execute()
                 .value
 
-            // Fetch period types
+            guard !sleepDataEntries.isEmpty else {
+                sleepStageData = []
+                isLoading = false
+                return
+            }
+
+            // Fetch period type references
+            let uniqueTypeIds = Set(sleepDataEntries.compactMap { $0.periodTypeId }).compactMap { UUID(uuidString: $0) }
+
             struct PeriodTypeData: Codable {
                 let id: String
-                let periodName: String
+                let referenceKey: String
 
                 enum CodingKeys: String, CodingKey {
                     case id
-                    case periodName = "period_name"
+                    case referenceKey = "reference_key"
                 }
             }
 
-            let periodTypes: [PeriodTypeData] = try await supabase
-                .from("def_ref_sleep_period_types")
-                .select("id, period_name")
-                .execute()
-                .value
+            var typeMap: [String: String] = [:]
+            if !uniqueTypeIds.isEmpty {
+                let periodTypes: [PeriodTypeData] = try await supabase
+                    .from("data_entry_fields_reference")
+                    .select("id, reference_key")
+                    .in("id", values: uniqueTypeIds.map { $0.uuidString })
+                    .execute()
+                    .value
 
-            let typeMap = Dictionary(uniqueKeysWithValues: periodTypes.map { ($0.id, $0.periodName) })
-
-            // Group and process
-            var instanceMap: [String: [SleepDataEntry]] = [:]
-            for entry in entries {
-                instanceMap[entry.eventInstanceId, default: []].append(entry)
+                typeMap = Dictionary(uniqueKeysWithValues: periodTypes.map { ($0.id, $0.referenceKey) })
             }
 
             var stageData: [SleepStageDataPoint] = []
 
-            for (_, instanceEntries) in instanceMap {
-                guard instanceEntries.count == 3,
-                      let startEntry = instanceEntries.first(where: { $0.fieldId == "DEF_SLEEP_PERIOD_START" }),
-                      let endEntry = instanceEntries.first(where: { $0.fieldId == "DEF_SLEEP_PERIOD_END" }),
-                      let typeEntry = instanceEntries.first(where: { $0.fieldId == "DEF_SLEEP_PERIOD_TYPE" }),
-                      let startTime = startEntry.valueTimestamp,
-                      let endTime = endEntry.valueTimestamp,
-                      let typeId = typeEntry.valueReference,
+            for entry in sleepDataEntries {
+                guard let typeId = entry.periodTypeId,
                       let periodName = typeMap[typeId] else {
                     continue
                 }
@@ -1006,7 +780,7 @@ class SleepDetailViewModel: ObservableObject {
                 let stage: SleepStage
                 switch periodName.lowercased() {
                 case "in_bed": stage = .inBed
-                case "unspecified": stage = .asleepUnspecified
+                case "asleep": stage = .asleep
                 case "core": stage = .core
                 case "deep": stage = .deep
                 case "rem": stage = .rem
@@ -1016,8 +790,8 @@ class SleepDetailViewModel: ObservableObject {
 
                 stageData.append(SleepStageDataPoint(
                     stage: stage,
-                    startDate: startTime,
-                    endDate: endTime
+                    startDate: entry.periodStart,
+                    endDate: entry.periodEnd
                 ))
             }
 

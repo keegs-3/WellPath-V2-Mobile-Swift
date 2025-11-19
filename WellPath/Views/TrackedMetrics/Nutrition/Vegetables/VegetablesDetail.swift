@@ -27,7 +27,9 @@ struct VegetablesDetail: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content based on selected tab (each tab handles its own scrolling)
             Group {
@@ -66,7 +68,7 @@ struct VegetablesDetail: View {
             .ignoresSafeArea()
         )
         .navigationTitle("Vegetables Details")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -91,7 +93,9 @@ struct VegetablesTimingView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content
             if selectedView == .chart {
@@ -183,7 +187,9 @@ struct VegetablesTypeView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
 
             // Content
             if selectedView == .chart {
