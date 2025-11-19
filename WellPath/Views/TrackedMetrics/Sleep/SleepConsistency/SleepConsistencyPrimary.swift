@@ -802,13 +802,20 @@ struct SleepConsistencyPrimary: View {
             }
 
         case .sixMonth:
-            // 6M view: visible boundary at end of current week (Sunday) + 12 hours
-            // Find the next Sunday at or after today
+            // 6M view: visible boundary at end of current week (end of Sunday) + 12 hours
+            // Find the upcoming Sunday (or Monday if today IS Sunday)
             let currentWeekday = calendar.component(.weekday, from: today)
-            // weekday 1 = Sunday
-            let daysUntilSunday = currentWeekday == 1 ? 0 : (8 - currentWeekday)  // Days until Sunday (0 if today is Sunday)
-            if let thisSunday = calendar.date(byAdding: .day, value: daysUntilSunday, to: today) {
-                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: thisSunday) ?? today
+            // weekday 1 = Sunday, weekday 2 = Monday
+            let daysUntilEndOfWeek: Int
+            if currentWeekday == 1 {
+                // Today is Sunday - go to Monday (start of next week)
+                daysUntilEndOfWeek = 1
+            } else {
+                // Go to next Sunday
+                daysUntilEndOfWeek = (8 - currentWeekday)
+            }
+            if let endOfWeek = calendar.date(byAdding: .day, value: daysUntilEndOfWeek, to: today) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: endOfWeek) ?? today
             } else {
                 visibleBoundary = today
             }
