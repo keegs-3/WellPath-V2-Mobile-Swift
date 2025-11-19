@@ -790,11 +790,11 @@ struct SleepConsistencyPrimary: View {
             visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: today) ?? today
 
         case .sixMonth:
-            // 6M view: visible boundary at Sunday of current week + 12 hours
-            var sundayComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
-            sundayComponents.weekday = 1 // Sunday
-            if let thisSunday = calendar.date(from: sundayComponents) {
-                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: thisSunday) ?? today
+            // 6M view: visible boundary at end of current week (Saturday) + 12 hours
+            var saturdayComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
+            saturdayComponents.weekday = 7 // Saturday (end of Sun-Sat week)
+            if let thisSaturday = calendar.date(from: saturdayComponents) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: thisSaturday) ?? today
             } else {
                 visibleBoundary = today
             }
