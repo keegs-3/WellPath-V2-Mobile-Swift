@@ -785,16 +785,30 @@ struct SleepConsistencyPrimary: View {
         let visibleBoundary: Date
 
         switch selectedPeriod {
-        case .week, .month:
-            // W/M views: visible boundary at noon tomorrow (12 hours past midnight today)
-            visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: today) ?? today
+        case .week:
+            // W view: visible boundary at noon tomorrow (12 hours past tomorrow's start)
+            if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: tomorrow) ?? today
+            } else {
+                visibleBoundary = today
+            }
+
+        case .month:
+            // M view: visible boundary at noon tomorrow (12 hours past tomorrow's start)
+            if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: tomorrow) ?? today
+            } else {
+                visibleBoundary = today
+            }
 
         case .sixMonth:
-            // 6M view: visible boundary at end of current week (Saturday) + 12 hours
-            var saturdayComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
-            saturdayComponents.weekday = 7 // Saturday (end of Sun-Sat week)
-            if let thisSaturday = calendar.date(from: saturdayComponents) {
-                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: thisSaturday) ?? today
+            // 6M view: visible boundary at end of current week (Sunday) + 12 hours
+            // Find the next Sunday at or after today
+            let currentWeekday = calendar.component(.weekday, from: today)
+            // weekday 1 = Sunday
+            let daysUntilSunday = currentWeekday == 1 ? 0 : (8 - currentWeekday)  // Days until Sunday (0 if today is Sunday)
+            if let thisSunday = calendar.date(byAdding: .day, value: daysUntilSunday, to: today) {
+                visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: thisSunday) ?? today
             } else {
                 visibleBoundary = today
             }
