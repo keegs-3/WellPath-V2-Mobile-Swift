@@ -204,7 +204,9 @@ struct SleepConsistencyPrimary: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Avg Bedtime").font(.caption).foregroundColor(.secondary)
+                    // Show "Bedtime" when a specific day is selected, "Avg Bedtime" for averages
+                    Text(getSelectedData() != nil ? "Bedtime" : "Avg Bedtime")
+                        .font(.caption).foregroundColor(.secondary)
                     if let selectedData = getSelectedData() {
                         Text(formatTime(selectedData.bedtime))
                             .font(.title2).fontWeight(.semibold)
@@ -218,7 +220,9 @@ struct SleepConsistencyPrimary: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Avg Waketime").font(.caption).foregroundColor(.secondary)
+                    // Show "Waketime" when a specific day is selected, "Avg Waketime" for averages
+                    Text(getSelectedData() != nil ? "Waketime" : "Avg Waketime")
+                        .font(.caption).foregroundColor(.secondary)
                     if let selectedData = getSelectedData() {
                         Text(formatTime(selectedData.waketime))
                             .font(.title2).fontWeight(.semibold)
@@ -247,8 +251,15 @@ struct SleepConsistencyPrimary: View {
 
     private var consistencyChart: some View {
         let visibleLength = getVisibleDomainLength()
+        let averages = calculateVisibleAverages()
 
         return Chart {
+            // Reference bands (if we have averages)
+            if let avg = averages {
+                referenceBand(for: avg.bedtime, type: .bedtime)
+                referenceBand(for: avg.waketime, type: .waketime)
+            }
+
             // Sleep bars based on period
             switch selectedPeriod {
             case .week, .month:
@@ -426,6 +437,41 @@ struct SleepConsistencyPrimary: View {
                 .foregroundStyle(Color.clear)
             }
         }
+    }
+
+    // MARK: - Reference Bands
+
+    private enum BandType {
+        case bedtime
+        case waketime
+    }
+
+    @ChartContentBuilder
+    private func referenceBand(for avgTime: Date, type: BandType) -> some ChartContent {
+        let calendar = Calendar.current
+
+        // Define the tolerance boundaries (±30 minutes, green dotted lines)
+        let minus30 = calendar.date(byAdding: .minute, value: -30, to: avgTime) ?? avgTime
+        let plus30 = calendar.date(byAdding: .minute, value: 30, to: avgTime) ?? avgTime
+
+        // Subtle shaded area between the dotted lines
+        RectangleMark(
+            yStart: .value("Lower", minus30),
+            yEnd: .value("Upper", plus30)
+        )
+        .foregroundStyle(color.opacity(0.08))
+
+        // Dotted line style for reference lines
+        let dottedStyle = StrokeStyle(lineWidth: 1.5, dash: [2, 4])
+
+        // Green dotted lines at top and bottom (±30 minutes, using pillar color)
+        RuleMark(y: .value("Lower 30", minus30))
+            .foregroundStyle(color.opacity(0.7))
+            .lineStyle(dottedStyle)
+
+        RuleMark(y: .value("Upper 30", plus30))
+            .foregroundStyle(color.opacity(0.7))
+            .lineStyle(dottedStyle)
     }
 
     // MARK: - Chart Data Structures
@@ -987,24 +1033,68 @@ struct SleepConsistencyPrimary: View {
     }
 
     private func getDailyBarColor(for dayData: ChartDayData) -> Color {
-        if let date = selectedDate, Calendar.current.isDate(dayData.date, inSameDayAs: date) {
-            return barColor.opacity(0.6)
+        guard let averages = calculateVisibleAverages() else {
+            // No averages available - use sleep pillar color
+            if let date = selectedDate, Calendar.current.isDate(dayData.date, inSameDayAs: date) {
+                return color.opacity(0.6)
+            }
+            return color
         }
-        return barColor
+
+        // Check if BOTH bedtime and waketime are within ±30 minutes of average
+        let calendar = Calendar.current
+        let bedtimeDiff = abs(dayData.chartBedtime.timeIntervalSince(averages.bedtime))
+        let waketimeDiff = abs(dayData.chartWaketime.timeIntervalSince(averages.waketime))
+        let isConsistent = bedtimeDiff <= 30 * 60 && waketimeDiff <= 30 * 60  // 30 minutes in seconds
+
+        let baseColor = isConsistent ? color : color.opacity(0.4)
+
+        if let date = selectedDate, Calendar.current.isDate(dayData.date, inSameDayAs: date) {
+            return baseColor.opacity(0.6)
+        }
+        return baseColor
     }
 
     private func getWeeklyBarColor(for weekData: ChartWeekData) -> Color {
-        if let week = weekData.week, selectedWeek?.id == week.id {
-            return barColor.opacity(0.6)
+        guard let averages = calculateVisibleAverages() else {
+            if let week = weekData.week, selectedWeek?.id == week.id {
+                return color.opacity(0.6)
+            }
+            return color
         }
-        return barColor
+
+        // Check if BOTH bedtime and waketime are within ±30 minutes of average
+        let bedtimeDiff = abs(weekData.chartBedtime.timeIntervalSince(averages.bedtime))
+        let waketimeDiff = abs(weekData.chartWaketime.timeIntervalSince(averages.waketime))
+        let isConsistent = bedtimeDiff <= 30 * 60 && waketimeDiff <= 30 * 60
+
+        let baseColor = isConsistent ? color : color.opacity(0.4)
+
+        if let week = weekData.week, selectedWeek?.id == week.id {
+            return baseColor.opacity(0.6)
+        }
+        return baseColor
     }
 
     private func getMonthlyBarColor(for monthData: ChartMonthData) -> Color {
-        if let month = monthData.month, selectedMonth?.id == month.id {
-            return barColor.opacity(0.6)
+        guard let averages = calculateVisibleAverages() else {
+            if let month = monthData.month, selectedMonth?.id == month.id {
+                return color.opacity(0.6)
+            }
+            return color
         }
-        return barColor
+
+        // Check if BOTH bedtime and waketime are within ±30 minutes of average
+        let bedtimeDiff = abs(monthData.chartBedtime.timeIntervalSince(averages.bedtime))
+        let waketimeDiff = abs(monthData.chartWaketime.timeIntervalSince(averages.waketime))
+        let isConsistent = bedtimeDiff <= 30 * 60 && waketimeDiff <= 30 * 60
+
+        let baseColor = isConsistent ? color : color.opacity(0.4)
+
+        if let month = monthData.month, selectedMonth?.id == month.id {
+            return baseColor.opacity(0.6)
+        }
+        return baseColor
     }
 
     private func handleChartTap(proxy: ChartProxy, location: CGPoint) {
@@ -1088,9 +1178,15 @@ struct SleepConsistencyPrimary: View {
                                 Text("About Sleep Consistency")
                                     .font(.headline)
                             }
-                            Text(about)
-                                .font(.body)
-                                .foregroundColor(.secondary)
+                            if let attributedAbout = try? AttributedString(markdown: about) {
+                                Text(attributedAbout)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
 
@@ -1102,9 +1198,15 @@ struct SleepConsistencyPrimary: View {
                                 Text("Health Impact")
                                     .font(.headline)
                             }
-                            Text(impact)
-                                .font(.body)
-                                .foregroundColor(.secondary)
+                            if let attributedImpact = try? AttributedString(markdown: impact) {
+                                Text(attributedImpact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
 
@@ -1122,9 +1224,15 @@ struct SleepConsistencyPrimary: View {
                                     Text("\(index + 1).")
                                         .fontWeight(.semibold)
                                         .foregroundColor(color)
-                                    Text(tip)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
+                                    if let attributedTip = try? AttributedString(markdown: tip) {
+                                        Text(attributedTip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    } else {
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }

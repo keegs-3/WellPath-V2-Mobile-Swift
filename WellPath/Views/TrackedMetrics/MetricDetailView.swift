@@ -887,7 +887,7 @@ struct ParentMetricBarChart: View {
                     AxisValueLabel {
                         if let numValue = value.as(Double.self) {
                             // For hours_minutes or minutes, database stores minutes - convert to hours for display
-                            let unitToCheck = actualUnit ?? selectedUnit
+                            let unitToCheck = (actualUnit ?? selectedUnit).lowercased().trimmingCharacters(in: .whitespaces)
                             if unitToCheck == "hours_minutes" ||
                                unitToCheck == "minutes" ||
                                unitToCheck == "min" ||

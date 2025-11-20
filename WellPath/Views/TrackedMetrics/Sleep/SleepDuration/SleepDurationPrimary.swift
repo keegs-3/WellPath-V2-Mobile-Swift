@@ -92,7 +92,7 @@ struct SleepDurationPrimary: View {
     }
 
     private var chartView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 8) {
             // Show the sleep duration chart
             if let metric = viewModel.metrics.first {
                 ParentMetricBarChart(metric: metric.metric, color: color)
@@ -111,7 +111,6 @@ struct SleepDurationPrimary: View {
                         .cornerRadius(10)
                 }
                 .padding(.horizontal)
-                .padding(.top, 16)
 
                 // Show All Data button
                 Button(action: {
