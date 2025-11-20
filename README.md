@@ -21,35 +21,6 @@ WellPath is a personalized health tracking platform that integrates with Apple H
 - **Health Integration**: HealthKit
 - **Architecture**: MVVM
 
-## Project Status
-
-### ✅ Phase 1 (Week 1) - In Progress
-- [x] Project structure and navigation
-- [x] Tab bar with custom + button
-- [x] Sleep tracking vertical slice (template for other metrics)
-- [x] Period selector component (D/W/M/6M/Y)
-- [x] Manual sleep entry form
-- [x] Supabase integration setup
-- [ ] Authentication flow
-- [ ] HealthKit auto-sync
-
-### 🔄 Phase 2 (Week 2) - Planned
-- [ ] Dashboard with layered radial pillar chart
-- [ ] Questionnaire flow (port from React Native)
-- [ ] Welcome/onboarding screens
-- [ ] Sign in/sign up
-
-### 📋 Phase 3 (Week 3) - Planned
-- [ ] Cardio tracking (sessions + duration)
-- [ ] Nutrition tracking (variety metrics)
-- [ ] Challenges screen
-- [ ] Education modules
-
-### 🎯 Phase 4 (Week 4) - Planned
-- [ ] HealthKit background sync
-- [ ] Real-time data updates
-- [ ] Polish and demo prep
-
 ## Getting Started
 
 ### Prerequisites
@@ -271,3 +242,4 @@ Copyright © 2025 WellPath. All rights reserved.
 ## Support
 
 For issues, questions, or contributions, please open a GitHub issue or contact the development team.
+
