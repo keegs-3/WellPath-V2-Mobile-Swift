@@ -315,9 +315,10 @@ class MealTimingViewModel: ObservableObject {
     @Published var mealAggregations: [MealAggregation] = []
     @Published var chartData: [MealStackedData] = []
     @Published var isLoading = false
+    @Published var periodData: [String: Double] = [:] // For period-specific queries
 
     private var mealDataCache: [String: [ChartDataPoint]] = [:]
-    private let supabase = SupabaseManager.shared.client
+    let supabase = SupabaseManager.shared.client // Internal access for extensions
     private let baseColor: Color
 
     init(baseColor: Color) {

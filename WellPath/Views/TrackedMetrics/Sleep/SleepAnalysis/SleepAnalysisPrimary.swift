@@ -23,15 +23,10 @@ struct SleepAnalysisPrimary: View {
     @StateObject private var chartViewModel = SleepAnalysisViewModel()
     @StateObject private var primaryViewModel = SleepAnalysisPrimaryViewModel(metricId: "DISP_SLEEP_ANALYSIS")
     @State private var selectedPeriod: SleepPeriod = .day
-    @State private var selectedView: PrimaryView = .chart
+    @State private var showAbout = false
     @State private var showingDetailView = false
     @State private var showingEntryView = false
     @State private var showingDataManagement = false
-
-    enum PrimaryView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
 
     private var screenIcon: String {
         MetricsUIConfig.getIcon(for: "Sleep Analysis")
@@ -73,6 +68,14 @@ struct SleepAnalysisPrimary: View {
             .navigationTitle("Sleep Analysis")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingDataManagement = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showingEntryView = true
@@ -96,56 +99,45 @@ struct SleepAnalysisPrimary: View {
     }
 
     private var chartContent: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // View picker (Chart/About)
-                Picker("View", selection: $selectedView) {
-                    ForEach(PrimaryView.allCases, id: \.self) { view in
-                        Text(view.rawValue).tag(view)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-                if selectedView == .chart {
-                    chartView
-                } else {
-                    aboutView
-                }
+        VStack(spacing: 0) {
+            if showAbout {
+                aboutContentView
+            } else {
+                chartView
             }
         }
     }
 
     private var chartView: some View {
-        VStack(spacing: 0) {
+        ScrollView {
             VStack(spacing: 0) {
-                // Period selector
-                Picker("Period", selection: $selectedPeriod) {
-                    ForEach(SleepPeriod.allCases, id: \.self) { period in
-                        Text(period.rawValue).tag(period)
+                VStack(spacing: 0) {
+                    // Period selector
+                    Picker("Period", selection: $selectedPeriod) {
+                        ForEach(SleepPeriod.allCases, id: \.self) { period in
+                            Text(period.rawValue).tag(period)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .onChange(of: selectedPeriod) { oldValue, newValue in
-                    Task {
-                        switch newValue {
-                        case .day:
-                            // Day view: 7 days back, 0 ahead (edge detection loads more)
-                            await chartViewModel.loadInitialSleepStages(daysBack: 7, daysAhead: 0)
-                        case .week:
-                            // Week view: 14 days back, 7 ahead
-                            await chartViewModel.loadInitialSleepStages(daysBack: 14, daysAhead: 7)
-                        case .month:
-                            // Month view: 60 days back, 30 ahead
-                            await chartViewModel.loadInitialSleepStages(daysBack: 60, daysAhead: 30)
-                        default:
-                            // 6 Month and Year views coming soon
-                            break
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    .onChange(of: selectedPeriod) { oldValue, newValue in
+                        Task {
+                            switch newValue {
+                            case .day:
+                                // Day view: 7 days back, 0 ahead (edge detection loads more)
+                                await chartViewModel.loadInitialSleepStages(daysBack: 7, daysAhead: 0)
+                            case .week:
+                                // Week view: 14 days back, 7 ahead
+                                await chartViewModel.loadInitialSleepStages(daysBack: 14, daysAhead: 7)
+                            case .month:
+                                // Month view: 60 days back, 30 ahead
+                                await chartViewModel.loadInitialSleepStages(daysBack: 60, daysAhead: 30)
+                            default:
+                                // 6 Month and Year views coming soon
+                                break
+                            }
                         }
                     }
                 }
@@ -162,52 +154,33 @@ struct SleepAnalysisPrimary: View {
                 } else {
                     switch selectedPeriod {
                     case .day:
-                        DayViewChart(color: color, viewModel: chartViewModel, selectedStage: .constant(nil))
+                        DayViewChart(color: color, viewModel: chartViewModel, selectedStage: .constant(nil), showAbout: $showAbout)
                     case .week:
-                        ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: .constant(nil))
+                        ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: .constant(nil), showAbout: $showAbout)
                     case .month:
-                        ScrollableSleepChart(viewMode: .month, viewModel: chartViewModel, selectedStage: .constant(nil))
+                        ScrollableSleepChart(viewMode: .month, viewModel: chartViewModel, selectedStage: .constant(nil), showAbout: $showAbout)
                     case .sixMonth:
-                        WeeklySleepChart(viewModel: chartViewModel, selectedStage: .constant(nil))
+                        WeeklySleepChart(viewModel: chartViewModel, selectedStage: .constant(nil), showAbout: $showAbout)
                     }
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
 
-            // Buttons outside the grey area
-            VStack(spacing: 8) {
-                // View More Sleep Data button
-                Button(action: {
-                    showingDetailView = true
-                }) {
-                    Text("View More Sleep Data")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.blue)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(10)
-                }
-                .padding(.horizontal)
-
-                // Show All Data button
-                Button(action: {
-                    showingDataManagement = true
-                }) {
-                    Text("Show All Data")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(color)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(10)
-                }
-                .padding(.horizontal)
+            // View More button
+            Button(action: {
+                showingDetailView = true
+            }) {
+                Text("View More Sleep Data")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .cornerRadius(10)
             }
+            .padding(.horizontal)
             .padding(.top, 16)
-            .padding(.bottom, 8)
         }
         .task {
             // Initial load defaults to day view range (7 days)
@@ -217,85 +190,106 @@ struct SleepAnalysisPrimary: View {
         }
     }
 
-    private var aboutView: some View {
-        ScrollView {
-            if primaryViewModel.isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading content...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
-            } else if let error = primaryViewModel.error {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundColor(.orange)
-                    Text("Unable to load content")
-                        .font(.headline)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-            } else {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let about = primaryViewModel.aboutContent {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(color)
-                                Text("About Sleep Analysis")
-                                    .font(.headline)
-                            }
-                            Text(about)
-                                .font(.body)
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    if primaryViewModel.isLoading {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading content...")
+                                .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                    }
-
-                    if let impact = primaryViewModel.longevityImpact {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "heart.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Health Impact")
-                                    .font(.headline)
-                            }
-                            Text(impact)
-                                .font(.body)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    } else if let error = primaryViewModel.error {
+                        VStack(spacing: 16) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.largeTitle)
+                                .foregroundColor(.orange)
+                            Text("Unable to load content")
+                                .font(.headline)
+                            Text(error)
+                                .font(.caption)
                                 .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
                         }
-                    }
-
-                    if let tips = primaryViewModel.quickTips, !tips.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lightbulb.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Quick Tips")
-                                    .font(.headline)
-                            }
-
-                            ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text("\(index + 1).")
-                                        .fontWeight(.semibold)
+                        .padding()
+                    } else {
+                        // About content
+                        if let about = primaryViewModel.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
                                         .foregroundColor(color)
-                                    Text(tip)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
+                                    Text("About")
+                                        .font(.headline)
+                                }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        // Health Impact
+                        if let impact = primaryViewModel.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        // Quick Tips
+                        if let tips = primaryViewModel.quickTips, !tips.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 .padding()
+                .padding(.top, 40) // Space for close button
             }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
         }
+        .background(Color.clear)
     }
 }
 
@@ -309,13 +303,15 @@ struct DayViewChart: View {
     @State private var hasInitializedIndex: Bool = false // Track if we've set initial index
     var height: CGFloat = 300 // Default height, can be overridden
     var onVisibleRangeChange: ((Date, Date) -> Void)? = nil
+    var showAbout: Binding<Bool>? = nil  // Optional binding for about view
 
-    init(color: Color, viewModel: SleepAnalysisViewModel, selectedStage: Binding<SleepStage?> = .constant(nil), onVisibleRangeChange: ((Date, Date) -> Void)? = nil, height: CGFloat = 300) {
+    init(color: Color, viewModel: SleepAnalysisViewModel, selectedStage: Binding<SleepStage?> = .constant(nil), onVisibleRangeChange: ((Date, Date) -> Void)? = nil, height: CGFloat = 300, showAbout: Binding<Bool>? = nil) {
         self.color = color
         self.viewModel = viewModel
         self._selectedStage = selectedStage
         self.onVisibleRangeChange = onVisibleRangeChange
         self.height = height
+        self.showAbout = showAbout
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -379,7 +375,7 @@ struct DayViewChart: View {
     }
     // MARK: - Summary Metrics
     private var summaryMetrics: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if let selected = selectedSegment {
                 selectedSegmentSummary(selected)
             } else {
@@ -387,12 +383,12 @@ struct DayViewChart: View {
             }
         }
         .padding(.horizontal)
-        .padding(.top, 16)
+        .padding(.top, 12)
         .padding(.bottom, 8)
     }
     private var overallSummary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 40) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("TIME IN BED")
                         .font(.caption)
@@ -408,6 +404,21 @@ struct DayViewChart: View {
                     Text(viewModel.totalTimeAsleep)
                         .font(.title2)
                         .fontWeight(.semibold)
+                }
+
+                Spacer()
+
+                // Info button (top-aligned with metrics)
+                if let showAboutBinding = showAbout {
+                    Button(action: {
+                        withAnimation {
+                            showAboutBinding.wrappedValue = true
+                        }
+                    }) {
+                        Image(systemName: "info.circle")
+                            .font(.title3)
+                            .foregroundColor(color)
+                    }
                 }
             }
             Text(viewModel.currentDateText)
@@ -1056,14 +1067,16 @@ struct ScrollableSleepChart: View {
     @Binding var visibleRangeBinding: (start: Date, end: Date)?
     var height: CGFloat = 340 // Default total height (280 chart + 60 controls)
     var onVisibleRangeChange: ((Date, Date) -> Void)? = nil
+    var showAbout: Binding<Bool>? = nil
 
-    init(viewMode: ViewMode, viewModel: SleepAnalysisViewModel, selectedStage: Binding<SleepStage?>, visibleRangeBinding: Binding<(start: Date, end: Date)?>? = nil, height: CGFloat = 340, onVisibleRangeChange: ((Date, Date) -> Void)? = nil) {
+    init(viewMode: ViewMode, viewModel: SleepAnalysisViewModel, selectedStage: Binding<SleepStage?>, visibleRangeBinding: Binding<(start: Date, end: Date)?>? = nil, height: CGFloat = 340, onVisibleRangeChange: ((Date, Date) -> Void)? = nil, showAbout: Binding<Bool>? = nil) {
         self.viewMode = viewMode
         self.viewModel = viewModel
         self._selectedStage = selectedStage
         self._visibleRangeBinding = visibleRangeBinding ?? .constant(nil)
         self.height = height
         self.onVisibleRangeChange = onVisibleRangeChange
+        self.showAbout = showAbout
     }
 
     private var chartHeight: CGFloat { height - 60 } // Subtract space for controls
@@ -1432,8 +1445,8 @@ struct ScrollableSleepChart: View {
                     let yPosition = ((segmentStart - timeRange.startHour) / timeRange.totalHours) * size.height
                     let height = max((segmentDuration / timeRange.totalHours) * size.height, 1.0)
 
-                    let segmentWidth = segment.stage == .awake ? barWidth * 1.1 : barWidth
-                    let segmentXOffset = barXOffset - (segmentWidth - barWidth) / 2
+                    let segmentWidth = barWidth  // All stages same width
+                    let segmentXOffset = barXOffset
 
                     let rect = CGRect(x: segmentXOffset, y: yPosition, width: segmentWidth, height: height)
                     var segmentContext = context
@@ -1855,9 +1868,9 @@ struct ScrollableSleepChart: View {
     // MARK: - Summary Metrics
 
     private var summaryMetrics: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if let selectedBar = viewModel.selectedBar {
-                HStack(spacing: 40) {
+                HStack(alignment: .top, spacing: 40) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("TIME IN BED").font(.caption).foregroundColor(.secondary)
                         Text(viewModel.selectedBarTimeInBed).font(.title2).fontWeight(.semibold)
@@ -1866,10 +1879,25 @@ struct ScrollableSleepChart: View {
                         Text("TIME ASLEEP").font(.caption).foregroundColor(.secondary)
                         Text(viewModel.selectedBarTimeAsleep).font(.title2).fontWeight(.semibold)
                     }
+
+                    Spacer()
+
+                    // Info button (top-aligned with metrics)
+                    if let showAboutBinding = showAbout {
+                        Button(action: {
+                            withAnimation {
+                                showAboutBinding.wrappedValue = true
+                            }
+                        }) {
+                            Image(systemName: "info.circle")
+                                .font(.title3)
+                                .foregroundColor(Color(red: 0x6E / 255.0, green: 0x7C / 255.0, blue: 0xFF / 255.0))
+                        }
+                    }
                 }
                 Text(formatSelectedBarDate(selectedBar.sleepDate)).font(.subheadline).foregroundColor(.secondary)
             } else {
-                HStack(spacing: 40) {
+                HStack(alignment: .top, spacing: 40) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("AVG. TIME IN BED").font(.caption).foregroundColor(.secondary)
                         Text(viewModel.totalTimeInBed).font(.title2).fontWeight(.semibold)
@@ -1877,6 +1905,21 @@ struct ScrollableSleepChart: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("AVG. TIME ASLEEP").font(.caption).foregroundColor(.secondary)
                         Text(viewModel.totalTimeAsleep).font(.title2).fontWeight(.semibold)
+                    }
+
+                    Spacer()
+
+                    // Info button (top-aligned with metrics)
+                    if let showAboutBinding = showAbout {
+                        Button(action: {
+                            withAnimation {
+                                showAboutBinding.wrappedValue = true
+                            }
+                        }) {
+                            Image(systemName: "info.circle")
+                                .font(.title3)
+                                .foregroundColor(Color(red: 0x6E / 255.0, green: 0x7C / 255.0, blue: 0xFF / 255.0))
+                        }
                     }
                 }
 
@@ -1888,7 +1931,7 @@ struct ScrollableSleepChart: View {
             }
         }
         .padding(.horizontal)
-        .padding(.top, 16)
+        .padding(.top, 12)
         .padding(.bottom, 8)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -2256,13 +2299,15 @@ struct WeeklySleepChart: View {
     @State private var hasInitializedScroll = false  // Track if we've set initial scroll position
     var height: CGFloat = 340 // Default total height
     var onVisibleRangeChange: ((Date, Date) -> Void)? = nil
+    var showAbout: Binding<Bool>? = nil
 
-    init(viewModel: SleepAnalysisViewModel, selectedStage: Binding<SleepStage?> = .constant(nil), visibleRangeBinding: Binding<(start: Date, end: Date)?>? = nil, height: CGFloat = 340, onVisibleRangeChange: ((Date, Date) -> Void)? = nil) {
+    init(viewModel: SleepAnalysisViewModel, selectedStage: Binding<SleepStage?> = .constant(nil), visibleRangeBinding: Binding<(start: Date, end: Date)?>? = nil, height: CGFloat = 340, onVisibleRangeChange: ((Date, Date) -> Void)? = nil, showAbout: Binding<Bool>? = nil) {
         self.viewModel = viewModel
         self._selectedStage = selectedStage
         self._visibleRangeBinding = visibleRangeBinding ?? .constant(nil)
         self.height = height
         self.onVisibleRangeChange = onVisibleRangeChange
+        self.showAbout = showAbout
         // Initialize scroll position to today (will be adjusted in onAppear)
         _scrollPosition = State(initialValue: Date())
     }
@@ -2590,7 +2635,7 @@ struct WeeklySleepChart: View {
     
     private var summaryMetrics: some View {
         let averages = selectedWeek == nil ? calculateVisibleWeeklyAverages() : nil
-        
+
         if let selected = selectedWeek {
             NSLog("[SLEEP] 📊 summaryMetrics: Showing selected week data - \(formatTime(selected.avgBedtime)) to \(formatTime(selected.avgWaketime))")
         } else if let avg = averages {
@@ -2598,9 +2643,9 @@ struct WeeklySleepChart: View {
         } else {
             NSLog("[SLEEP] ⚠️ summaryMetrics: No selected week and no averages available")
         }
-        
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 40) {
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Avg Bedtime").font(.caption).foregroundColor(.secondary)
                     if let week = selectedWeek {
@@ -2629,6 +2674,21 @@ struct WeeklySleepChart: View {
                             .foregroundColor(.secondary)
                     }
                 }
+
+                Spacer()
+
+                // Info button (top-aligned with metrics)
+                if let showAboutBinding = showAbout {
+                    Button(action: {
+                        withAnimation {
+                            showAboutBinding.wrappedValue = true
+                        }
+                    }) {
+                        Image(systemName: "info.circle")
+                            .font(.title3)
+                            .foregroundColor(barColor)
+                    }
+                }
             }
             if let week = selectedWeek {
                 Text(formatWeekRange(week.weekStartDate, week.weekEndDate))
@@ -2641,7 +2701,7 @@ struct WeeklySleepChart: View {
             }
         }
         .padding(.horizontal)
-        .padding(.top, 16)
+        .padding(.top, 12)
         .padding(.bottom, 8)
     }
     

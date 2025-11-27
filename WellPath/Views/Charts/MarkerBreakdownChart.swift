@@ -56,7 +56,8 @@ struct MarkerBreakdownChart: View {
                     .foregroundStyle(gradientForMarker(marker: marker, index: index))
                 }
             }
-            .frame(height: 200)
+            .frame(height: 160)
+            .chartBackground { proxy in Color.clear }
             .padding(.horizontal)
             .padding(.top, 16)
             .padding(.bottom, 24)
@@ -100,7 +101,7 @@ struct MarkerBreakdownChart: View {
                 .padding(.horizontal)
             }
         }
-        .background(Color(white: 0.95))
+        .background(Color(uiColor: .tertiarySystemGroupedBackground))
         .cornerRadius(12)
     }
 

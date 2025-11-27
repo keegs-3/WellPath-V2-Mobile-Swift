@@ -83,204 +83,190 @@ struct ProteinDetail: View {
 struct ProteinTimingView: View {
     let color: Color
     @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_PROTEIN_MEAL_TIMING")
-    @State private var selectedView: TimingView = .chart
+    @State private var showAbout = false
 
-    enum TimingView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
+    private var screenIcon: String {
+        MetricsUIConfig.getIcon(for: "Protein Intake")
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // View picker
-            Picker("View", selection: $selectedView) {
-                ForEach(TimingView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
+            // Content
+            if showAbout {
+                aboutContentView
+            } else {
+                ProteinTimingTimelineView(color: color, showAbout: $showAbout)
+            }
+        }
+        .background(
+            ZStack {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+                    Spacer()
+                }
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: screenIcon)
+                            .font(.system(size: 200))
+                            .foregroundStyle(Color.white.opacity(0.2))
+                            .rotationEffect(.degrees(-15))
+                            .offset(x: 50, y: -50)
+                    }
+                    Spacer()
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
+            .ignoresSafeArea()
+        )
+        .task {
+            await educationViewModel.loadEducation()
+        }
+    }
 
-            // Content
-            if selectedView == .chart {
-                MealTimingStackedChart(color: color)
-            } else {
-                // About content (scrollable)
-                ScrollView {
-                    if let education = educationViewModel.education {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if let about = education.aboutContent {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "info.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("About Protein Timing")
-                                            .font(.headline)
-                                    }
-                                    Text(about)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if let education = educationViewModel.education {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let about = education.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("About")
+                                        .font(.headline)
                                 }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
                             }
+                        }
 
-                            if let impact = education.longevityImpact {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "heart.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Health Impact")
-                                            .font(.headline)
-                                    }
-                                    Text(impact)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
+                        if let impact = education.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
                                 }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
                             }
+                        }
 
-                            if let tips = education.quickTips {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "lightbulb.circle.fill")
+                        if let tips = education.quickTips {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
                                             .foregroundColor(color)
-                                        Text("Quick Tips")
-                                            .font(.headline)
-                                    }
-
-                                    ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text("\(index + 1).")
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(color)
-                                            Text(tip)
-                                                .font(.body)
-                                                .foregroundColor(.secondary)
-                                        }
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
                                     }
                                 }
                             }
                         }
-                        .padding()
                     }
+                    .padding()
+                    .padding(.top, 40) // Space for close button
                 }
             }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
         }
-        .task {
-            await educationViewModel.loadEducation()
-        }
+        .background(Color.clear)
     }
 }
 
-// MARK: - Type View (Chart/About split)
+// MARK: - Type View (Tier-based with expandable types)
 
 struct ProteinTypeView: View {
     let color: Color
-    @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_PROTEIN_TYPE")
-    @State private var selectedView: TypeView = .chart
-
-    enum TypeView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // View picker
-            Picker("View", selection: $selectedView) {
-                ForEach(TypeView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-
-            // Content
-            if selectedView == .chart {
-                ProteinTypeStackedChart(color: color)
-            } else {
-                // About content (scrollable)
-                ScrollView {
-                    if let education = educationViewModel.education {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if let about = education.aboutContent {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "info.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("About Protein Sources")
-                                            .font(.headline)
-                                    }
-                                    Text(about)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let impact = education.longevityImpact {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "heart.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Health Impact")
-                                            .font(.headline)
-                                    }
-                                    Text(impact)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let tips = education.quickTips {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "lightbulb.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Quick Tips")
-                                            .font(.headline)
-                                    }
-
-                                    ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text("\(index + 1).")
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(color)
-                                            Text(tip)
-                                                .font(.body)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-                }
-            }
-        }
-        .task {
-            await educationViewModel.loadEducation()
-        }
+        ProteinTiersView(color: color)
     }
 }
 
 // MARK: - Ratio View (Line Chart with period toggles)
 
+enum ProteinRatioUnit: String, CaseIterable {
+    case gPerKg = "g/kg"
+    case gPerLb = "g/lb"
+}
+
 struct ProteinPerBodyWeightView: View {
     let color: Color
     @StateObject private var viewModel = ProteinPerBodyWeightViewModel()
     @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_PROTEIN_PER_KG")
-    @State private var selectedView: GPerKgView = .chart
+    @State private var showAbout = false
     @State private var selectedPeriod: TimePeriod = .week
     @State private var scrollPosition: Date
     @State private var selectedDate: Date?
     @State private var chartID = UUID()
+    @State private var selectedUnit: ProteinRatioUnit = .gPerKg
 
-    enum GPerKgView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
+    private let unitService = UnitConversionService.shared
+
+    private var screenIcon: String {
+        MetricsUIConfig.getIcon(for: "Protein Intake")
+    }
+
+    // Optimal range in g/kg (backend standard)
+    private let optimalRangeGPerKg: ClosedRange<Double> = 1.2...1.6
+
+    // Convert optimal range based on selected unit
+    private var optimalRangeLow: Double {
+        selectedUnit == .gPerKg ? optimalRangeGPerKg.lowerBound : unitService.gPerKgToGPerLb(optimalRangeGPerKg.lowerBound)
+    }
+
+    private var optimalRangeHigh: Double {
+        selectedUnit == .gPerKg ? optimalRangeGPerKg.upperBound : unitService.gPerKgToGPerLb(optimalRangeGPerKg.upperBound)
+    }
+
+    private var unitLabel: String {
+        selectedUnit.rawValue
+    }
+
+    // Get value in selected unit from a data point
+    private func displayValue(for dataPoint: ProteinPerBodyWeightData) -> Double {
+        selectedUnit == .gPerKg ? dataPoint.perKg : dataPoint.perLb
+    }
+
+    // Get average in selected unit
+    private func displayAverage(for period: TimePeriod, scrollPosition: Date) -> Double {
+        selectedUnit == .gPerKg
+            ? viewModel.calculateAveragePerKg(for: period, scrollPosition: scrollPosition)
+            : viewModel.calculateAveragePerLb(for: period, scrollPosition: scrollPosition)
     }
 
     init(color: Color) {
@@ -301,93 +287,39 @@ struct ProteinPerBodyWeightView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // View picker
-            Picker("View", selection: $selectedView) {
-                ForEach(GPerKgView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-
             // Content
-            if selectedView == .chart {
-                chartView
+            if showAbout {
+                aboutContentView
             } else {
-                // About content (scrollable)
-                ScrollView {
-                    if let education = educationViewModel.education {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if let about = education.aboutContent {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "info.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("About Protein Efficiency")
-                                            .font(.headline)
-                                    }
-                                    Text(about)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let impact = education.longevityImpact {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "heart.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Health Impact")
-                                            .font(.headline)
-                                    }
-                                    Text(impact)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let tips = education.quickTips {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "lightbulb.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Quick Tips")
-                                            .font(.headline)
-                                    }
-
-                                    ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text("\(index + 1).")
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(color)
-                                            Text(tip)
-                                                .font(.body)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Optimal range explanation
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
-                                        .foregroundColor(color)
-                                    Text("Optimal Range")
-                                        .font(.headline)
-                                }
-                                Text("The blue band on the chart shows the optimal protein intake range of 1.2-1.6 g/kg body weight for active adults.")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding()
-                    }
-                }
+                chartView
             }
         }
+        .background(
+            ZStack {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+                    Spacer()
+                }
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: screenIcon)
+                            .font(.system(size: 200))
+                            .foregroundStyle(Color.white.opacity(0.2))
+                            .rotationEffect(.degrees(-15))
+                            .offset(x: 50, y: -50)
+                    }
+                    Spacer()
+                }
+            }
+            .ignoresSafeArea()
+        )
         .task {
             await viewModel.loadData(for: selectedPeriod)
             await educationViewModel.loadEducation()
@@ -421,6 +353,21 @@ struct ProteinPerBodyWeightView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .padding(.top, 16)
+
+                    // Unit toggle (g/kg vs g/lb)
+                    HStack {
+                        Spacer()
+                        Picker("Unit", selection: $selectedUnit) {
+                            ForEach(ProteinRatioUnit.allCases, id: \.self) { unit in
+                                Text(unit.rawValue).tag(unit)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 140)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
                     .onChange(of: selectedPeriod) { oldValue, newPeriod in
                         selectedDate = nil
 
@@ -443,36 +390,51 @@ struct ProteinPerBodyWeightView: View {
                         }
                     }
 
-                    // Value display
-                    VStack(alignment: .leading, spacing: 4) {
-                        if let date = selectedDate,
-                           let selected = viewModel.chartData.first(where: { Calendar.current.isDate($0.date, equalTo: date, toGranularity: .day) }) {
+                    // Value display with info button
+                    HStack(alignment: .top, spacing: 24) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let date = selectedDate,
+                               let selected = viewModel.chartData.first(where: { Calendar.current.isDate($0.date, equalTo: date, toGranularity: .day) }) {
 
-                            Text(formatSelectedDateLabel(date))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(String(format: "%.2f", selected.perKg))
-                                    .font(.system(size: 48, weight: .semibold))
-                                    .foregroundColor(color)
-                                Text("g/kg")
-                                    .font(.title2)
+                                Text(formatSelectedDateLabel(date))
+                                    .font(.caption)
                                     .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Text(getAggregateLabel())
-                                .font(.caption)
-                                .foregroundColor(.secondary)
 
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(String(format: "%.2f", viewModel.calculateAveragePerKg(for: selectedPeriod, scrollPosition: scrollPosition)))
-                                    .font(.system(size: 48, weight: .semibold))
-                                    .foregroundColor(color)
-                                Text("g/kg")
-                                    .font(.title2)
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text(String(format: "%.2f", displayValue(for: selected)))
+                                        .font(.system(size: 48, weight: .semibold))
+                                        .foregroundColor(color)
+                                    Text(unitLabel)
+                                        .font(.title2)
+                                        .foregroundColor(.secondary)
+                                }
+                            } else {
+                                Text(getAggregateLabel())
+                                    .font(.caption)
                                     .foregroundColor(.secondary)
+
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text(String(format: "%.2f", displayAverage(for: selectedPeriod, scrollPosition: scrollPosition)))
+                                        .font(.system(size: 48, weight: .semibold))
+                                        .foregroundColor(color)
+                                    Text(unitLabel)
+                                        .font(.title2)
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                        }
+
+                        Spacer()
+
+                        // Info button (top-aligned with metrics)
+                        Button(action: {
+                            withAnimation {
+                                showAbout = true
+                            }
+                        }) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(color)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -481,15 +443,14 @@ struct ProteinPerBodyWeightView: View {
 
                     // Line chart
                 Chart {
-                    // Optimal range band (using RectangleMark for proper y-axis alignment)
-                    ForEach(viewModel.chartData) { dataPoint in
-                        RectangleMark(
-                            x: .value("Date", dataPoint.date),
-                            yStart: .value("Min", 1.2),
-                            yEnd: .value("Max", 1.6)
-                        )
-                        .foregroundStyle(Color.blue.opacity(0.12))
-                    }
+                    // Optimal range band - horizontal lines marking the target range
+                    RuleMark(y: .value("OptimalLow", optimalRangeLow))
+                        .foregroundStyle(Color.blue.opacity(0.5))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
+
+                    RuleMark(y: .value("OptimalHigh", optimalRangeHigh))
+                        .foregroundStyle(Color.blue.opacity(0.5))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
 
                     ForEach(viewModel.chartData) { dataPoint in
                         // Invisible placeholder for ALL points to establish x-axis domain
@@ -500,11 +461,12 @@ struct ProteinPerBodyWeightView: View {
                         .opacity(0)
 
                         // Only show line/area/points for non-zero values
-                        if dataPoint.perKg > 0 {
+                        let value = displayValue(for: dataPoint)
+                        if value > 0 {
                             // User data line
                             LineMark(
                                 x: .value("Date", dataPoint.date),
-                                y: .value("Ratio", dataPoint.perKg)
+                                y: .value("Ratio", value)
                             )
                             .foregroundStyle(color)
                             .interpolationMethod(.catmullRom)
@@ -513,7 +475,7 @@ struct ProteinPerBodyWeightView: View {
                             // Area under line
                             AreaMark(
                                 x: .value("Date", dataPoint.date),
-                                y: .value("Ratio", dataPoint.perKg)
+                                y: .value("Ratio", value)
                             )
                             .foregroundStyle(
                                 LinearGradient(
@@ -530,7 +492,7 @@ struct ProteinPerBodyWeightView: View {
                                 // Selected point (larger)
                                 PointMark(
                                     x: .value("Date", dataPoint.date),
-                                    y: .value("Ratio", dataPoint.perKg)
+                                    y: .value("Ratio", value)
                                 )
                                 .foregroundStyle(color)
                                 .symbolSize(150)
@@ -538,29 +500,33 @@ struct ProteinPerBodyWeightView: View {
                                 // Regular point (not selected)
                                 PointMark(
                                     x: .value("Date", dataPoint.date),
-                                    y: .value("Ratio", dataPoint.perKg)
+                                    y: .value("Ratio", value)
                                 )
                                 .foregroundStyle(color)
                             }
                         }
                     }
                 }
-                .chartYScale(domain: 0...(max(viewModel.chartData.map { $0.perKg }.max() ?? 2.5, 2.5)))
+                .chartYScale(domain: 0...(max(viewModel.chartData.map { displayValue(for: $0) }.max() ?? (selectedUnit == .gPerKg ? 2.5 : 1.2), selectedUnit == .gPerKg ? 2.5 : 1.2)))
                 .chartOverlay { proxy in
                     GeometryReader { geometry in
                         // Display annotation for selected point
                         if let selectedDate = selectedDate,
                            let selectedData = viewModel.chartData.first(where: { Calendar.current.isDate($0.date, equalTo: selectedDate, toGranularity: .day) }),
-                           selectedData.perKg > 0 {
+                           displayValue(for: selectedData) > 0 {
 
                             // Get the position of the selected point
+                            let yValue = displayValue(for: selectedData)
                             if let xPos = proxy.position(forX: selectedData.date),
-                               let yPos = proxy.position(forY: selectedData.perKg) {
+                               let yPos = proxy.position(forY: yValue) {
 
                                 // Annotation content
                                 VStack(spacing: 4) {
                                     if let grams = selectedData.grams, let kg = selectedData.kg {
-                                        Text("g: \(String(format: "%.0f", grams)) / kg: \(String(format: "%.1f", kg))")
+                                        let weightLabel = selectedUnit == .gPerKg
+                                            ? "kg: \(String(format: "%.1f", kg))"
+                                            : "lb: \(String(format: "%.1f", kg * 2.2046))"
+                                        Text("g: \(String(format: "%.0f", grams)) / \(weightLabel)")
                                             .font(.caption)
                                             .fontWeight(.semibold)
                                             .foregroundColor(.primary)
@@ -624,7 +590,6 @@ struct ProteinPerBodyWeightView: View {
                 .padding(.top, 24)
                 .padding(.bottom, 16)
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
 
                 // Optimal range info - subtle, centered
                 HStack {
@@ -633,7 +598,7 @@ struct ProteinPerBodyWeightView: View {
                         Image(systemName: "chart.line.uptrend.xyaxis")
                             .font(.caption)
                             .foregroundColor(Color.blue.opacity(0.7))
-                        Text("Optimal: 1.2-1.6 g/kg")
+                        Text("Optimal: \(String(format: "%.2f", optimalRangeLow))-\(String(format: "%.2f", optimalRangeHigh)) \(unitLabel)")
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundColor(.secondary)
@@ -648,6 +613,96 @@ struct ProteinPerBodyWeightView: View {
                 .padding(.bottom, 24)
             }
         }
+    }
+
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if let education = educationViewModel.education {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let about = education.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("About Protein Efficiency")
+                                        .font(.headline)
+                                }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let impact = education.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let tips = education.quickTips {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Optimal range explanation
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
+                                    .foregroundColor(color)
+                                Text("Optimal Range")
+                                    .font(.headline)
+                            }
+                            Text("The blue band on the chart shows the optimal protein intake range of \(String(format: "%.2f", optimalRangeLow))-\(String(format: "%.2f", optimalRangeHigh)) \(unitLabel) body weight for active adults.")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    .padding(.top, 40) // Space for close button
+                }
+            }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
+        }
+        .background(Color.clear)
     }
 
     // MARK: - Helpers
@@ -747,6 +802,19 @@ struct ProteinPerBodyWeightView: View {
 
 // MARK: - View Models
 
+/// Lightweight struct for decoding weight readings from patient_biometric_readings
+private struct WeightReading: Codable {
+    let value: Double
+    let recordedAt: Date
+    let unit: String?
+
+    enum CodingKeys: String, CodingKey {
+        case value
+        case recordedAt = "recorded_at"
+        case unit
+    }
+}
+
 @MainActor
 class ProteinPerBodyWeightViewModel: ObservableObject {
     @Published var chartData: [ProteinPerBodyWeightData] = []
@@ -755,9 +823,13 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
     @Published var isLoading = true
 
     private let supabase = SupabaseManager.shared.client
+    private let unitService = UnitConversionService.shared
 
     func loadData(for period: TimePeriod) async {
         isLoading = true
+
+        // Ensure unit conversions are loaded
+        await unitService.loadConversions()
 
         do {
             let userId = try await supabase.auth.session.user.id
@@ -782,23 +854,7 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
                 oldestDate = calendar.date(byAdding: .year, value: -3, to: now) ?? now
             }
 
-            // Fetch protein per kg data with date range filters
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
-                .eq("patient_id", value: userId)
-                .eq("agg_metric_id", value: "AGG_PROTEIN_PER_KILOGRAM_BODY_WEIGHT")
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: "AVG")
-                .gte("period_start", value: oldestDate.ISO8601Format())
-                .lte("period_start", value: newestDate.ISO8601Format())
-                .order("period_start", ascending: true)
-                .execute()
-                .value
-
-            print("📏 Fetched \(results.count) protein per body weight data points for range \(oldestDate) to \(newestDate)")
-
-            // Fetch raw protein grams data with date range filters
+            // 1. Fetch protein grams from aggregation cache
             let proteinResults: [AggregationResult] = try await supabase
                 .from("aggregation_results_cache")
                 .select()
@@ -812,7 +868,21 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
                 .execute()
                 .value
 
-            print("📊 Fetched \(proteinResults.count) protein grams data points for range \(oldestDate) to \(newestDate)")
+            print("📊 Fetched \(proteinResults.count) protein grams data points")
+
+            // 2. Fetch weight readings from patient_biometric_readings
+            // Get all weight readings up to newest date (need historical for carry-forward)
+            let weightReadings: [WeightReading] = try await supabase
+                .from("patient_biometric_readings")
+                .select("value, recorded_at, unit")
+                .eq("patient_id", value: userId)
+                .eq("biometric_name", value: "Weight")
+                .lte("recorded_at", value: newestDate.ISO8601Format())
+                .order("recorded_at", ascending: true)
+                .execute()
+                .value
+
+            print("⚖️ Fetched \(weightReadings.count) weight readings")
 
             // Determine granularity for date matching
             let granularity: Calendar.Component
@@ -857,46 +927,40 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
 
             print("📊 Generated \(timeline.count) timeline points for g/kg")
 
-            // Overlay actual data on timeline using correct granularity
-            for result in results {
-                // Convert UTC period_start to local date for timeline matching
-                let localDate = result.periodStart.toLocalDateForTimeline()
+            // 3. Calculate ratio for each protein data point
+            for proteinResult in proteinResults {
+                let localDate = proteinResult.periodStart.toLocalDateForTimeline()
 
                 if let index = timeline.firstIndex(where: {
                     calendar.isDate($0.date, equalTo: localDate, toGranularity: granularity)
                 }) {
-                    let perKg = result.value
+                    let proteinGrams = proteinResult.value
 
-                    // Find matching protein grams
-                    let proteinGrams = proteinResults.first(where: {
-                        let proteinLocalDate = $0.periodStart.toLocalDateForTimeline()
-                        return calendar.isDate(proteinLocalDate, equalTo: localDate, toGranularity: granularity)
-                    })?.value
+                    // Find the most recent weight reading <= this date (carry forward)
+                    let weightKg = findWeightForDate(localDate, from: weightReadings)
 
-                    // Calculate weight from protein grams and ratio
-                    // Since perKg = protein_grams / weight_kg, therefore weight_kg = protein_grams / perKg
-                    let bodyWeight: Double?
-                    if let grams = proteinGrams, perKg > 0 {
-                        bodyWeight = grams / perKg
+                    // Calculate ratio if we have both values
+                    let perKg: Double
+                    if let weight = weightKg, weight > 0 {
+                        perKg = proteinGrams / weight
                     } else {
-                        bodyWeight = nil
+                        perKg = 0
                     }
 
-                    // CRITICAL: Keep timeline's date, don't replace with result's date
                     timeline[index] = ProteinPerBodyWeightData(
                         date: timeline[index].date,
                         perKg: perKg,
-                        perLb: perKg * 0.453592,
+                        perLb: unitService.gPerKgToGPerLb(perKg),
                         grams: proteinGrams,
-                        kg: bodyWeight
+                        kg: weightKg
                     )
 
-                    print("📊 Point \(index): perKg=\(perKg), grams=\(proteinGrams?.description ?? "nil"), kg=\(bodyWeight?.description ?? "nil") [calculated]")
+                    print("📊 Point \(index): protein=\(proteinGrams)g, weight=\(weightKg?.description ?? "nil")kg, ratio=\(perKg) g/kg")
                 }
             }
 
             let dataCount = timeline.filter { $0.perKg > 0 }.count
-            print("📈 Overlaid \(dataCount) data points on timeline")
+            print("📈 Overlaid \(dataCount) ratio data points on timeline")
 
             chartData = timeline
 
@@ -905,6 +969,33 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    /// Find the most recent weight reading <= the given date (carry forward last known weight)
+    /// Returns weight in kg for ratio calculation
+    private func findWeightForDate(_ date: Date, from readings: [WeightReading]) -> Double? {
+        // Readings are sorted ascending by date
+        // Find the last reading that is <= the target date
+        var lastWeight: Double? = nil
+
+        for reading in readings {
+            if reading.recordedAt <= date {
+                // Canonical unit for weight is pounds - convert to kg for g/kg calculation
+                // Handle both canonical (pound) and any legacy kg data via unit field
+                let unit = reading.unit?.lowercased() ?? "pound"
+                if unit == "kilogram" || unit == "kg" {
+                    // Already in kg
+                    lastWeight = reading.value
+                } else {
+                    // Canonical unit is pounds - convert to kg
+                    lastWeight = reading.value * 0.453592
+                }
+            } else {
+                break // Readings after target date - stop
+            }
+        }
+
+        return lastWeight
     }
 
     // Calculate average for VISIBLE WINDOW only (matches ParentMetricBarChart pattern)
@@ -939,7 +1030,7 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
     }
 
     func calculateAveragePerLb(for period: TimePeriod, scrollPosition: Date) -> Double {
-        return calculateAveragePerKg(for: period, scrollPosition: scrollPosition) * 0.453592
+        return unitService.gPerKgToGPerLb(calculateAveragePerKg(for: period, scrollPosition: scrollPosition))
     }
 }
 

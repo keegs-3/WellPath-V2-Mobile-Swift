@@ -14,8 +14,9 @@ class BiometricsService: ObservableObject {
 
     // MARK: - Fetch Biomarker Readings for User
     func fetchBiomarkerReadings(for userId: UUID) async throws -> [BiomarkerReading] {
+        // Use view that casts numeric to double precision for Swift JSON compatibility
         let response: [BiomarkerReading] = try await supabase
-            .from("patient_biomarker_readings")
+            .from("patient_biomarker_readings_v")
             .select()
             .eq("patient_id", value: userId.uuidString)
             .order("test_date", ascending: false)
@@ -27,8 +28,9 @@ class BiometricsService: ObservableObject {
 
     // MARK: - Fetch Specific Biomarker History
     func fetchBiomarkerHistory(biomarkerName: String, userId: UUID) async throws -> [BiomarkerReading] {
+        // Use view that casts numeric to double precision for Swift JSON compatibility
         let response: [BiomarkerReading] = try await supabase
-            .from("patient_biomarker_readings")
+            .from("patient_biomarker_readings_v")
             .select()
             .eq("patient_id", value: userId.uuidString)
             .eq("biomarker_name", value: biomarkerName)
@@ -49,6 +51,98 @@ class BiometricsService: ObservableObject {
             .value
 
         return response
+    }
+
+    // MARK: - Fetch Biomarker Details with Patient-Specific Filtering
+    /// Fetches biomarker ranges filtered by patient attributes (gender, menopausal status, athlete status)
+    /// and optionally by cycle phase for hormone biomarkers.
+    ///
+    /// - Parameters:
+    ///   - biomarkerName: The name of the biomarker
+    ///   - gender: Patient's biological sex (male/female)
+    ///   - menopausalStatus: Patient's menopausal status (Premenopausal/Postmenopausal) - optional
+    ///   - isAthlete: Whether patient is an athlete (affects ranges for biomarkers like Creatine Kinase)
+    ///   - cyclePhase: Current cycle phase for the reading (Follicular/Luteal/Ovulatory) - optional
+    /// - Returns: Filtered array of BiomarkerDetail ranges
+    func fetchBiomarkerDetailsFiltered(
+        for biomarkerName: String,
+        gender: String,
+        menopausalStatus: String? = nil,
+        isAthlete: Bool = false,
+        cyclePhase: String? = nil
+    ) async throws -> [BiomarkerDetail] {
+        // Fetch all ranges for this biomarker
+        let allRanges: [BiomarkerDetail] = try await supabase
+            .from("biomarkers_detail")
+            .select()
+            .eq("biomarker", value: biomarkerName)
+            .execute()
+            .value
+
+        // Apply filters in order of specificity
+        let filteredRanges = allRanges.filter { range in
+            // 1. Gender filter: match patient gender or "all"
+            let genderMatch = range.gender?.lowercased() == gender.lowercased() ||
+                              range.gender?.lowercased() == "all" ||
+                              range.gender == nil
+
+            // 2. Menopausal status filter (for female patients)
+            let menopausalMatch: Bool
+            if let patientMenopausal = menopausalStatus, let rangeMenopausal = range.menopausalStatus {
+                // If both patient and range have menopausal status, they must match
+                menopausalMatch = rangeMenopausal.lowercased() == patientMenopausal.lowercased()
+            } else if range.menopausalStatus != nil {
+                // Range requires specific menopausal status but patient doesn't have one - skip this range
+                menopausalMatch = false
+            } else {
+                // Range doesn't require menopausal status - include it
+                menopausalMatch = true
+            }
+
+            // 3. Unique condition filter (athlete status)
+            let athleteMatch: Bool
+            if isAthlete {
+                // Patient is athlete - prefer athlete ranges, but fall back to general if none exist
+                athleteMatch = range.uniqueCondition == "athlete" || range.uniqueCondition == nil
+            } else {
+                // Patient is not athlete - only use ranges without unique_condition
+                athleteMatch = range.uniqueCondition == nil
+            }
+
+            // 4. Cycle phase filter (for hormone biomarkers)
+            let cycleMatch: Bool
+            if let patientCycle = cyclePhase, let rangeCycle = range.cycleStage {
+                // If both patient reading and range have cycle info, they must match
+                cycleMatch = rangeCycle.lowercased() == patientCycle.lowercased()
+            } else if range.cycleStage != nil {
+                // Range requires specific cycle stage but reading doesn't have one - skip this range
+                cycleMatch = false
+            } else {
+                // Range doesn't require cycle stage - include it
+                cycleMatch = true
+            }
+
+            return genderMatch && menopausalMatch && athleteMatch && cycleMatch
+        }
+
+        // If athlete filtering returned no results, fall back to non-athlete ranges
+        if filteredRanges.isEmpty && isAthlete {
+            print("⚠️ No athlete-specific ranges found for \(biomarkerName), falling back to general ranges")
+            return allRanges.filter { range in
+                let genderMatch = range.gender?.lowercased() == gender.lowercased() ||
+                                  range.gender?.lowercased() == "all" ||
+                                  range.gender == nil
+                let menopausalMatch = range.menopausalStatus == nil ||
+                                      (menopausalStatus != nil && range.menopausalStatus?.lowercased() == menopausalStatus?.lowercased())
+                let cycleMatch = range.cycleStage == nil ||
+                                 (cyclePhase != nil && range.cycleStage?.lowercased() == cyclePhase?.lowercased())
+                return genderMatch && menopausalMatch && range.uniqueCondition == nil && cycleMatch
+            }
+        }
+
+        print("📊 Filtered \(biomarkerName) ranges: \(filteredRanges.count) of \(allRanges.count) (gender=\(gender), menopausal=\(menopausalStatus ?? "nil"), athlete=\(isAthlete), cycle=\(cyclePhase ?? "nil"))")
+
+        return filteredRanges
     }
 
     // MARK: - Fetch Biomarker Base Info with Unit Display
@@ -108,8 +202,9 @@ class BiometricsService: ObservableObject {
 
     // MARK: - Fetch Biometric Readings for User
     func fetchBiometricReadings(for userId: UUID) async throws -> [BiometricReading] {
+        // Use view that casts numeric to double precision for Swift JSON compatibility
         let response: [BiometricReading] = try await supabase
-            .from("patient_biometric_readings")
+            .from("patient_biometric_readings_v")
             .select()
             .eq("patient_id", value: userId.uuidString)
             .order("recorded_at", ascending: false)
@@ -189,10 +284,11 @@ class BiometricsService: ObservableObject {
 
         // If age is provided, filter by age range
         if let age = age {
+            let ageDouble = Double(age)
             applicableRanges = applicableRanges.filter { range in
-                let matchesAgeMin = range.ageMin == nil || age >= range.ageMin!
-                let matchesAgeMax = range.ageMax == nil || age <= range.ageMax!
-                return matchesAgeMin && matchesAgeMax
+                let matchesAgeLow = range.ageLow == nil || ageDouble >= range.ageLow!
+                let matchesAgeHigh = range.ageHigh == nil || ageDouble <= range.ageHigh!
+                return matchesAgeLow && matchesAgeHigh
             }
         }
 
@@ -271,10 +367,7 @@ class BiometricsService: ObservableObject {
             }
 
             if matchesRange {
-                // Use the range_bucket if available, otherwise fall back to range name
-                if let bucket = range.rangeBucket {
-                    return bucket
-                }
+                // rangeName IS the bucket now
                 return range.rangeName
             }
         }
@@ -361,7 +454,7 @@ class BiometricsService: ObservableObject {
         let response: [UnitConversion] = try await supabase
             .from("unit_conversions")
             .select()
-            .eq("from_unit", value: unitId)
+            .eq("from_unit_id", value: unitId)
             .execute()
             .value
 

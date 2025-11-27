@@ -198,7 +198,7 @@ enum TimePeriod: String, CaseIterable {
     }
 
     // Map UI period to database period_type
-    // For 6M/Y: Bars use weekly/monthly aggregations, but unselected aggregate uses daily SUMs
+    // For 6M/Y: Bars use weekly/monthly aggregations
     var databasePeriodType: String {
         switch self {
         case .day: return "hourly"
@@ -211,12 +211,11 @@ enum TimePeriod: String, CaseIterable {
 
     // Calculation type to use for aggregations
     var calculationType: String {
-        // For W/M: Use SUM for daily aggregations (bars show daily totals, not averages)
-        // For D: Use AVG of hourly entries
-        // For 6M/Y: Use AVG of weekly/monthly aggregations (bars show weekly/monthly averages)
+        // For D/W/M: Use SUM for aggregations (bars show totals for each period)
+        // For 6M/Y: Use AVG of weekly/monthly aggregations (bars show monthly averages)
         switch self {
         case .day:
-            return "AVG"  // AVG of hourly entries
+            return "SUM"  // SUM of hourly entries for the day
         case .week, .month:
             return "SUM"  // SUM for daily aggregations (daily totals)
         case .sixMonth, .year:
@@ -628,6 +627,7 @@ class InfiniteScrollChartManager: ObservableObject {
 struct ParentMetricBarChart: View {
     let metric: DisplayMetric
     let color: Color
+    var showAbout: Binding<Bool>? = nil
 
     @State private var selectedPeriod: TimePeriod = .week
     @State private var selectedBarDate: Date?
@@ -644,9 +644,10 @@ struct ParentMetricBarChart: View {
         return scrollManager.chartData.first(where: { $0.date == selectedDate })
     }
 
-    init(metric: DisplayMetric, color: Color) {
+    init(metric: DisplayMetric, color: Color, showAbout: Binding<Bool>? = nil) {
         self.metric = metric
         self.color = color
+        self.showAbout = showAbout
 
         // Unit will be fetched from aggregation_metrics dynamically
         // Default to empty string, will be loaded in task
@@ -742,60 +743,77 @@ struct ParentMetricBarChart: View {
             }
 
             // Unit toggle removed - protein is grams only
-            
-            // Value display (selected or average)
-            VStack(alignment: .leading, spacing: 4) {
-                if let selected = selectedBar {
-                    Text(selectedPeriod.barLabel)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(formatValue(getDisplayValue(for: selected.value)))
-                            .font(.system(size: 48, weight: .semibold))
-                        // Don't show unit if already in formatted value (hours_minutes or minutes)
-                        let unitToCheck = (actualUnit ?? selectedUnit).lowercased().trimmingCharacters(in: .whitespaces)
-                        let isMinutesUnit = unitToCheck == "hours_minutes" || 
-                                           unitToCheck == "minutes" || 
-                                           unitToCheck == "min" || 
-                                           unitToCheck == "minute" ||
-                                           unitToCheck.hasPrefix("minute")
-                        if !isMinutesUnit && !selectedUnit.isEmpty {
-                            Text(selectedUnit)
-                                .font(.title2)
-                                .foregroundColor(.secondary)
+
+            // Value display (selected or average) with optional info button
+            HStack(alignment: .top, spacing: 40) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let selected = selectedBar {
+                        Text(selectedPeriod.barLabel)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(formatValue(getDisplayValue(for: selected.value)))
+                                .font(.system(size: 48, weight: .semibold))
+                            // Don't show unit if already in formatted value (hours_minutes or minutes)
+                            let unitToCheck = (actualUnit ?? selectedUnit).lowercased().trimmingCharacters(in: .whitespaces)
+                            let isMinutesUnit = unitToCheck == "hours_minutes" ||
+                                               unitToCheck == "minutes" ||
+                                               unitToCheck == "min" ||
+                                               unitToCheck == "minute" ||
+                                               unitToCheck.hasPrefix("minute")
+                            if !isMinutesUnit && !selectedUnit.isEmpty {
+                                Text(selectedUnit)
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                            }
                         }
-                    }
-                    Text(formatDate(selected.date))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text(selectedPeriod.aggregateLabel)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(formatValue(calculateAggregate()))
-                            .font(.system(size: 48, weight: .semibold))
-                        // Don't show unit if already in formatted value (hours_minutes or minutes)
-                        let unitToCheck = (actualUnit ?? selectedUnit).lowercased().trimmingCharacters(in: .whitespaces)
-                        let isMinutesUnit = unitToCheck == "hours_minutes" || 
-                                           unitToCheck == "minutes" || 
-                                           unitToCheck == "min" || 
-                                           unitToCheck == "minute" ||
-                                           unitToCheck.hasPrefix("minute")
-                        if !isMinutesUnit && !selectedUnit.isEmpty {
-                            Text(selectedUnit)
-                                .font(.title2)
-                                .foregroundColor(.secondary)
+                        Text(formatDate(selected.date))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(selectedPeriod.aggregateLabel)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(formatValue(calculateAggregate()))
+                                .font(.system(size: 48, weight: .semibold))
+                            // Don't show unit if already in formatted value (hours_minutes or minutes)
+                            let unitToCheck = (actualUnit ?? selectedUnit).lowercased().trimmingCharacters(in: .whitespaces)
+                            let isMinutesUnit = unitToCheck == "hours_minutes" ||
+                                               unitToCheck == "minutes" ||
+                                               unitToCheck == "min" ||
+                                               unitToCheck == "minute" ||
+                                               unitToCheck.hasPrefix("minute")
+                            if !isMinutesUnit && !selectedUnit.isEmpty {
+                                Text(selectedUnit)
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                            }
                         }
+                        Text(visibleDateRangeString())
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
-                    Text(visibleDateRangeString())
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                // Info button (top-aligned with value display)
+                if let showAboutBinding = showAbout {
+                    Button(action: {
+                        withAnimation {
+                            showAboutBinding.wrappedValue = true
+                        }
+                    }) {
+                        Image(systemName: "info.circle")
+                            .font(.title3)
+                            .foregroundColor(color)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)
-            .padding(.top, 24)
+            .padding(.top, 12)
             .onChange(of: scrollManager.actualUnit) { oldValue, newValue in
                 // Update actualUnit when manager fetches it from database
                 NSLog("[CHART] 📏 onChange actualUnit triggered: oldValue='%@', newValue='%@'", oldValue ?? "nil", newValue ?? "nil")

@@ -2,51 +2,27 @@
 //  DateExtensions.swift
 //  WellPath
 //
-//  Date utility extensions for timezone conversions
+//  Date utility extensions for timeline matching
 //
 
 import Foundation
 
 extension Date {
-    /// Converts a UTC period_start date to the corresponding local date for timeline matching
+    /// Returns the date for timeline matching
     ///
-    /// This handles the date matching where period_start is stored in UTC,
-    /// but needs to match against local dates in the timeline.
+    /// Since aggregation_results_cache now stores period_start representing local calendar boundaries
+    /// (daily = local date at midnight, hourly = local hour), no timezone conversion is needed.
+    /// The database stores the "wall clock" time/date directly.
     ///
-    /// For daily aggregations:
-    /// - period_start: 2025-10-29 00:00:00 UTC (entry made on Oct 29 local time)
-    /// - Extract UTC date: 2025-10-29
-    /// - Returns: 2025-10-29 00:00:00 PDT (same calendar date in local timezone)
-    ///
-    /// For hourly/other aggregations:
-    /// - period_start: 2025-10-29 15:00:00 UTC (3 PM UTC)
-    /// - Converts to local: 2025-10-29 08:00:00 PDT (8 AM Pacific, same instant in time)
-    ///
-    /// - Parameter preserveTime: If true, preserves the time component for hourly data. If false (default), sets to midnight for daily data.
-    /// - Returns: The date in local timezone, optionally preserving the time component
+    /// - Parameter preserveTime: If true, preserves the time component for hourly data. If false (default), uses start of day.
+    /// - Returns: The date, optionally at start of day for daily data
     func toLocalDateForTimeline(preserveTime: Bool = false) -> Date {
-        let calendar = Calendar.current
-
         if preserveTime {
-            // For hourly data: just return the date as-is
-            // SwiftUI Charts will handle timezone conversion for display
+            // For hourly data: return as-is (already represents local hour)
             return self
         } else {
-            // For daily data: extract the UTC calendar date and get start of day in local timezone
-            let utcComponents = calendar.dateComponents(in: TimeZone(identifier: "UTC")!, from: self)
-
-            // Create a date with the UTC calendar date components in local timezone
-            var localComponents = DateComponents()
-            localComponents.year = utcComponents.year
-            localComponents.month = utcComponents.month
-            localComponents.day = utcComponents.day
-
-            guard let localDate = calendar.date(from: localComponents) else {
-                return self
-            }
-
-            // Use startOfDay to ensure proper day boundary handling
-            return calendar.startOfDay(for: localDate)
+            // For daily data: use start of day for matching
+            return Calendar.current.startOfDay(for: self)
         }
     }
 }

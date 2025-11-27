@@ -771,50 +771,46 @@ class SleepAnalysisViewModel: ObservableObject {
         }
     }
 
-    /// Helper to fetch sleep stages for a date range
+    /// Helper to fetch sleep session entries for a date range using hypnogram view
     private func fetchManualSleepEntries(from startDate: Date, to endDate: Date) async throws -> [ManualSleepEntry] {
         let userId = try await supabase.auth.session.user.id
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        struct SleepOutputEntry: Codable {
-            let fieldId: String
-            let valueTimestamp: Date?
-            let valueQuantity: Double?
-            let eventInstanceId: String
-            let source: String
-
-            enum CodingKeys: String, CodingKey {
-                case fieldId = "field_id"
-                case valueTimestamp = "value_timestamp"
-                case valueQuantity = "value_quantity"
-                case eventInstanceId = "event_instance_id"
-                case source
-            }
-        }
-
-        // Query patient_sleep_sessions for manual entries in date range
-        let sessionsResponse = try await supabase
-            .from("patient_sleep_sessions")
+        // Query patient_sleep_hypnogram_data view for session info
+        // Group by session to get unique sessions with their start/end times
+        let hypnogramResponse = try await supabase
+            .from("patient_sleep_hypnogram_data")
             .select()
             .eq("patient_id", value: userId)
-            .gte("session_waketime", value: startDate.ISO8601Format())
-            .lte("session_waketime", value: endDate.ISO8601Format())
-            .order("session_waketime", ascending: true)
+            .gte("session_end", value: startDate.ISO8601Format())
+            .lte("session_end", value: endDate.ISO8601Format())
+            .order("start_time", ascending: true)
             .execute()
 
-        let sessions = try decoder.decode([PatientSleepSession].self, from: sessionsResponse.data)
+        let hypnogramData = try decoder.decode([SleepHypnogramData].self, from: hypnogramResponse.data)
+
+        // Group by session_id and extract session-level info
+        let sessionGroups = Dictionary(grouping: hypnogramData) { $0.sleepSessionId }
 
         var manualEntries: [ManualSleepEntry] = []
 
-        for session in sessions {
+        for (sessionId, segments) in sessionGroups {
+            guard let sessionId = sessionId,
+                  let firstSegment = segments.first,
+                  let sessionStart = firstSegment.sessionStart,
+                  let sessionEnd = firstSegment.sessionEnd,
+                  let totalMinutes = firstSegment.sessionTotalMinutes else {
+                continue
+            }
+
             manualEntries.append(ManualSleepEntry(
-                bedtime: session.sessionBedtime,
-                waketime: session.sessionWaketime,
-                sleepDuration: session.totalDurationMinutes * 60, // Convert minutes to seconds
-                source: "auto_calculated", // Sessions are always auto-calculated from data entries
-                eventInstanceId: session.sleepSessionId.uuidString
+                bedtime: sessionStart,
+                waketime: sessionEnd,
+                sleepDuration: totalMinutes * 60, // Convert minutes to seconds
+                source: firstSegment.source,
+                eventInstanceId: sessionId.uuidString
             ))
         }
 
@@ -827,86 +823,33 @@ class SleepAnalysisViewModel: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        // Query patient_sleep_data_entries directly
-        let sleepDataResponse = try await supabase
-            .from("patient_sleep_data_entries")
+        // Query patient_sleep_hypnogram_data view - already has stage names resolved
+        let hypnogramResponse = try await supabase
+            .from("patient_sleep_hypnogram_data")
             .select()
             .eq("patient_id", value: userId)
-            .gte("period_start", value: startDate.ISO8601Format())
-            .lte("period_end", value: endDate.ISO8601Format())
-            .order("period_start", ascending: true)
+            .gte("start_time", value: startDate.ISO8601Format())
+            .lte("end_time", value: endDate.ISO8601Format())
+            .order("start_time", ascending: true)
             .execute()
 
-        let sleepDataEntries = try decoder.decode([PatientSleepDataEntry].self, from: sleepDataResponse.data)
+        let hypnogramData = try decoder.decode([SleepHypnogramData].self, from: hypnogramResponse.data)
 
-        guard !sleepDataEntries.isEmpty else {
+        guard !hypnogramData.isEmpty else {
             return []
         }
 
-        // Fetch sleep period types from universal reference table
-        let uniqueTypeIds = Set(sleepDataEntries.compactMap { $0.periodTypeId }).compactMap { UUID(uuidString: $0) }
-
-        struct PeriodType: Codable {
-            let id: String
-            let referenceKey: String
-            let displayName: String
-
-            enum CodingKeys: String, CodingKey {
-                case id
-                case referenceKey = "reference_key"
-                case displayName = "display_name"
-            }
+        // Convert to SleepStageSegment using the stage property from SleepHypnogramData
+        let segments = hypnogramData.map { entry in
+            SleepStageSegment(
+                stage: entry.stage,
+                startTime: entry.startTime,
+                endTime: entry.endTime,
+                userTimezone: "America/Los_Angeles" // View doesn't include timezone, use default
+            )
         }
 
-        var typeMap: [String: String] = [:]
-        if !uniqueTypeIds.isEmpty {
-            let typesResponse = try await supabase
-                .from("data_entry_fields_reference")
-                .select("id, reference_key, display_name")
-                .in("id", values: uniqueTypeIds.map { $0.uuidString })
-                .execute()
-
-            let periodTypes = try decoder.decode([PeriodType].self, from: typesResponse.data)
-            typeMap = Dictionary(uniqueKeysWithValues: periodTypes.map { ($0.id, $0.referenceKey) })
-        }
-
-        var segments: [SleepStageSegment] = []
-
-        for entry in sleepDataEntries {
-            guard let typeId = entry.periodTypeId,
-                  let periodName = typeMap[typeId] else {
-                continue
-            }
-
-            // Map period name to SleepStage enum
-            let stage: SleepStage
-            switch periodName.lowercased() {
-            case "in_bed":
-                stage = .inBed
-            case "asleep":
-                stage = .asleep
-            case "core":
-                stage = .core
-            case "deep":
-                stage = .deep
-            case "rem":
-                stage = .rem
-            case "awake":
-                stage = .awake
-            default:
-                NSLog("[SLEEP] ⚠️ Unknown sleep period type: \(periodName)")
-                continue
-            }
-
-            segments.append(SleepStageSegment(
-                stage: stage,
-                startTime: entry.periodStart,
-                endTime: entry.periodEnd,
-                userTimezone: entry.userTimezone ?? "America/Los_Angeles"
-            ))
-        }
-
-        return segments.sorted { $0.startTime < $1.startTime }
+        return segments
     }
 
     /// Calculates summary metrics for a manual sleep entry

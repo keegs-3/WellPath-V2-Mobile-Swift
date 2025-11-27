@@ -9,17 +9,17 @@ import SwiftUI
 
 struct DataManagementView: View {
     let metricName: String
-    let fieldIds: [String]  // Field IDs to filter for this metric
+    let quantityTypes: [String]  // Quantity types to filter for this metric (e.g., "steps", "hydration_ounces")
     let color: Color
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: DataManagementViewModel
     @State private var editMode: EditMode = .inactive
 
-    init(metricName: String, fieldIds: [String], color: Color) {
+    init(metricName: String, quantityTypes: [String], color: Color) {
         self.metricName = metricName
-        self.fieldIds = fieldIds
+        self.quantityTypes = quantityTypes
         self.color = color
-        _viewModel = StateObject(wrappedValue: DataManagementViewModel(fieldIds: fieldIds))
+        _viewModel = StateObject(wrappedValue: DataManagementViewModel(quantityTypes: quantityTypes))
     }
 
     var body: some View {
@@ -243,10 +243,10 @@ class DataManagementViewModel: ObservableObject {
     @Published var isLoading = false
 
     private let supabase = SupabaseManager.shared.client
-    private let fieldIds: [String]
+    private let quantityTypes: [String]
 
-    init(fieldIds: [String]) {
-        self.fieldIds = fieldIds
+    init(quantityTypes: [String]) {
+        self.quantityTypes = quantityTypes
     }
 
     var sortedDates: [Date] {
@@ -295,24 +295,39 @@ class DataManagementViewModel: ObservableObject {
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string: \(dateString)")
             }
 
-            // Query patient_data_entries for the specified field IDs
+            // Query patient_samples for the specified quantity types
             let query = supabase
-                .from("patient_data_entries")
+                .from("patient_samples")
                 .select()
                 .eq("patient_id", value: patientId.uuidString)
-                .in("field_id", values: fieldIds)
-                .order("entry_date", ascending: false)
+                .in("quantity_type", values: quantityTypes)
+                .order("start_time", ascending: false)
 
             let data = try await query.execute().data
-            let response = try decoder.decode([DataEntry].self, from: data)
+            let samples = try decoder.decode([RawDataSample].self, from: data)
+
+            // Convert to DataEntry models
+            let entries = samples.map { sample in
+                DataEntry(
+                    id: sample.id,
+                    patientId: sample.patientId,
+                    quantityType: sample.quantityType ?? "",
+                    quantityValue: sample.quantityValue,
+                    quantityUnit: sample.quantityUnit,
+                    startTime: sample.startTime,
+                    endTime: sample.endTime,
+                    source: sample.source,
+                    createdAt: sample.createdAt
+                )
+            }
 
             // Group entries by date
             let calendar = Calendar.current
-            entriesByDate = Dictionary(grouping: response) { entry in
-                calendar.startOfDay(for: entry.entryDate)
+            entriesByDate = Dictionary(grouping: entries) { entry in
+                calendar.startOfDay(for: entry.startTime)
             }
 
-            print("Loaded \(response.count) data entries for fields: \(fieldIds)")
+            print("Loaded \(entries.count) samples for quantity types: \(quantityTypes)")
 
         } catch {
             print("Error loading data entries: \(error)")
@@ -330,7 +345,7 @@ class DataManagementViewModel: ObservableObject {
                 return
             }
 
-            // Delete each entry
+            // Delete each entry from patient_samples
             for entry in entries {
                 // Verify this entry belongs to the current user
                 guard entry.patientId == patientId else {
@@ -338,15 +353,15 @@ class DataManagementViewModel: ObservableObject {
                     continue
                 }
 
-                // Delete from database
+                // Delete from patient_samples
                 try await supabase
-                    .from("patient_data_entries")
+                    .from("patient_samples")
                     .delete()
                     .eq("id", value: entry.id.uuidString)
                     .eq("patient_id", value: patientId.uuidString)
                     .execute()
 
-                print("Deleted entry: \(entry.id)")
+                print("Deleted sample: \(entry.id)")
             }
 
             // Reload data
@@ -360,81 +375,130 @@ class DataManagementViewModel: ObservableObject {
 
 // MARK: - Models
 
-struct DataEntry: Identifiable, Codable {
+/// Raw sample from patient_samples table
+struct RawDataSample: Codable {
     let id: UUID
     let patientId: UUID
-    let fieldId: String
-    let entryDate: Date
-    let entryTimestamp: Date?
-    let valueQuantity: Double?
-    let valueTimestamp: Date?
-    let valueReference: UUID?
+    let sampleType: String
+    let startTime: Date
+    let endTime: Date
+    let quantityValue: Double?
+    let quantityUnit: String?
+    let quantityType: String?
     let source: String
-    let healthkitUuid: String?
+    let createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
         case patientId = "patient_id"
-        case fieldId = "field_id"
-        case entryDate = "entry_date"
-        case entryTimestamp = "entry_timestamp"
-        case valueQuantity = "value_quantity"
-        case valueTimestamp = "value_timestamp"
-        case valueReference = "value_reference"
+        case sampleType = "sample_type"
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case quantityValue = "quantity_value"
+        case quantityUnit = "quantity_unit"
+        case quantityType = "quantity_type"
         case source
-        case healthkitUuid = "healthkit_uuid"
+        case createdAt = "created_at"
+    }
+}
+
+/// Data entry view model for display
+struct DataEntry: Identifiable {
+    let id: UUID
+    let patientId: UUID
+    let quantityType: String
+    let quantityValue: Double?
+    let quantityUnit: String?
+    let startTime: Date
+    let endTime: Date
+    let source: String
+    let createdAt: Date?
+
+    var entryDate: Date {
+        startTime
+    }
+
+    var entryTimestamp: Date? {
+        startTime
     }
 
     var displayName: String {
-        // Map common field IDs to display names
-        switch fieldId {
-        case "OUTPUT_SLEEP_PERIOD_DURATION":
-            return "Sleep Duration"
-        case "OUTPUT_TIME_ASLEEP":
-            return "Time Asleep"
-        case "OUTPUT_TIME_AWAKE":
-            return "Time Awake"
-        case "OUTPUT_TIME_IN_BED":
-            return "Time In Bed"
-        case "DEF_SLEEP_PERIOD_TYPE":
-            return "Sleep Period Type"
+        // Map quantity types to display names
+        switch quantityType {
+        case QuantityTypes.steps:
+            return "Steps"
+        case QuantityTypes.proteinGrams:
+            return "Protein"
+        case QuantityTypes.hydrationOunces:
+            return "Water"
+        case QuantityTypes.vegetablesServings:
+            return "Vegetables"
+        case QuantityTypes.legumesServings:
+            return "Legumes"
+        case QuantityTypes.wholeGrainsServings:
+            return "Whole Grains"
+        case QuantityTypes.fruitsServings:
+            return "Fruits"
+        case QuantityTypes.strengthDuration:
+            return "Strength Training"
+        case QuantityTypes.cardioDuration:
+            return "Cardio"
+        case QuantityTypes.yogaDuration:
+            return "Yoga"
+        case QuantityTypes.meditationDuration:
+            return "Meditation"
+        case QuantityTypes.weight:
+            return "Weight"
+        case QuantityTypes.heartRate:
+            return "Heart Rate"
         default:
-            // Format field ID nicely if no mapping exists
-            return fieldId
+            // Format quantity type nicely if no mapping exists
+            return quantityType
                 .replacingOccurrences(of: "_", with: " ")
                 .capitalized
         }
     }
 
     var valueDescription: String {
-        if let quantity = valueQuantity {
-            // Format based on field type
-            if fieldId.contains("DURATION") || fieldId.contains("TIME") {
-                // Format as hours and minutes
-                let hours = Int(quantity)
-                let minutes = Int((quantity - Double(hours)) * 60)
+        guard let value = quantityValue else { return "N/A" }
+
+        // Format based on quantity type
+        if quantityType.contains("duration") {
+            // Format as hours and minutes (value is in minutes)
+            let totalMinutes = Int(value)
+            let hours = totalMinutes / 60
+            let minutes = totalMinutes % 60
+            if hours > 0 {
                 return "\(hours)h \(minutes)m"
             } else {
-                // Default numeric formatting
-                return String(format: "%.1f", quantity)
+                return "\(minutes)m"
             }
-        } else if let _ = valueReference {
-            return "Reference Value"
-        } else if let timestamp = valueTimestamp {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            return formatter.string(from: timestamp)
+        } else if quantityType == QuantityTypes.steps {
+            // Steps as whole number with comma formatting
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            return formatter.string(from: NSNumber(value: Int(value))) ?? "\(Int(value))"
+        } else if quantityType.contains("servings") {
+            // Servings as decimal
+            return String(format: "%.1f servings", value)
+        } else if quantityType == QuantityTypes.proteinGrams {
+            return "\(Int(value))g"
+        } else if quantityType == QuantityTypes.hydrationOunces {
+            return "\(Int(value)) oz"
+        } else if let unit = quantityUnit {
+            return "\(Int(value)) \(unit)"
+        } else {
+            return String(format: "%.1f", value)
         }
-        return "N/A"
     }
 
     var canDelete: Bool {
         // Can delete WellPath entries or own HealthKit entries
-        return source == "wellpath" || source == "healthkit"
+        return source == "wellpath" || source == "wellpath_input" || source == "healthkit"
     }
 
     var canEdit: Bool {
         // Can only edit WellPath entries
-        return source == "wellpath"
+        return source == "wellpath" || source == "wellpath_input"
     }
 }

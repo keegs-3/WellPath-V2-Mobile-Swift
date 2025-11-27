@@ -141,6 +141,49 @@ struct PatientSleepSession: Codable, Identifiable {
     }
 }
 
+// MARK: - Sleep Hypnogram Data (from view)
+/// Data from patient_sleep_hypnogram_data view for drawing hypnograms
+struct SleepHypnogramData: Codable {
+    let patientId: UUID
+    let sleepSessionId: UUID?
+    let aggregationDate: Date?
+    let startTime: Date
+    let endTime: Date
+    let sleepStage: Int          // 0=Awake, 1=REM, 2=Core, 3=Deep
+    let stageName: String        // 'Awake', 'REM', 'Core', 'Deep'
+    let durationMinutes: Double
+    let source: String
+    let sessionStart: Date?      // Window function: earliest start in session
+    let sessionEnd: Date?        // Window function: latest end in session
+    let sessionTotalMinutes: Double?  // Window function: total duration in session
+
+    enum CodingKeys: String, CodingKey {
+        case patientId = "patient_id"
+        case sleepSessionId = "sleep_session_id"
+        case aggregationDate = "aggregation_date"
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case sleepStage = "sleep_stage"
+        case stageName = "stage_name"
+        case durationMinutes = "duration_minutes"
+        case source
+        case sessionStart = "session_start"
+        case sessionEnd = "session_end"
+        case sessionTotalMinutes = "session_total_minutes"
+    }
+
+    /// Convert sleep_stage integer to SleepStage enum
+    var stage: SleepStage {
+        switch sleepStage {
+        case 0: return .awake
+        case 1: return .rem
+        case 2: return .core
+        case 3: return .deep
+        default: return .asleep
+        }
+    }
+}
+
 // MARK: - Patient Event
 /// Calculated event for non-sleep data (workouts, meals, etc.)
 struct PatientEvent: Codable, Identifiable {

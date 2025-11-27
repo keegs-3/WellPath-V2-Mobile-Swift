@@ -84,16 +84,11 @@ struct AmountsTabView: View {
     @StateObject private var viewModel = SleepDetailViewModel()
     @StateObject private var chartViewModel = SleepAnalysisViewModel()
     @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_SLEEP_ANALYSIS_AMOUNTS")
-    @State private var selectedView: AmountsView = .chart
+    @State private var showAbout = false
     @State private var selectedPeriod: SleepPeriod = .week
     @State private var selectedStage: SleepStage?
     @State private var visibleDateRange: (start: Date, end: Date)?
 
-    enum AmountsView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
-    
     enum SleepPeriod: String, CaseIterable {
         case day = "D"
         case week = "W"
@@ -103,25 +98,16 @@ struct AmountsTabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // View picker (Chart/About)
-            Picker("View", selection: $selectedView) {
-                ForEach(AmountsView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
             // Content
-            if selectedView == .chart {
-                chartView
+            if showAbout {
+                aboutContentView
             } else {
-                aboutView
+                chartView
             }
         }
         .task {
             await educationViewModel.loadEducation()
-            
+
             // Load initial sleep data based on period
             await loadSleepDataForPeriod(selectedPeriod)
         }
@@ -182,14 +168,15 @@ struct AmountsTabView: View {
                         onVisibleRangeChange: { start, end in
                             visibleDateRange = (start, end)
                         },
-                        height: 200
+                        height: 200,
+                        showAbout: $showAbout
                     )
                 case .week:
-                    ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 200)
+                    ScrollableSleepChart(viewMode: .week, viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 200, showAbout: $showAbout)
                 case .month:
-                    ScrollableSleepChart(viewMode: .month, viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 200)
+                    ScrollableSleepChart(viewMode: .month, viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 200, showAbout: $showAbout)
                 case .sixMonth:
-                    WeeklySleepChart(viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 272)
+                    WeeklySleepChart(viewModel: chartViewModel, selectedStage: $selectedStage, visibleRangeBinding: $visibleDateRange, height: 272, showAbout: $showAbout)
                 }
             }
 
@@ -236,63 +223,81 @@ struct AmountsTabView: View {
         .background(Color(uiColor: .systemGroupedBackground))
     }
 
-    private var aboutView: some View {
-        ScrollView {
-            if let education = educationViewModel.education {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let about = education.aboutContent {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(color)
-                                Text("About Sleep Stage Amounts")
-                                    .font(.headline)
-                            }
-                            Text(about)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let impact = education.longevityImpact {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "heart.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Health Impact")
-                                    .font(.headline)
-                            }
-                            Text(impact)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let tips = education.quickTips {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lightbulb.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Quick Tips")
-                                    .font(.headline)
-                            }
-
-                            ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text("\(index + 1).")
-                                        .fontWeight(.semibold)
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if let education = educationViewModel.education {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let about = education.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
                                         .foregroundColor(color)
-                                    Text(tip)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
+                                    Text("About")
+                                        .font(.headline)
+                                }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let impact = education.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let tips = education.quickTips {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
+                    .padding()
+                    .padding(.top, 40) // Space for close button
                 }
-                .padding()
             }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
         }
+        .background(Color.clear)
     }
 
     // MARK: - Helpers
@@ -712,92 +717,52 @@ class SleepDetailViewModel: ObservableObject {
 
             print("🌙 Loading sleep data for period: \(period.rawValue)")
 
-            // Query sleep stage data
-            struct SleepDataEntry: Codable {
-                let fieldId: String
-                let valueTimestamp: Date?
-                let valueReference: String?
-                let eventInstanceId: String
+            // Query patient_sleep_hypnogram_data view (unified sleep data from patient_samples)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
 
-                enum CodingKeys: String, CodingKey {
-                    case fieldId = "field_id"
-                    case valueTimestamp = "value_timestamp"
-                    case valueReference = "value_reference"
-                    case eventInstanceId = "event_instance_id"
-                }
-            }
-
-            // Query patient_sleep_data_entries directly
-            let sleepDataEntries: [PatientSleepDataEntry] = try await supabase
-                .from("patient_sleep_data_entries")
+            let hypnogramResponse = try await supabase
+                .from("patient_sleep_hypnogram_data")
                 .select()
                 .eq("patient_id", value: userId)
-                .gte("period_start", value: startDate.ISO8601Format())
-                .lte("period_end", value: now.ISO8601Format())
-                .order("period_start", ascending: true)
+                .gte("start_time", value: startDate.ISO8601Format())
+                .lte("end_time", value: now.ISO8601Format())
+                .order("start_time", ascending: true)
                 .execute()
-                .value
 
-            guard !sleepDataEntries.isEmpty else {
+            let hypnogramData = try decoder.decode([SleepHypnogramData].self, from: hypnogramResponse.data)
+
+            guard !hypnogramData.isEmpty else {
                 sleepStageData = []
                 isLoading = false
                 return
             }
 
-            // Fetch period type references
-            let uniqueTypeIds = Set(sleepDataEntries.compactMap { $0.periodTypeId }).compactMap { UUID(uuidString: $0) }
-
-            struct PeriodTypeData: Codable {
-                let id: String
-                let referenceKey: String
-
-                enum CodingKeys: String, CodingKey {
-                    case id
-                    case referenceKey = "reference_key"
-                }
-            }
-
-            var typeMap: [String: String] = [:]
-            if !uniqueTypeIds.isEmpty {
-                let periodTypes: [PeriodTypeData] = try await supabase
-                    .from("data_entry_fields_reference")
-                    .select("id, reference_key")
-                    .in("id", values: uniqueTypeIds.map { $0.uuidString })
-                    .execute()
-                    .value
-
-                typeMap = Dictionary(uniqueKeysWithValues: periodTypes.map { ($0.id, $0.referenceKey) })
-            }
-
+            // Convert SleepHypnogramData to SleepStageDataPoint
             var stageData: [SleepStageDataPoint] = []
 
-            for entry in sleepDataEntries {
-                guard let typeId = entry.periodTypeId,
-                      let periodName = typeMap[typeId] else {
-                    continue
-                }
-
+            for entry in hypnogramData {
+                // Map sleep_stage integer to SleepStage enum
+                // 0=Awake, 1=REM, 2=Core, 3=Deep
                 let stage: SleepStage
-                switch periodName.lowercased() {
-                case "in_bed": stage = .inBed
-                case "asleep": stage = .asleep
-                case "core": stage = .core
-                case "deep": stage = .deep
-                case "rem": stage = .rem
-                case "awake": stage = .awake
+                switch entry.sleepStage {
+                case 0: stage = .awake
+                case 1: stage = .rem
+                case 2: stage = .core
+                case 3: stage = .deep
                 default: continue
                 }
 
                 stageData.append(SleepStageDataPoint(
                     stage: stage,
-                    startDate: entry.periodStart,
-                    endDate: entry.periodEnd
+                    startDate: entry.startTime,
+                    endDate: entry.endTime
                 ))
             }
 
             sleepStageData = stageData.sorted { $0.startDate < $1.startDate }
 
-            print("✅ Loaded \(sleepStageData.count) sleep segments")
+            print("✅ Loaded \(sleepStageData.count) sleep segments from hypnogram view")
 
         } catch {
             print("❌ Error loading sleep data: \(error)")

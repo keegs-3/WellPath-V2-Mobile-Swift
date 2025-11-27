@@ -38,6 +38,19 @@ class ProteinPrimaryViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
+    // Summary data for mini cards
+    @Published var todayValue: Double?
+    @Published var weeklyAverage: Double?
+
+    // Card titles from display_metrics (loaded dynamically)
+    @Published var amountTitle: String = "Protein Amount"
+    @Published var timingTitle: String = "Protein Timing"
+    @Published var typeTitle: String = "Protein Type"
+    @Published var ratioTitle: String = "Protein Ratio"
+
+    // All protein display metrics
+    @Published var allProteinMetrics: [String: DisplayMetric] = [:]
+
     private let metricId: String
     private let supabase = SupabaseManager.shared.client
 
@@ -53,17 +66,41 @@ class ProteinPrimaryViewModel: ObservableObject {
         do {
             print("📊 Loading Protein primary screen for metric: \(metricId)")
 
-            // Query display_metrics table directly for chart config + About content
-            let results: [DisplayMetric] = try await supabase
+            // Query ALL protein display_metrics for card titles
+            let allResults: [DisplayMetric] = try await supabase
                 .from("display_metrics")
                 .select()
-                .eq("metric_id", value: metricId)
+                .like("metric_id", pattern: "DISP_PROTEIN%")
                 .eq("is_active", value: true)
-                .limit(1)
                 .execute()
                 .value
 
-            guard let metric = results.first else {
+            // Store all metrics and set titles dynamically
+            for metric in allResults {
+                allProteinMetrics[metric.metricId] = metric
+
+                switch metric.metricId {
+                case "DISP_PROTEIN_GRAMS":
+                    amountTitle = metric.metricName
+                case "DISP_PROTEIN_MEAL_TIMING":
+                    timingTitle = metric.metricName
+                case "DISP_PROTEIN_TYPE":
+                    typeTitle = metric.metricName
+                case "DISP_PROTEIN_PER_KG":
+                    ratioTitle = metric.metricName
+                default:
+                    break
+                }
+            }
+
+            print("📊 Loaded \(allResults.count) protein display metrics")
+            print("   - Amount: \(amountTitle)")
+            print("   - Timing: \(timingTitle)")
+            print("   - Type: \(typeTitle)")
+            print("   - Ratio: \(ratioTitle)")
+
+            // Get the primary metric for the main chart
+            guard let metric = allProteinMetrics[metricId] else {
                 error = "Display metric not found for \(metricId)"
                 isLoading = false
                 print("❌ No metric found for \(metricId)")
@@ -84,6 +121,9 @@ class ProteinPrimaryViewModel: ObservableObject {
             print("   - Impact: \(longevityImpact != nil ? "✓" : "✗")")
             print("   - Tips: \(quickTips?.count ?? 0) tips")
 
+            // Load summary data for mini cards
+            await loadSummaryData()
+
         } catch {
             let errorMessage = error.localizedDescription
             self.error = "Failed to load Protein primary screen: \(errorMessage)"
@@ -91,5 +131,63 @@ class ProteinPrimaryViewModel: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    /// Load today's value and weekly average from aggregation_results_cache
+    private func loadSummaryData() async {
+        do {
+            let patientId = try await supabase.auth.session.user.id
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+
+            // Get today's value (daily aggregation)
+            struct AggResult: Codable {
+                let value: Double
+                let periodStart: Date
+
+                enum CodingKeys: String, CodingKey {
+                    case value
+                    case periodStart = "period_start"
+                }
+            }
+
+            let todayResults: [AggResult] = try await supabase
+                .from("aggregation_results_cache")
+                .select("value, period_start")
+                .eq("patient_id", value: patientId)
+                .eq("agg_metric_id", value: "AGG_PROTEIN_GRAMS")
+                .eq("period_type", value: "daily")
+                .gte("period_start", value: ISO8601DateFormatter().string(from: today))
+                .lt("period_start", value: ISO8601DateFormatter().string(from: calendar.date(byAdding: .day, value: 1, to: today)!))
+                .limit(1)
+                .execute()
+                .value
+
+            todayValue = todayResults.first?.value
+
+            // Get weekly average (last 7 days of daily values)
+            let weekAgo = calendar.date(byAdding: .day, value: -7, to: today)!
+
+            let weekResults: [AggResult] = try await supabase
+                .from("aggregation_results_cache")
+                .select("value, period_start")
+                .eq("patient_id", value: patientId)
+                .eq("agg_metric_id", value: "AGG_PROTEIN_GRAMS")
+                .eq("period_type", value: "daily")
+                .gte("period_start", value: ISO8601DateFormatter().string(from: weekAgo))
+                .lt("period_start", value: ISO8601DateFormatter().string(from: today))
+                .execute()
+                .value
+
+            if !weekResults.isEmpty {
+                let sum = weekResults.reduce(0.0) { $0 + $1.value }
+                weeklyAverage = sum / Double(weekResults.count)
+            }
+
+            print("📊 Summary data: today=\(todayValue ?? 0), weeklyAvg=\(weeklyAverage ?? 0)")
+
+        } catch {
+            print("⚠️ Failed to load summary data: \(error)")
+        }
     }
 }

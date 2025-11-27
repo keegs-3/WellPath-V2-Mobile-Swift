@@ -74,106 +74,137 @@ struct WholeGrainsTypeStackedChart: View {
     var body: some View {
         VStack(spacing: 0) {
             if !viewModel.isLoading {
-                // Time period picker
-                Picker("Period", selection: $selectedPeriod) {
-                    ForEach(TimePeriod.allCases, id: \.self) { period in
-                        Text(period.rawValue).tag(period)
-                    }
+                periodPicker
+                chartView
+                typeAveragesList
+            }
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .task {
+            await viewModel.loadData(
+                for: selectedPeriod,
+                typeIds: wholeGrainsTypeAggIds,
+                typeNames: typeDisplayNames,
+                typeColors: typeColors
+            )
+
+            // Set scroll position after initial load
+            let now = Date()
+            let visibleDuration = selectedPeriod.numberOfBars
+            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+            scrollPosition = Calendar.current.date(
+                byAdding: selectedPeriod.calendarComponent,
+                value: -offsetFromEnd,
+                to: now
+            ) ?? now
+            print("📊 WHOLE GRAINS TYPE: Initial scrollPosition=\(scrollPosition)")
+        }
+    }
+
+    // MARK: - View Components
+
+    private var periodPicker: some View {
+        Picker("Period", selection: $selectedPeriod) {
+            ForEach(TimePeriod.allCases, id: \.self) { period in
+                Text(period.rawValue).tag(period)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .padding(.top, 16)
+        .onChange(of: selectedPeriod) { oldValue, newPeriod in
+            selectedBarDate = nil
+            selectedType = nil
+
+            // Reset scroll position so TODAY is ~90% across the visible window (leaving 10% for future)
+            let now = Date()
+            let visibleDuration = newPeriod.numberOfBars
+            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+            scrollPosition = Calendar.current.date(
+                byAdding: newPeriod.calendarComponent,
+                value: -offsetFromEnd,
+                to: now
+            ) ?? now
+
+            print("📊 WHOLE GRAINS TYPE: Set scrollPosition=\(scrollPosition) for period=\(newPeriod)")
+
+            Task {
+                await viewModel.loadData(
+                    for: newPeriod,
+                    typeIds: wholeGrainsTypeAggIds,
+                    typeNames: typeDisplayNames,
+                    typeColors: typeColors
+                )
+            }
+        }
+    }
+
+    private var chartView: some View {
+        Chart {
+            ForEach(viewModel.chartData) { dateData in
+                ForEach(dateData.typeValues) { typeValue in
+                    let opacity: Double = {
+                        if selectedType == nil {
+                            return 1.0
+                        } else if selectedType == typeValue.name {
+                            return 1.0
+                        } else {
+                            return 0.3
+                        }
+                    }()
+
+                    BarMark(
+                        x: .value("Time", dateData.date),
+                        y: .value("Servings", getDisplayValue(for: typeValue.value)),
+                        width: .fixed(getBarWidth())
+                    )
+                    .foregroundStyle(typeValue.color.opacity(opacity))
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .onChange(of: selectedPeriod) { oldValue, newPeriod in
-                    selectedBarDate = nil
-                    selectedType = nil
+            }
+        }
+        .frame(height: 280)
+        .chartScrollableAxes(.horizontal)
+        .chartScrollPosition(x: $scrollPosition)
+        .chartXVisibleDomain(length: getVisibleDomainTimeInterval())
+        .chartGesture { proxy in
+            SpatialTapGesture()
+                .onEnded { value in
+                    if let tappedDate: Date = proxy.value(atX: value.location.x) {
+                        let closest = viewModel.chartData.min(by: {
+                            abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
+                        })
 
-                    // Reset scroll position so TODAY is ~90% across the visible window (leaving 10% for future)
-                    let now = Date()
-                    let visibleDuration = newPeriod.numberOfBars
-                    let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-                    scrollPosition = Calendar.current.date(
-                        byAdding: newPeriod.calendarComponent,
-                        value: -offsetFromEnd,
-                        to: now
-                    ) ?? now
-
-                    print("📊 WHOLE GRAINS TYPE: Set scrollPosition=\(scrollPosition) for period=\(newPeriod)")
-
-                    Task {
-                        await viewModel.loadData(
-                            for: newPeriod,
-                            typeIds: wholeGrainsTypeAggIds,
-                            typeNames: typeDisplayNames,
-                            typeColors: typeColors
-                        )
-                    }
-                }
-
-                // Stacked bar chart
-                Chart {
-                    ForEach(viewModel.chartData) { dateData in
-                        ForEach(dateData.typeValues) { typeValue in
-                            let opacity: Double = {
-                                if selectedType == nil {
-                                    return 1.0
-                                } else if selectedType == typeValue.name {
-                                    return 1.0
-                                } else {
-                                    return 0.3
-                                }
-                            }()
-
-                            BarMark(
-                                x: .value("Time", dateData.date),
-                                y: .value("Servings", getDisplayValue(for: typeValue.value)),
-                                width: .fixed(getBarWidth())
-                            )
-                            .foregroundStyle(typeValue.color.opacity(opacity))
+                        if selectedBarDate == closest?.date {
+                            selectedBarDate = nil
+                            selectedType = nil
+                        } else {
+                            selectedBarDate = closest?.date
                         }
                     }
                 }
-                .frame(height: 280)
-                .chartScrollableAxes(.horizontal)
-                .chartScrollPosition(x: $scrollPosition)
-                .chartXVisibleDomain(length: getVisibleDomainTimeInterval())
-                .chartGesture { proxy in
-                    SpatialTapGesture()
-                        .onEnded { value in
-                            if let tappedDate: Date = proxy.value(atX: value.location.x) {
-                                let closest = viewModel.chartData.min(by: {
-                                    abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
-                                })
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: getAxisLabelStride(), count: getAxisLabelMultiplier())) { value in
+                if value.as(Date.self) != nil {
+                    AxisValueLabel(format: getAxisLabelFormat())
+                    AxisGridLine()
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks { value in
+                AxisValueLabel()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                    .foregroundStyle(Color.secondary.opacity(0.2))
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
+    }
 
-                                if selectedBarDate == closest?.date {
-                                    selectedBarDate = nil
-                                    selectedType = nil
-                                } else {
-                                    selectedBarDate = closest?.date
-                                }
-                            }
-                        }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: getAxisLabelStride(), count: getAxisLabelMultiplier())) { value in
-                        if value.as(Date.self) != nil {
-                            AxisValueLabel(format: getAxisLabelFormat())
-                            AxisGridLine()
-                        }
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks { value in
-                        AxisValueLabel()
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
-                            .foregroundStyle(Color.secondary.opacity(0.2))
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
-
-                // Scrollable type averages list
-                ScrollView {
+    private var typeAveragesList: some View {
+        ScrollView {
                     // Servings/% toggle
                     HStack {
                         Spacer()
@@ -250,28 +281,6 @@ struct WholeGrainsTypeStackedChart: View {
                     .padding(.vertical, 8)
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
-            }
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .task {
-            await viewModel.loadData(
-                for: selectedPeriod,
-                typeIds: wholeGrainsTypeAggIds,
-                typeNames: typeDisplayNames,
-                typeColors: typeColors
-            )
-
-            // Set scroll position after initial load
-            let now = Date()
-            let visibleDuration = selectedPeriod.numberOfBars
-            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-            scrollPosition = Calendar.current.date(
-                byAdding: selectedPeriod.calendarComponent,
-                value: -offsetFromEnd,
-                to: now
-            ) ?? now
-            print("📊 WHOLE GRAINS TYPE: Initial scrollPosition=\(scrollPosition)")
-        }
     }
 
     // MARK: - Helpers (EXACT ParentMetricBarChart pattern)

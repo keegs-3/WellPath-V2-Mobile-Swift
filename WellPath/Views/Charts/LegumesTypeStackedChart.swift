@@ -21,36 +21,36 @@ struct LegumesTypeStackedChart: View {
 
     // Ordered from best (top of stack) to worst (bottom of stack)
     private let legumesTypeAggIds = [
-        "AGG_LEGUMES_TYPE_LENTILS",
-        "AGG_LEGUMES_TYPE_CHICKPEAS",
-        "AGG_LEGUMES_TYPE_BLACK_BEANS",
-        "AGG_LEGUMES_TYPE_KIDNEY_BEANS",
-        "AGG_LEGUMES_TYPE_PINTO_BEANS",
-        "AGG_LEGUMES_TYPE_SOYBEANS",
-        "AGG_LEGUMES_TYPE_PEAS",
+        "AGG_LEGUMES_TYPE_BROWN_RICE",
+        "AGG_LEGUMES_TYPE_QUINOA",
+        "AGG_LEGUMES_TYPE_OATS",
+        "AGG_LEGUMES_TYPE_WHOLE_WHEAT",
+        "AGG_LEGUMES_TYPE_BARLEY",
+        "AGG_LEGUMES_TYPE_FARRO",
+        "AGG_LEGUMES_TYPE_BULGUR",
         "AGG_LEGUMES_TYPE_OTHER"
     ]
 
     private let typeDisplayNames: [String: String] = [
-        "AGG_LEGUMES_TYPE_LENTILS": "Lentils",
-        "AGG_LEGUMES_TYPE_CHICKPEAS": "Chickpeas",
-        "AGG_LEGUMES_TYPE_BLACK_BEANS": "Black Beans",
-        "AGG_LEGUMES_TYPE_KIDNEY_BEANS": "Kidney Beans",
-        "AGG_LEGUMES_TYPE_PINTO_BEANS": "Pinto Beans",
-        "AGG_LEGUMES_TYPE_SOYBEANS": "Soybeans",
-        "AGG_LEGUMES_TYPE_PEAS": "Peas",
+        "AGG_LEGUMES_TYPE_BROWN_RICE": "Brown Rice",
+        "AGG_LEGUMES_TYPE_QUINOA": "Quinoa",
+        "AGG_LEGUMES_TYPE_OATS": "Oats",
+        "AGG_LEGUMES_TYPE_WHOLE_WHEAT": "Whole Wheat",
+        "AGG_LEGUMES_TYPE_BARLEY": "Barley",
+        "AGG_LEGUMES_TYPE_FARRO": "Farro",
+        "AGG_LEGUMES_TYPE_BULGUR": "Bulgur",
         "AGG_LEGUMES_TYPE_OTHER": "Other"
     ]
 
     // Apple Health style vibrant colors
     private let typeColors: [String: Color] = [
-        "AGG_LEGUMES_TYPE_LENTILS": Color(red: 0.2, green: 0.8, blue: 0.3),
-        "AGG_LEGUMES_TYPE_CHICKPEAS": Color(red: 0.3, green: 0.85, blue: 0.4),
-        "AGG_LEGUMES_TYPE_BLACK_BEANS": Color(red: 0.4, green: 0.9, blue: 0.5),
-        "AGG_LEGUMES_TYPE_KIDNEY_BEANS": Color(red: 0.5, green: 0.95, blue: 0.6),
-        "AGG_LEGUMES_TYPE_PINTO_BEANS": Color(red: 0.6, green: 1.0, blue: 0.7),
-        "AGG_LEGUMES_TYPE_SOYBEANS": Color(red: 0.7, green: 1.0, blue: 0.8),
-        "AGG_LEGUMES_TYPE_PEAS": Color(red: 0.5, green: 0.75, blue: 1.0),
+        "AGG_LEGUMES_TYPE_BROWN_RICE": Color(red: 0.6, green: 0.4, blue: 0.2),
+        "AGG_LEGUMES_TYPE_QUINOA": Color(red: 0.7, green: 0.5, blue: 0.3),
+        "AGG_LEGUMES_TYPE_OATS": Color(red: 0.8, green: 0.6, blue: 0.4),
+        "AGG_LEGUMES_TYPE_WHOLE_WHEAT": Color(red: 0.75, green: 0.55, blue: 0.35),
+        "AGG_LEGUMES_TYPE_BARLEY": Color(red: 0.65, green: 0.45, blue: 0.25),
+        "AGG_LEGUMES_TYPE_FARRO": Color(red: 0.7, green: 0.6, blue: 0.4),
+        "AGG_LEGUMES_TYPE_BULGUR": Color(red: 0.8, green: 0.65, blue: 0.45),
         "AGG_LEGUMES_TYPE_OTHER": Color(red: 0.9, green: 0.9, blue: 0.9)
     ]
 
@@ -74,106 +74,137 @@ struct LegumesTypeStackedChart: View {
     var body: some View {
         VStack(spacing: 0) {
             if !viewModel.isLoading {
-                // Time period picker
-                Picker("Period", selection: $selectedPeriod) {
-                    ForEach(TimePeriod.allCases, id: \.self) { period in
-                        Text(period.rawValue).tag(period)
-                    }
+                periodPicker
+                chartView
+                typeAveragesList
+            }
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .task {
+            await viewModel.loadData(
+                for: selectedPeriod,
+                typeIds: legumesTypeAggIds,
+                typeNames: typeDisplayNames,
+                typeColors: typeColors
+            )
+
+            // Set scroll position after initial load
+            let now = Date()
+            let visibleDuration = selectedPeriod.numberOfBars
+            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+            scrollPosition = Calendar.current.date(
+                byAdding: selectedPeriod.calendarComponent,
+                value: -offsetFromEnd,
+                to: now
+            ) ?? now
+            print("📊 WHOLE GRAINS TYPE: Initial scrollPosition=\(scrollPosition)")
+        }
+    }
+
+    // MARK: - View Components
+
+    private var periodPicker: some View {
+        Picker("Period", selection: $selectedPeriod) {
+            ForEach(TimePeriod.allCases, id: \.self) { period in
+                Text(period.rawValue).tag(period)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .padding(.top, 16)
+        .onChange(of: selectedPeriod) { oldValue, newPeriod in
+            selectedBarDate = nil
+            selectedType = nil
+
+            // Reset scroll position so TODAY is ~90% across the visible window (leaving 10% for future)
+            let now = Date()
+            let visibleDuration = newPeriod.numberOfBars
+            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+            scrollPosition = Calendar.current.date(
+                byAdding: newPeriod.calendarComponent,
+                value: -offsetFromEnd,
+                to: now
+            ) ?? now
+
+            print("📊 WHOLE GRAINS TYPE: Set scrollPosition=\(scrollPosition) for period=\(newPeriod)")
+
+            Task {
+                await viewModel.loadData(
+                    for: newPeriod,
+                    typeIds: legumesTypeAggIds,
+                    typeNames: typeDisplayNames,
+                    typeColors: typeColors
+                )
+            }
+        }
+    }
+
+    private var chartView: some View {
+        Chart {
+            ForEach(viewModel.chartData) { dateData in
+                ForEach(dateData.typeValues) { typeValue in
+                    let opacity: Double = {
+                        if selectedType == nil {
+                            return 1.0
+                        } else if selectedType == typeValue.name {
+                            return 1.0
+                        } else {
+                            return 0.3
+                        }
+                    }()
+
+                    BarMark(
+                        x: .value("Time", dateData.date),
+                        y: .value("Servings", getDisplayValue(for: typeValue.value)),
+                        width: .fixed(getBarWidth())
+                    )
+                    .foregroundStyle(typeValue.color.opacity(opacity))
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .onChange(of: selectedPeriod) { oldValue, newPeriod in
-                    selectedBarDate = nil
-                    selectedType = nil
+            }
+        }
+        .frame(height: 280)
+        .chartScrollableAxes(.horizontal)
+        .chartScrollPosition(x: $scrollPosition)
+        .chartXVisibleDomain(length: getVisibleDomainTimeInterval())
+        .chartGesture { proxy in
+            SpatialTapGesture()
+                .onEnded { value in
+                    if let tappedDate: Date = proxy.value(atX: value.location.x) {
+                        let closest = viewModel.chartData.min(by: {
+                            abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
+                        })
 
-                    // Reset scroll position so TODAY is ~90% across the visible window (leaving 10% for future)
-                    let now = Date()
-                    let visibleDuration = newPeriod.numberOfBars
-                    let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-                    scrollPosition = Calendar.current.date(
-                        byAdding: newPeriod.calendarComponent,
-                        value: -offsetFromEnd,
-                        to: now
-                    ) ?? now
-
-                    print("📊 LEGUMES TYPE: Set scrollPosition=\(scrollPosition) for period=\(newPeriod)")
-
-                    Task {
-                        await viewModel.loadData(
-                            for: newPeriod,
-                            typeIds: legumesTypeAggIds,
-                            typeNames: typeDisplayNames,
-                            typeColors: typeColors
-                        )
-                    }
-                }
-
-                // Stacked bar chart
-                Chart {
-                    ForEach(viewModel.chartData) { dateData in
-                        ForEach(dateData.typeValues) { typeValue in
-                            let opacity: Double = {
-                                if selectedType == nil {
-                                    return 1.0
-                                } else if selectedType == typeValue.name {
-                                    return 1.0
-                                } else {
-                                    return 0.3
-                                }
-                            }()
-
-                            BarMark(
-                                x: .value("Time", dateData.date),
-                                y: .value("Servings", getDisplayValue(for: typeValue.value)),
-                                width: .fixed(getBarWidth())
-                            )
-                            .foregroundStyle(typeValue.color.opacity(opacity))
+                        if selectedBarDate == closest?.date {
+                            selectedBarDate = nil
+                            selectedType = nil
+                        } else {
+                            selectedBarDate = closest?.date
                         }
                     }
                 }
-                .frame(height: 280)
-                .chartScrollableAxes(.horizontal)
-                .chartScrollPosition(x: $scrollPosition)
-                .chartXVisibleDomain(length: getVisibleDomainTimeInterval())
-                .chartGesture { proxy in
-                    SpatialTapGesture()
-                        .onEnded { value in
-                            if let tappedDate: Date = proxy.value(atX: value.location.x) {
-                                let closest = viewModel.chartData.min(by: {
-                                    abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
-                                })
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: getAxisLabelStride(), count: getAxisLabelMultiplier())) { value in
+                if value.as(Date.self) != nil {
+                    AxisValueLabel(format: getAxisLabelFormat())
+                    AxisGridLine()
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks { value in
+                AxisValueLabel()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                    .foregroundStyle(Color.secondary.opacity(0.2))
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
+    }
 
-                                if selectedBarDate == closest?.date {
-                                    selectedBarDate = nil
-                                    selectedType = nil
-                                } else {
-                                    selectedBarDate = closest?.date
-                                }
-                            }
-                        }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: getAxisLabelStride(), count: getAxisLabelMultiplier())) { value in
-                        if value.as(Date.self) != nil {
-                            AxisValueLabel(format: getAxisLabelFormat())
-                            AxisGridLine()
-                        }
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks { value in
-                        AxisValueLabel()
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
-                            .foregroundStyle(Color.secondary.opacity(0.2))
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
-
-                // Scrollable type averages list
-                ScrollView {
+    private var typeAveragesList: some View {
+        ScrollView {
                     // Servings/% toggle
                     HStack {
                         Spacer()
@@ -250,28 +281,6 @@ struct LegumesTypeStackedChart: View {
                     .padding(.vertical, 8)
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
-            }
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .task {
-            await viewModel.loadData(
-                for: selectedPeriod,
-                typeIds: legumesTypeAggIds,
-                typeNames: typeDisplayNames,
-                typeColors: typeColors
-            )
-
-            // Set scroll position after initial load
-            let now = Date()
-            let visibleDuration = selectedPeriod.numberOfBars
-            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-            scrollPosition = Calendar.current.date(
-                byAdding: selectedPeriod.calendarComponent,
-                value: -offsetFromEnd,
-                to: now
-            ) ?? now
-            print("📊 LEGUMES TYPE: Initial scrollPosition=\(scrollPosition)")
-        }
     }
 
     // MARK: - Helpers (EXACT ParentMetricBarChart pattern)
@@ -399,7 +408,7 @@ class LegumesTypeChartViewModel: ObservableObject {
                 .execute()
                 .value
 
-            print("🫘 Fetched \(results.count) legumes type data points for range \(oldestDate) to \(newestDate)")
+            print("🌾 Fetched \(results.count) legumes type data points for range \(oldestDate) to \(newestDate)")
 
             // Group by date
             var dateMap: [Date: [String: Double]] = [:]
@@ -490,7 +499,7 @@ class LegumesTypeChartViewModel: ObservableObject {
 
         chartData = timeline
         let dataCount = timeline.filter { $0.typeValues.contains(where: { $0.value > 0 }) }.count
-        print("🫘 Generated \(timeline.count) timeline points (\(dataCount) with data)")
+        print("🌾 Generated \(timeline.count) timeline points (\(dataCount) with data)")
     }
 
     private func getDateGranularity(for period: TimePeriod) -> Calendar.Component {

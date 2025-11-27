@@ -171,6 +171,7 @@ struct ComponentScoreTrendChart: View {
                         }
                     }
                     .frame(height: 220)
+                    .chartBackground { proxy in Color.clear }
                     .chartScrollableAxes(.horizontal)
                     .chartScrollPosition(x: $scrollPosition)
                     .chartXVisibleDomain(length: getVisibleDomainTimeInterval())
@@ -219,7 +220,7 @@ struct ComponentScoreTrendChart: View {
                     .padding(.top, 16)
                     .padding(.bottom, 16)
                 }
-                .background(Color(white: 0.95))
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .cornerRadius(12)
             }
         }

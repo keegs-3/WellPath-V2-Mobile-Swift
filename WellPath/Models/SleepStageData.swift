@@ -45,7 +45,7 @@ enum SleepStage: String, CaseIterable, Codable, Plottable {
 
     var color: Color {
         switch self {
-        case .awake: return Color.red.opacity(0.7) // Red
+        case .awake: return Color.red // Red (no transparency)
         case .rem: return Color(red: 0.6, green: 0.8, blue: 1.0) // Light blue
         case .core: return Color(red: 0.3, green: 0.6, blue: 1.0) // Medium blue
         case .deep: return Color(red: 0.0, green: 0.4, blue: 0.8) // Dark blue

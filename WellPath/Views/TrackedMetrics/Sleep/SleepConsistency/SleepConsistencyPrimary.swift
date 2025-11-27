@@ -8,7 +8,7 @@ struct SleepConsistencyPrimary: View {
     @StateObject private var viewModel = SleepConsistencyViewModel()
     @StateObject private var primaryViewModel = SleepAnalysisPrimaryViewModel(metricId: "DISP_SLEEP_CONSISTENCY")
     @State private var selectedPeriod: ConsistencyPeriod = .week
-    @State private var selectedView: PrimaryView = .chart
+    @State private var showAbout = false
     @State private var scrollPosition: Date
     @State private var selectedDate: Date?
     @State private var selectedWeek: WeeklySleepAverage?
@@ -21,11 +21,6 @@ struct SleepConsistencyPrimary: View {
         self.pillar = pillar
         self.color = color
         _scrollPosition = State(initialValue: Date())
-    }
-
-    enum PrimaryView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
     }
 
     private var screenIcon: String {
@@ -73,6 +68,14 @@ struct SleepConsistencyPrimary: View {
             .navigationTitle("Sleep Consistency")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingDataManagement = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showingEntryView = true
@@ -91,103 +94,76 @@ struct SleepConsistencyPrimary: View {
     }
 
     private var chartContent: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // View picker (Chart/About)
-                Picker("View", selection: $selectedView) {
-                    ForEach(PrimaryView.allCases, id: \.self) { view in
-                        Text(view.rawValue).tag(view)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-                if selectedView == .chart {
-                    chartView
-
-                    // Show All Data button
-                    Button(action: {
-                        showingDataManagement = true
-                    }) {
-                        Text("Show All Data")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(color)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground))
-                            .cornerRadius(10)
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 16)
-                } else {
-                    aboutView
-                }
+        VStack(spacing: 0) {
+            if showAbout {
+                aboutContentView
+            } else {
+                chartView
             }
         }
     }
 
     private var chartView: some View {
-        VStack(spacing: 0) {
-            // Period selector (W/M/6M/Y)
-            Picker("Period", selection: $selectedPeriod) {
-                ForEach(ConsistencyPeriod.allCases, id: \.self) { period in
-                    Text(period.rawValue).tag(period)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-            .onChange(of: selectedPeriod) { oldValue, newValue in
-                // Reset selections when switching periods
-                selectedDate = nil
-                selectedWeek = nil
-                selectedMonth = nil
-
-                // Reset scroll position for new period
-                hasInitializedScroll = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    initializeScrollPosition()
-                    hasInitializedScroll = true
-                }
-
-                Task {
-                    switch newValue {
-                    case .week:
-                        // W view: 5 weeks of daily data (35 days)
-                        await viewModel.loadDailySleepTimes()
-                    case .month:
-                        // M view: 33 days of daily data
-                        await viewModel.loadDailySleepTimes()
-                    case .sixMonth:
-                        // 6M view: 26 weeks of weekly averages
-                        await viewModel.loadWeeklySleepAverages()
-                    case .year:
-                        // Y view: 12 months of monthly averages
-                        await viewModel.loadMonthlySleepAverages()
+        ScrollView {
+            VStack(spacing: 0) {
+                // Period selector (W/M/6M/Y)
+                Picker("Period", selection: $selectedPeriod) {
+                    ForEach(ConsistencyPeriod.allCases, id: \.self) { period in
+                        Text(period.rawValue).tag(period)
                     }
                 }
-            }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .onChange(of: selectedPeriod) { oldValue, newValue in
+                    // Reset selections when switching periods
+                    selectedDate = nil
+                    selectedWeek = nil
+                    selectedMonth = nil
 
-            // Chart content based on period
-            if viewModel.isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading sleep consistency data...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Reset scroll position for new period
+                    hasInitializedScroll = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        initializeScrollPosition()
+                        hasInitializedScroll = true
+                    }
+
+                    Task {
+                        switch newValue {
+                        case .week:
+                            // W view: 5 weeks of daily data (35 days)
+                            await viewModel.loadDailySleepTimes()
+                        case .month:
+                            // M view: 33 days of daily data
+                            await viewModel.loadDailySleepTimes()
+                        case .sixMonth:
+                            // 6M view: 26 weeks of weekly averages
+                            await viewModel.loadWeeklySleepAverages()
+                        case .year:
+                            // Y view: 12 months of monthly averages
+                            await viewModel.loadMonthlySleepAverages()
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 300)
-            } else {
-                summaryMetrics
-                consistencyChart
+
+                // Chart content based on period
+                if viewModel.isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading sleep consistency data...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 300)
+                } else {
+                    summaryMetrics
+                    consistencyChart
+                }
             }
+            .background(Color(uiColor: .systemGroupedBackground))
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .task {
             // Initial load defaults to week view (35 days)
             await viewModel.loadDailySleepTimes()
@@ -201,8 +177,8 @@ struct SleepConsistencyPrimary: View {
     private var summaryMetrics: some View {
         let averages = calculateVisibleAverages()
 
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 40) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
                     // Show "Bedtime" when a specific day is selected, "Avg Bedtime" for averages
                     Text(getSelectedData() != nil ? "Bedtime" : "Avg Bedtime")
@@ -235,6 +211,19 @@ struct SleepConsistencyPrimary: View {
                             .foregroundColor(.secondary)
                     }
                 }
+
+                Spacer()
+
+                // Info button (top-aligned with metrics)
+                Button(action: {
+                    withAnimation {
+                        showAbout = true
+                    }
+                }) {
+                    Image(systemName: "info.circle")
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
             }
 
             Text(getDateRangeString())
@@ -243,7 +232,7 @@ struct SleepConsistencyPrimary: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
-        .padding(.top, 16)
+        .padding(.top, 12)
         .padding(.bottom, 8)
     }
 
@@ -1142,96 +1131,99 @@ struct SleepConsistencyPrimary: View {
 
     // MARK: - About View
 
-    private var aboutView: some View {
-        ScrollView {
-            if primaryViewModel.isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading content...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
-            } else if let error = primaryViewModel.error {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundColor(.orange)
-                    Text("Unable to load content")
-                        .font(.headline)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal)
-                .padding(.top, 40)
-            } else {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let about = primaryViewModel.aboutContent {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(color)
-                                Text("About Sleep Consistency")
-                                    .font(.headline)
-                            }
-                            if let attributedAbout = try? AttributedString(markdown: about) {
-                                Text(attributedAbout)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text(about)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    if primaryViewModel.isLoading {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading content...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                    }
-
-                    if let impact = primaryViewModel.longevityImpact {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "heart.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Health Impact")
-                                    .font(.headline)
-                            }
-                            if let attributedImpact = try? AttributedString(markdown: impact) {
-                                Text(attributedImpact)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text(impact)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    } else if let error = primaryViewModel.error {
+                        VStack(spacing: 16) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.largeTitle)
+                                .foregroundColor(.orange)
+                            Text("Unable to load content")
+                                .font(.headline)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
                         }
-                    }
-
-                    if let tips = primaryViewModel.quickTips, !tips.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lightbulb.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Quick Tips")
-                                    .font(.headline)
-                            }
-
-                            ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text("\(index + 1).")
-                                        .fontWeight(.semibold)
+                        .padding()
+                    } else {
+                        // About content
+                        if let about = primaryViewModel.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
                                         .foregroundColor(color)
-                                    if let attributedTip = try? AttributedString(markdown: tip) {
-                                        Text(attributedTip)
-                                            .font(.body)
-                                            .foregroundColor(.secondary)
-                                    } else {
-                                        Text(tip)
-                                            .font(.body)
-                                            .foregroundColor(.secondary)
+                                    Text("About")
+                                        .font(.headline)
+                                }
+                                if let attributedAbout = try? AttributedString(markdown: about) {
+                                    Text(attributedAbout)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text(about)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+
+                        // Health Impact
+                        if let impact = primaryViewModel.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                if let attributedImpact = try? AttributedString(markdown: impact) {
+                                    Text(attributedImpact)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text(impact)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+
+                        // Quick Tips
+                        if let tips = primaryViewModel.quickTips, !tips.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        if let attributedTip = try? AttributedString(markdown: tip) {
+                                            Text(attributedTip)
+                                                .font(.body)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Text(tip)
+                                                .font(.body)
+                                                .foregroundColor(.secondary)
+                                        }
                                     }
                                 }
                             }
@@ -1239,7 +1231,23 @@ struct SleepConsistencyPrimary: View {
                     }
                 }
                 .padding()
+                .padding(.top, 40) // Space for close button
             }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
         }
+        .background(Color.clear)
     }
 }

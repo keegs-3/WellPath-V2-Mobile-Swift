@@ -2,10 +2,11 @@
 //  SleepEntryView.swift
 //  WellPath
 //
-//  Created on 2025-10-22
+//  Entry form for logging sleep to patient_samples
 //
 
 import SwiftUI
+import Supabase
 
 struct SleepEntryView: View {
     @Environment(\.dismiss) var dismiss
@@ -213,37 +214,58 @@ class SleepEntryViewModel: ObservableObject {
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // UUIDs for sleep period types (from data_entry_fields_reference)
-            let inBedTypeId = "0354d91d-6729-45cc-b0d8-3d20847b14aa"  // in_bed
-            let asleepTypeId = "dcca423d-b20f-4ca2-8f1f-f1f1b460803d" // asleep
+            // For manual entry, we create a single "core" sleep stage covering the asleep period
+            // (HealthKit provides detailed stages, but manual entry is simplified)
+            var sleepSamples: [PatientSample] = []
 
-            // Create 2 sleep data entries (simplified from old 6-row approach)
-            let sleepEntries = [
-                PatientSleepDataEntry(
-                    patientId: userId,
-                    eventInstanceId: UUID(),
-                    periodStart: inBedStart,
-                    periodEnd: inBedEnd,
-                    periodTypeId: inBedTypeId,
-                    source: "wellpath_input",
-                    userTimezone: deviceTimezone,
-                    metadata: ["was_user_entered": .bool(true)]
-                ),
-                PatientSleepDataEntry(
-                    patientId: userId,
-                    eventInstanceId: UUID(),
-                    periodStart: asleepStart,
-                    periodEnd: asleepEnd,
-                    periodTypeId: asleepTypeId,
-                    source: "wellpath_input",
-                    userTimezone: deviceTimezone,
-                    metadata: ["was_user_entered": .bool(true)]
-                )
-            ]
+            // Main sleep period as "Core" (category_value = 2)
+            sleepSamples.append(PatientSample.category(
+                patientId: userId,
+                categoryType: CategoryTypes.sleepStage,
+                value: SleepStageValues.core,  // 2 = Core/Light sleep
+                startTime: asleepStart,
+                endTime: asleepEnd,
+                metadata: ["was_user_entered": .bool(true)],
+                source: .wellpathInput,
+                timezone: deviceTimezone,
+                eventInstanceId: UUID()
+            ))
 
+            // If time in bed is different from asleep time, add awake periods
+            if inBedStart < asleepStart {
+                // Awake period before falling asleep
+                sleepSamples.append(PatientSample.category(
+                    patientId: userId,
+                    categoryType: CategoryTypes.sleepStage,
+                    value: SleepStageValues.awake,  // 0 = Awake
+                    startTime: inBedStart,
+                    endTime: asleepStart,
+                    metadata: ["was_user_entered": .bool(true)],
+                    source: .wellpathInput,
+                    timezone: deviceTimezone,
+                    eventInstanceId: UUID()
+                ))
+            }
+
+            if asleepEnd < inBedEnd {
+                // Awake period after waking up
+                sleepSamples.append(PatientSample.category(
+                    patientId: userId,
+                    categoryType: CategoryTypes.sleepStage,
+                    value: SleepStageValues.awake,  // 0 = Awake
+                    startTime: asleepEnd,
+                    endTime: inBedEnd,
+                    metadata: ["was_user_entered": .bool(true)],
+                    source: .wellpathInput,
+                    timezone: deviceTimezone,
+                    eventInstanceId: UUID()
+                ))
+            }
+
+            // Insert all sleep samples
             try await supabase
-                .from("patient_sleep_data_entries")
-                .insert(sleepEntries)
+                .from("patient_samples")
+                .insert(sleepSamples)
                 .execute()
 
             isLoading = false

@@ -80,9 +80,9 @@ struct ProteinTypeStackedChart: View {
     var body: some View {
         VStack(spacing: 0) {
             if !viewModel.isLoading {
-                // Time period picker
+                // Time period picker (exclude 6M)
                 Picker("Period", selection: $selectedPeriod) {
-                    ForEach(TimePeriod.allCases, id: \.self) { period in
+                    ForEach([TimePeriod.day, .week, .month, .year], id: \.self) { period in
                         Text(period.rawValue).tag(period)
                     }
                 }

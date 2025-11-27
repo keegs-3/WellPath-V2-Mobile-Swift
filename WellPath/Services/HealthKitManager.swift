@@ -417,59 +417,35 @@ class HealthKitManager: ObservableObject {
         print("✅ Saved water intake: \(milliliters)ml")
     }
 
-    /// Save test sleep data for the last 7 days (BATCHED)
+    /// Save test sleep data for the last 7 days (BATCHED) - uses patient_samples
     func saveTestSleepData() async throws {
         print("📝 Creating test sleep data in database (BATCHED)...")
 
         let supabase = SupabaseManager.shared.client
         let userId = try await supabase.auth.session.user.id
         let calendar = Calendar.current
+        let deviceTimezone = TimeZone.current.identifier
 
-        // Fetch sleep period types from universal reference table
-        let decoder = JSONDecoder()
-        let typesResponse = try await supabase
-            .from("data_entry_fields_reference")
-            .select("id, reference_key")
-            .eq("reference_category", value: "sleep_period_types")
-            .execute()
+        // Sleep stage values (matching SleepStageValues constants):
+        // 0=Awake, 1=REM, 2=Core, 3=Deep
 
-        struct SleepPeriodType: Codable {
-            let id: String
-            let referenceKey: String
+        // Batch all sleep samples for bulk insert
+        var allSleepSamples: [PatientSample] = []
 
-            enum CodingKeys: String, CodingKey {
-                case id
-                case referenceKey = "reference_key"
-            }
+        // Helper to create a sleep stage sample
+        func createSleepSample(stageValue: Int, startTime: Date, endTime: Date, eventInstanceId: UUID) -> PatientSample {
+            PatientSample.category(
+                patientId: userId,
+                categoryType: CategoryTypes.sleepStage,
+                value: stageValue,
+                startTime: startTime,
+                endTime: endTime,
+                metadata: ["test_data": .bool(true)],
+                source: .wellpathInput,
+                timezone: deviceTimezone,
+                eventInstanceId: eventInstanceId
+            )
         }
-
-        let sleepPeriodTypes = try decoder.decode([SleepPeriodType].self, from: typesResponse.data)
-        print("📋 Loaded \(sleepPeriodTypes.count) sleep period types")
-
-        // Create mapping from stage type to UUID
-        var stageTypeIdMap: [String: String] = [:]
-
-        for type in sleepPeriodTypes {
-            switch type.referenceKey.lowercased() {
-            case "in_bed":
-                stageTypeIdMap["INBED"] = type.id
-            case "core":
-                stageTypeIdMap["CORE"] = type.id
-            case "deep":
-                stageTypeIdMap["DEEP"] = type.id
-            case "rem":
-                stageTypeIdMap["REM"] = type.id
-            case "awake":
-                stageTypeIdMap["AWAKE"] = type.id
-            case "asleep":
-                stageTypeIdMap["ASLEEP_UNSPECIFIED"] = type.id
-            default:
-                break
-            }
-        }
-
-        // Batch all sleep entries for bulk insert
-        var allSleepEntries: [PatientSleepDataEntry] = []
 
         // Create sleep data for the last 7 nights
         for daysAgo in 1...7 {
@@ -487,341 +463,113 @@ class HealthKitManager: ObservableObject {
             // Wake time next morning
             guard let sleepEnd = calendar.date(byAdding: .hour, value: 8, to: sleepStart) else { continue }
 
-            // Calculate entry_date using 6PM rule: DATE(endTime - 6 hours)
-            let adjustedEnd = sleepEnd.addingTimeInterval(-6 * 3600) // -6 hours
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withFullDate]
-            let entryDate = dateFormatter.string(from: calendar.startOfDay(for: adjustedEnd))
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let entryDate = dateFormatter.string(from: sleepDate)
 
             print("  Creating sleep data for \(entryDate) (night session ID: \(nightSessionId))")
 
-            // TEST SCENARIO 3 (Day 6): Only create in_bed and asleep_unspecified (no detailed stages)
-            if daysAgo == 6 {
-                // In Bed period (11 PM - 7 AM)
-                allSleepEntries.append(
-                    createSleepStageEntryData(
-                        patientId: userId,
-                        eventInstanceId: nightSessionId,
-                        stageType: "INBED",
-                        startTime: sleepStart,
-                        endTime: sleepEnd,
-                        stageTypeIdMap: stageTypeIdMap
-                    )
-                )
-
-                // Asleep period (slightly shorter than in bed)
-                let asleepStart = calendar.date(byAdding: .minute, value: 15, to: sleepStart)!
-                let asleepEnd = calendar.date(byAdding: .minute, value: -10, to: sleepEnd)!
-                allSleepEntries.append(
-                    createSleepStageEntryData(
-                        patientId: userId,
-                        eventInstanceId: nightSessionId,
-                        stageType: "ASLEEP_UNSPECIFIED",
-                        startTime: asleepStart,
-                        endTime: asleepEnd,
-                        stageTypeIdMap: stageTypeIdMap
-                    )
-                )
-
-                print("  ✅ [SCENARIO 3] Prepared simple overnight (in_bed + asleep only) for \(entryDate)")
-
-                // Skip the detailed stage creation for this day
-                continue
-            }
-
             // Create realistic sleep stages for this night
+            // Stage values: 0=Awake, 1=REM, 2=Core, 3=Deep
             var currentTime = sleepStart
-            var stageCount = 0
-
-            // First, create the "In Bed" period covering the entire sleep session
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "INBED",
-                startTime: sleepStart,
-                endTime: sleepEnd,
-                stageTypeIdMap: stageTypeIdMap
-            ))
-            stageCount += 1
 
             // Stage 1: Core sleep (11:00 PM - 11:30 PM) - 30 min
             let stage1End = calendar.date(byAdding: .minute, value: 30, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "CORE",
-                startTime: currentTime,
-                endTime: stage1End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: currentTime, endTime: stage1End, eventInstanceId: nightSessionId))
             currentTime = stage1End
-            stageCount += 1
 
             // Stage 2: Deep sleep (11:30 PM - 1:00 AM) - 90 min
             let stage2End = calendar.date(byAdding: .minute, value: 90, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "DEEP",
-                startTime: currentTime,
-                endTime: stage2End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.deep, startTime: currentTime, endTime: stage2End, eventInstanceId: nightSessionId))
             currentTime = stage2End
-            stageCount += 1
 
             // Stage 3: Core sleep (1:00 AM - 1:45 AM) - 45 min
             let stage3End = calendar.date(byAdding: .minute, value: 45, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "CORE",
-                startTime: currentTime,
-                endTime: stage3End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: currentTime, endTime: stage3End, eventInstanceId: nightSessionId))
             currentTime = stage3End
-            stageCount += 1
 
             // Stage 4: REM sleep (1:45 AM - 2:30 AM) - 45 min
             let stage4End = calendar.date(byAdding: .minute, value: 45, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "REM",
-                startTime: currentTime,
-                endTime: stage4End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.rem, startTime: currentTime, endTime: stage4End, eventInstanceId: nightSessionId))
             currentTime = stage4End
-            stageCount += 1
 
             // Stage 5: Core sleep (2:30 AM - 3:15 AM) - 45 min
             let stage5End = calendar.date(byAdding: .minute, value: 45, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "CORE",
-                startTime: currentTime,
-                endTime: stage5End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: currentTime, endTime: stage5End, eventInstanceId: nightSessionId))
             currentTime = stage5End
-            stageCount += 1
 
             // Stage 6: Deep sleep (3:15 AM - 4:00 AM) - 45 min
             let stage6End = calendar.date(byAdding: .minute, value: 45, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "DEEP",
-                startTime: currentTime,
-                endTime: stage6End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.deep, startTime: currentTime, endTime: stage6End, eventInstanceId: nightSessionId))
             currentTime = stage6End
-            stageCount += 1
 
             // Stage 7: REM sleep (4:00 AM - 5:00 AM) - 60 min
             let stage7End = calendar.date(byAdding: .minute, value: 60, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "REM",
-                startTime: currentTime,
-                endTime: stage7End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.rem, startTime: currentTime, endTime: stage7End, eventInstanceId: nightSessionId))
             currentTime = stage7End
-            stageCount += 1
 
             // Stage 8: Core sleep (5:00 AM - 5:30 AM) - 30 min
             let stage8End = calendar.date(byAdding: .minute, value: 30, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "CORE",
-                startTime: currentTime,
-                endTime: stage8End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: currentTime, endTime: stage8End, eventInstanceId: nightSessionId))
             currentTime = stage8End
-            stageCount += 1
 
             // Stage 9: Awake (5:30 AM - 5:35 AM) - 5 min brief awakening
             let stage9End = calendar.date(byAdding: .minute, value: 5, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "AWAKE",
-                startTime: currentTime,
-                endTime: stage9End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.awake, startTime: currentTime, endTime: stage9End, eventInstanceId: nightSessionId))
             currentTime = stage9End
-            stageCount += 1
 
             // Stage 10: REM sleep (5:35 AM - 6:30 AM) - 55 min
             let stage10End = calendar.date(byAdding: .minute, value: 55, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "REM",
-                startTime: currentTime,
-                endTime: stage10End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.rem, startTime: currentTime, endTime: stage10End, eventInstanceId: nightSessionId))
             currentTime = stage10End
-            stageCount += 1
 
             // Stage 11: Awake (6:30 AM - 6:35 AM) - 5 min brief awakening
             let stage11End = calendar.date(byAdding: .minute, value: 5, to: currentTime)!
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "AWAKE",
-                startTime: currentTime,
-                endTime: stage11End,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.awake, startTime: currentTime, endTime: stage11End, eventInstanceId: nightSessionId))
             currentTime = stage11End
-            stageCount += 1
 
             // Stage 12: Core sleep (6:35 AM - 7:00 AM) - 25 min (light sleep before waking)
-            allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nightSessionId,
-                stageType: "CORE",
-                startTime: currentTime,
-                endTime: sleepEnd,
-                stageTypeIdMap: stageTypeIdMap
-            ))
-            stageCount += 1
+            allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: currentTime, endTime: sleepEnd, eventInstanceId: nightSessionId))
 
-            print("  ✅ Created \(stageCount) sleep stages for \(entryDate)")
+            print("  ✅ Created 12 sleep stages for \(entryDate)")
 
-            // TEST SCENARIOS FOR DIFFERENT SLEEP DATA TYPES
-
-            // Scenario 1 (Day 2): Add a nap with ONLY asleep period (no detailed stages)
-            if daysAgo == 2 {
-                let nap1SessionId = UUID() // Separate session for this nap
-                let napStart = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: sleepDate) ?? sleepDate
-                let napEnd = calendar.date(byAdding: .minute, value: 45, to: napStart)!
-
-                // Only add asleep_unspecified period (no detailed stages)
-                allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nap1SessionId,
-                stageType: "ASLEEP_UNSPECIFIED",
-                startTime: napStart,
-                endTime: napEnd,
-                stageTypeIdMap: stageTypeIdMap
-            ))
-
-                print("  ✨ [SCENARIO 1] Added 45-min nap (2:00 PM - 2:45 PM) with ONLY asleep period")
-            }
-
-            // Scenario 2 (Day 4): Add a nap with detailed stages (Core + REM)
+            // Add nap on day 4 with Core + REM
             if daysAgo == 4 {
-                let nap2SessionId = UUID() // Separate session for this nap
+                let napSessionId = UUID()
                 let napStart = calendar.date(bySettingHour: 13, minute: 0, second: 0, of: sleepDate) ?? sleepDate
                 let napMid = calendar.date(byAdding: .minute, value: 60, to: napStart)!
                 let napEnd = calendar.date(byAdding: .minute, value: 90, to: napStart)!
 
-                // Core sleep (60 min)
-                allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nap2SessionId,
-                stageType: "CORE",
-                startTime: napStart,
-                endTime: napMid,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+                allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: napStart, endTime: napMid, eventInstanceId: napSessionId))
+                allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.rem, startTime: napMid, endTime: napEnd, eventInstanceId: napSessionId))
 
-                // REM sleep (30 min)
-                allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nap2SessionId,
-                stageType: "REM",
-                startTime: napMid,
-                endTime: napEnd,
-                stageTypeIdMap: stageTypeIdMap
-            ))
-
-                print("  ✨ [SCENARIO 2] Added 90-min nap (1:00 PM - 2:30 PM) with Core + REM stages")
+                print("  ✨ Added 90-min nap (1:00 PM - 2:30 PM) with Core + REM stages")
             }
 
-            // Original nap on day 5 (kept for compatibility)
+            // Add nap on day 5 with Core + REM
             if daysAgo == 5 {
-                let nap3SessionId = UUID() // Separate session for this nap
+                let napSessionId = UUID()
                 let napStart = calendar.date(bySettingHour: 11, minute: 0, second: 0, of: sleepDate) ?? sleepDate
                 let napMid = calendar.date(byAdding: .hour, value: 2, to: napStart)!
                 let napEnd = calendar.date(byAdding: .hour, value: 3, to: napStart)!
 
-                // Core sleep (2 hours)
-                allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nap3SessionId,
-                stageType: "CORE",
-                startTime: napStart,
-                endTime: napMid,
-                stageTypeIdMap: stageTypeIdMap
-            ))
-
-                // REM sleep (1 hour)
-                allSleepEntries.append(createSleepStageEntryData(
-                patientId: userId,
-                eventInstanceId: nap3SessionId,
-                stageType: "REM",
-                startTime: napMid,
-                endTime: napEnd,
-                stageTypeIdMap: stageTypeIdMap
-            ))
+                allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.core, startTime: napStart, endTime: napMid, eventInstanceId: napSessionId))
+                allSleepSamples.append(createSleepSample(stageValue: SleepStageValues.rem, startTime: napMid, endTime: napEnd, eventInstanceId: napSessionId))
 
                 print("  ✨ Added 3-hour nap (11 AM - 2 PM) with Core + REM stages")
             }
         }
 
-        // Bulk insert all entries - statement-level trigger processes them in batch
-        print("📦 Inserting \(allSleepEntries.count) sleep entries...")
+        // Bulk insert all samples into patient_samples
+        print("📦 Inserting \(allSleepSamples.count) sleep samples...")
 
         try await supabase
-            .from("patient_sleep_data_entries")
-            .insert(allSleepEntries)
+            .from("patient_samples")
+            .insert(allSleepSamples)
             .execute()
 
-        print("✅ Successfully created test sleep data for 7 nights (\(allSleepEntries.count) total entries)!")
-        print("ℹ️ Events, sessions, and aggregations calculated automatically by database triggers")
-    }
-
-    // Helper function to create sleep entry data without inserting (UNUSED - for future batched implementation)
-    private func createSleepStageEntryData(
-        patientId: UUID,
-        eventInstanceId: UUID,
-        stageType: String,
-        startTime: Date,
-        endTime: Date,
-        stageTypeIdMap: [String: String]
-    ) -> PatientSleepDataEntry {
-        guard let stageReferenceId = stageTypeIdMap[stageType] else {
-            fatalError("Missing stage type mapping for \(stageType)")
-        }
-
-        let deviceTimezone = TimeZone.current.identifier
-
-        return PatientSleepDataEntry(
-            patientId: patientId,
-            eventInstanceId: eventInstanceId,
-            periodStart: startTime,
-            periodEnd: endTime,
-            periodTypeId: stageReferenceId,
-            source: "healthkit",
-            userTimezone: deviceTimezone,
-            metadata: [
-                "test_data": .bool(true),
-                "stage_type": .string(stageType)
-            ]
-        )
+        print("✅ Successfully created test sleep data for 7 nights (\(allSleepSamples.count) total samples)!")
+        print("ℹ️ Sleep sessions and aggregations calculated automatically by database triggers")
     }
 
 

@@ -13,6 +13,7 @@ struct StepsPrimary: View {
     let color: Color
     @StateObject private var viewModel = StepsPrimaryViewModel()
     @State private var showingEntryForm = false
+    @State private var showingDataManagement = false
     @State private var selectedView: PrimaryView = .chart
 
     enum PrimaryView: String, CaseIterable {
@@ -55,6 +56,14 @@ struct StepsPrimary: View {
             .navigationTitle("Steps")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingDataManagement = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingEntryForm = true
@@ -65,6 +74,9 @@ struct StepsPrimary: View {
             }
             .sheet(isPresented: $showingEntryForm) {
                 StepsEntryView()
+            }
+            .sheet(isPresented: $showingDataManagement) {
+                MetricDataManagementView(config: .steps(color: color))
             }
             .task {
                 await viewModel.loadPrimaryScreen()

@@ -161,6 +161,53 @@ struct MetricsUIConfig {
         return pillarIcons[pillarName] ?? "circle.fill"
     }
 
+    // MARK: - Quality Tier Colors (Good → Medium → Poor)
+
+    static let tierGood = Color(hex: "#80CBC4") ?? .teal // Restorative Sleep
+    static let tierMedium = Color(hex: "#8DD8FF") ?? .blue // Healthful Nutrition
+    static let tierPoor = Color(hex: "#EB875D") ?? .orange // Movement (orange-red)
+
+    /// Generate gradient colors within a tier
+    /// - Parameters:
+    ///   - baseColor: The base color for the tier
+    ///   - count: Number of gradient steps needed
+    /// - Returns: Array of colors from light to dark
+    static func generateGradient(from baseColor: Color, count: Int) -> [Color] {
+        guard count > 0 else { return [] }
+        guard count > 1 else { return [baseColor] }
+
+        var colors: [Color] = []
+        for i in 0..<count {
+            let ratio = Double(i) / Double(count - 1)
+            // Interpolate from lighter (0.7 opacity) to darker (1.0 opacity)
+            let opacity = 0.7 + (ratio * 0.3)
+            colors.append(baseColor.opacity(opacity))
+        }
+        return colors
+    }
+
+    /// Get color for a protein type based on its tier and position
+    static func getProteinTypeColor(tier: Int, positionInTier: Int, totalInTier: Int) -> Color {
+        let baseColor: Color
+        switch tier {
+        case 1:
+            baseColor = tierGood
+        case 2:
+            baseColor = tierMedium
+        case 3:
+            baseColor = tierPoor
+        default:
+            return .gray
+        }
+
+        if totalInTier == 1 {
+            return baseColor
+        }
+
+        let gradient = generateGradient(from: baseColor, count: totalInTier)
+        return gradient[min(positionInTier, gradient.count - 1)]
+    }
+
     // MARK: - Category Configuration (from data_entry_fields)
 
     static let categoryColors: [String: Color] = [

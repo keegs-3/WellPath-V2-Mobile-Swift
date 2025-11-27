@@ -525,55 +525,16 @@ struct SleepPeriodListView: View {
     }
 
     private func loadDurations() async {
-        do {
-            let entryIds = periods.map { $0.id.uuidString }
-
-            // Use same custom decoder as loadSleepData
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .custom { decoder in
-                let container = try decoder.singleValueContainer()
-                let dateString = try container.decode(String.self)
-
-                let iso8601Formatter = ISO8601DateFormatter()
-                iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let date = iso8601Formatter.date(from: dateString) {
-                    return date
-                }
-
-                iso8601Formatter.formatOptions = [.withInternetDateTime]
-                if let date = iso8601Formatter.date(from: dateString) {
-                    return date
-                }
-
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd"
-                dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
-                if let date = dateFormatter.date(from: dateString) {
-                    return date
-                }
-
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
-            }
-
-            // Query patient_sleep_events for durations using sleep_data_entry_id (which is the entry ID)
-            let eventsQuery = viewModel.supabase
-                .from("patient_sleep_events")
-                .select()
-                .in("sleep_data_entry_id", values: entryIds)
-
-            let eventsData = try await eventsQuery.execute().data
-            let sleepEvents = try decoder.decode([PatientSleepEvent].self, from: eventsData)
-
-            // Build durations map keyed by entry ID (sleep_data_entry_id)
-            var durations: [UUID: TimeInterval] = [:]
-            for event in sleepEvents {
-                durations[event.sleepDataEntryId] = event.durationMinutes
-            }
-            durationsByEvent = durations
-            print("📊 Loaded \(durations.count) durations for \(periods.count) periods")
-        } catch {
-            print("❌ Error loading durations: \(error)")
+        // Duration is now calculated directly from the sample's start_time and end_time
+        // No need to query a separate table - just use period.duration (in seconds)
+        // and convert to minutes for display
+        var durations: [UUID: TimeInterval] = [:]
+        for period in periods {
+            // Convert duration from seconds to minutes
+            durations[period.id] = period.duration / 60.0
         }
+        durationsByEvent = durations
+        print("📊 Computed \(durations.count) durations for \(periods.count) periods")
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -709,7 +670,7 @@ struct SleepPeriodDetailView: View {
                     SleepDetailRow(label: "Start Time", value: formatTime(period.startTime))
                     SleepDetailRow(label: "End Time", value: formatTime(period.endTime))
                     SleepDetailRow(label: "Duration", value: formatDuration(period.duration))
-                    SleepDetailRow(label: "Source", value: period.source.capitalized)
+                    SleepDetailRow(label: "Source", value: formatSource(period.source))
                     SleepDetailRow(label: "Date Added to WellPath", value: formatDateTime(period.createdAt))
                     SleepDetailRow(label: "Event ID", value: period.id.uuidString)
 
@@ -773,6 +734,17 @@ struct SleepPeriodDetailView: View {
         let hours = Int(duration) / 3600
         let minutes = Int(duration) % 3600 / 60
         return "\(hours)hr \(minutes)min"
+    }
+
+    private func formatSource(_ source: String) -> String {
+        switch source.lowercased() {
+        case "healthkit":
+            return "HealthKit"
+        case "wellpath", "wellpath_input":
+            return "WellPath"
+        default:
+            return source.capitalized
+        }
     }
 }
 
@@ -845,92 +817,50 @@ class SleepDataManagementViewModel: ObservableObject {
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
             }
 
-            // Query new patient_sleep_data_entries table
-            print("🔍 Querying sleep data for patient: \(patientId)")
-            let sleepDataQuery = supabase
-                .from("patient_sleep_data_entries")
+            // Query patient_samples for sleep stage entries
+            print("🔍 Querying sleep samples for patient: \(patientId)")
+            let sleepQuery = supabase
+                .from("patient_samples")
                 .select()
                 .eq("patient_id", value: patientId.uuidString)
-                .order("period_end", ascending: false)
+                .eq("category_type", value: CategoryTypes.sleepStage)
+                .order("end_time", ascending: false)
 
-            let sleepData = try await sleepDataQuery.execute().data
+            let sleepData = try await sleepQuery.execute().data
             print("📦 Raw sleep data size: \(sleepData.count) bytes")
-            let allEntries = try decoder.decode([PatientSleepDataEntry].self, from: sleepData)
-            print("✅ Decoded \(allEntries.count) sleep data entries")
+            let allSamples = try decoder.decode([RawSleepSample].self, from: sleepData)
+            print("✅ Decoded \(allSamples.count) sleep samples")
 
-            // Fetch all period type references
-            let uniqueTypeIds = Set(allEntries.compactMap { $0.periodTypeId }).compactMap { UUID(uuidString: $0) }
-
-            struct ReferenceData: Codable {
-                let id: UUID
-                let reference_key: String
-            }
-
-            var typeCache: [String: String] = [:]
-            if !uniqueTypeIds.isEmpty {
-                let refQuery = supabase
-                    .from("data_entry_fields_reference")
-                    .select("id, reference_key")
-                    .in("id", values: uniqueTypeIds.map { $0.uuidString })
-
-                let refData = try await refQuery.execute().data
-                let references = try decoder.decode([ReferenceData].self, from: refData)
-                for ref in references {
-                    typeCache[ref.id.uuidString.lowercased()] = ref.reference_key
-                }
-            }
-            print("📋 Type cache contains \(typeCache.count) mappings")
-
-            // Query patient_sleep_events for session IDs and entry dates
-            let eventsQuery = supabase
-                .from("patient_sleep_events")
-                .select()
-                .eq("patient_id", value: patientId.uuidString)
-
-            let eventsData = try await eventsQuery.execute().data
-            let sleepEvents = try decoder.decode([PatientSleepEvent].self, from: eventsData)
-
-            // Create a map of sleep_data_entry_id to event info
-            var eventInfoMap: [UUID: (sessionId: UUID?, entryDate: Date)] = [:]
-            for event in sleepEvents {
-                eventInfoMap[event.sleepDataEntryId] = (event.sleepSessionId, event.entryDate)
-            }
-
-            // Build period data from sleep data entries
+            // Build period data from samples
             var periods: [SleepPeriodData] = []
-            var skippedCount = 0
-            for entry in allEntries {
-                guard let entryId = entry.id,
-                      let typeId = entry.periodTypeId,
-                      let referenceKey = typeCache[typeId],
-                      let periodType = SleepPeriodType(rawValue: referenceKey) else {
-                    skippedCount += 1
-                    print("⚠️ Skipped entry - id: \(entry.id != nil), typeId: \(entry.periodTypeId != nil), refKey: \(entry.periodTypeId != nil ? typeCache[entry.periodTypeId!] != nil : false)")
+            for sample in allSamples {
+                guard let categoryValue = sample.categoryValue,
+                      let periodType = SleepPeriodType.fromCategoryValue(categoryValue) else {
+                    print("⚠️ Skipped sample - invalid category_value: \(sample.categoryValue ?? -1)")
                     continue
                 }
 
-                let duration = entry.periodEnd.timeIntervalSince(entry.periodStart)
-                let eventInfo = eventInfoMap[entryId]
+                let duration = sample.endTime.timeIntervalSince(sample.startTime)
 
                 let period = SleepPeriodData(
-                    id: entryId,  // Use the unique entry ID, not eventInstanceId
-                    patientId: entry.patientId,
-                    sleepSessionId: eventInfo?.sessionId,
-                    entryDate: eventInfo?.entryDate ?? Calendar.current.startOfDay(for: entry.periodEnd),
-                    createdAt: entry.createdAt ?? Date(),
-                    source: entry.source,
+                    id: sample.id,
+                    patientId: sample.patientId,
+                    sleepSessionId: sample.sleepSessionId,
+                    entryDate: Calendar.current.startOfDay(for: sample.endTime),
+                    createdAt: sample.createdAt ?? Date(),
+                    source: sample.source,
                     periodType: periodType,
-                    startTime: entry.periodStart,
-                    endTime: entry.periodEnd,
+                    startTime: sample.startTime,
+                    endTime: sample.endTime,
                     duration: duration,
-                    userTimezone: entry.userTimezone ?? "America/Los_Angeles"
+                    userTimezone: sample.userTimezone ?? "America/Los_Angeles"
                 )
                 periods.append(period)
             }
-            print("📊 Built \(periods.count) periods (\(skippedCount) skipped)")
+            print("📊 Built \(periods.count) periods")
 
             // Group periods by sleep session to determine the correct "sleep day"
-            // The sleep day is the MAX entry_date of all periods in the session (the wake date)
+            // The sleep day is based on the wake time (end_time) using 6PM rule
             let calendar = Calendar.current
 
             // First, group by session to find the primary date for each session
@@ -958,13 +888,6 @@ class SleepDataManagementViewModel: ObservableObject {
                 }
             }
 
-            // Create durations map from sleep events (duration is already calculated)
-            var durationsByEvent: [UUID: TimeInterval] = [:]
-            for event in sleepEvents {
-                // Map by entry ID (sleepDataEntryId) since that's what we're using as SleepPeriodData.id
-                durationsByEvent[event.sleepDataEntryId] = event.durationMinutes
-            }
-
             // Build summaries grouped by TYPE and SOURCE
             summariesByDate = groupedByDate.mapValues { periodsForDate in
                 // Group by BOTH type and source
@@ -975,14 +898,14 @@ class SleepDataManagementViewModel: ObservableObject {
                 let typeSummaries = groupedByTypeAndSource.compactMap { (_, periodsGroup) -> SleepPeriodTypeSummary? in
                     guard let firstPeriod = periodsGroup.first else { return nil }
 
-                    // Calculate total duration by summing OUTPUT entries for this source
-                    let totalDuration = periodsGroup.reduce(0.0) { sum, period in
-                        sum + (durationsByEvent[period.id] ?? 0)
+                    // Calculate total duration in minutes
+                    let totalDurationMinutes = periodsGroup.reduce(0.0) { sum, period in
+                        sum + (period.duration / 60.0)  // Convert seconds to minutes
                     }
 
                     let intervalCount = periodsGroup.count
 
-                    guard totalDuration > 0 || intervalCount > 0 else {
+                    guard totalDurationMinutes > 0 || intervalCount > 0 else {
                         return nil
                     }
 
@@ -990,7 +913,7 @@ class SleepDataManagementViewModel: ObservableObject {
                         periodType: firstPeriod.periodType,
                         source: firstPeriod.source,
                         count: intervalCount,
-                        totalDuration: totalDuration,
+                        totalDuration: totalDurationMinutes,
                         periods: periodsGroup.sorted { $0.startTime > $1.startTime }
                     )
                 }
@@ -1023,15 +946,15 @@ class SleepDataManagementViewModel: ObservableObject {
                     continue
                 }
 
-                // Delete from patient_sleep_data_entries (CASCADE will delete events and sessions)
+                // Delete from patient_samples
                 try await supabase
-                    .from("patient_sleep_data_entries")
+                    .from("patient_samples")
                     .delete()
                     .eq("id", value: period.id.uuidString)
                     .eq("patient_id", value: patientId.uuidString)
                     .execute()
 
-                print("Deleted sleep period: \(period.id)")
+                print("Deleted sleep sample: \(period.id)")
             }
 
             // Reload data
@@ -1041,27 +964,38 @@ class SleepDataManagementViewModel: ObservableObject {
             print("Error deleting periods: \(error)")
         }
     }
-
-    private func parseDateTime(_ dateString: String) -> Date? {
-        let iso8601Formatter = ISO8601DateFormatter()
-        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso8601Formatter.date(from: dateString) {
-            return date
-        }
-
-        iso8601Formatter.formatOptions = [.withInternetDateTime]
-        return iso8601Formatter.date(from: dateString)
-    }
-
-    private func parseDate(_ dateString: String) -> Date? {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return dateFormatter.date(from: dateString)
-    }
 }
 
 // MARK: - Models
+
+/// Raw sleep sample from patient_samples table
+struct RawSleepSample: Codable {
+    let id: UUID
+    let patientId: UUID
+    let sampleType: String
+    let startTime: Date
+    let endTime: Date
+    let categoryValue: Int?
+    let categoryType: String?
+    let sleepSessionId: UUID?
+    let source: String
+    let userTimezone: String?
+    let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case patientId = "patient_id"
+        case sampleType = "sample_type"
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case categoryValue = "category_value"
+        case categoryType = "category_type"
+        case sleepSessionId = "sleep_session_id"
+        case source
+        case userTimezone = "user_timezone"
+        case createdAt = "created_at"
+    }
+}
 
 enum SleepPeriodType: String, CaseIterable {
     case inBed = "in_bed"
@@ -1090,6 +1024,18 @@ enum SleepPeriodType: String, CaseIterable {
         case .core: return "😴"
         case .deep: return "💤"
         case .asleep: return "😴"
+        }
+    }
+
+    /// Maps category_value integers to sleep period types
+    /// 0 = Awake, 1 = REM, 2 = Core (Light), 3 = Deep
+    static func fromCategoryValue(_ value: Int) -> SleepPeriodType? {
+        switch value {
+        case SleepStageValues.awake: return .awake
+        case SleepStageValues.rem: return .rem
+        case SleepStageValues.core: return .core
+        case SleepStageValues.deep: return .deep
+        default: return nil
         }
     }
 }

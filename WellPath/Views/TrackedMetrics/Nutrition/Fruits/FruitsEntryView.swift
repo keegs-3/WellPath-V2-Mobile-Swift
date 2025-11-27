@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 struct FruitsEntryView: View {
     @Environment(\.dismiss) var dismiss
@@ -80,15 +81,15 @@ struct FruitsEntryView: View {
                     Section {
                         Picker("Type", selection: $selectedType) {
                             Text("Select Type").tag("")
-                            ForEach(fruitsTypes, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                            ForEach(fruitsTypes, id: \.referenceKey) { option in
+                                Text(option.displayName).tag(option.referenceKey)
                             }
                         }
 
                         Picker("Timing", selection: $selectedTiming) {
                             Text("Select Timing").tag("")
-                            ForEach(mealTimings, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                            ForEach(mealTimings, id: \.referenceKey) { option in
+                                Text(option.displayName).tag(option.referenceKey)
                             }
                         }
                     }
@@ -141,10 +142,10 @@ struct FruitsEntryView: View {
         isLoading = true
 
         do {
-            // Load fruits types from data_entry_fields_reference
+            // Load fruits types from data_entry_fields_reference (using reference_key for metadata)
             let typesResponse: [ReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
+                .select("id, display_name, reference_key")
                 .eq("reference_category", value: "fruits_types")
                 .eq("is_active", value: true)
                 .order("display_order")
@@ -154,8 +155,8 @@ struct FruitsEntryView: View {
             // Load meal timings from data_entry_fields_reference
             let timingsResponse: [ReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
-                .eq("reference_category", value: "protein_timing")
+                .select("id, display_name, reference_key")
+                .eq("reference_category", value: "food_timing")
                 .eq("is_active", value: true)
                 .order("display_order")
                 .execute()
@@ -165,9 +166,9 @@ struct FruitsEntryView: View {
                 fruitsTypes = typesResponse
                 mealTimings = timingsResponse
 
-                // Set default selections if available
-                selectedType = fruitsTypes.first?.id ?? ""
-                selectedTiming = mealTimings.first?.id ?? ""
+                // Set default selections if available (use reference_key)
+                selectedType = fruitsTypes.first?.referenceKey ?? ""
+                selectedTiming = mealTimings.first?.referenceKey ?? ""
 
                 isLoading = false
             }
@@ -192,72 +193,42 @@ struct FruitsEntryView: View {
 
         do {
             // Get user ID
-            let userId = try await supabase.auth.session.user.id.uuidString
-
-            // Generate event instance ID to link all fields together
-            let eventInstanceId = UUID().uuidString
-
-            // Format dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let timestampString = dateFormatter.string(from: selectedDateTime)
-
-            // Extract just the date (YYYY-MM-DD)
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month, .day], from: selectedDateTime)
-            let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+            guard let userId = UUID(uuidString: try await supabase.auth.session.user.id.uuidString) else {
+                errorMessage = "Invalid user ID"
+                isSaving = false
+                return
+            }
 
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // Insert fruits servings entry
-            try await supabase
-                .from("patient_data_entries")
-                .insert([
-                    "patient_id": userId,
-                    "field_id": "DEF_FRUITS_SERVINGS",
-                    "entry_date": dateString,
-                    "entry_timestamp": timestampString,
-                    "value_quantity": "\(amountValue)",
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
-                .execute()
-
-            // Optional: Insert fruits type
+            // Build metadata with type and timing
+            var metadata: [String: AnyJSON] = [:]
             if !selectedType.isEmpty {
-                try await supabase
-                    .from("patient_data_entries")
-                    .insert([
-                        "patient_id": userId,
-                        "field_id": "DEF_FRUITS_TYPE",
-                        "entry_date": dateString,
-                        "entry_timestamp": timestampString,
-                        "value_reference": selectedType,
-                        "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId,
-                        "user_timezone": deviceTimezone
-                    ])
-                    .execute()
+                metadata["fruits_type"] = .string(selectedType)
+            }
+            if !selectedTiming.isEmpty {
+                metadata["food_timing"] = .string(selectedTiming)
             }
 
-            // Optional: Insert meal timing
-            if !selectedTiming.isEmpty {
-                try await supabase
-                    .from("patient_data_entries")
-                    .insert([
-                        "patient_id": userId,
-                        "field_id": "DEF_FRUITS_TIMING",
-                        "entry_date": dateString,
-                        "entry_timestamp": timestampString,
-                        "value_reference": selectedTiming,
-                        "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId,
-                        "user_timezone": deviceTimezone
-                    ])
-                    .execute()
-            }
+            // Create single sample for patient_samples
+            let sample = PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.fruitsServings,
+                value: amountValue,
+                unit: "serving",
+                timestamp: selectedDateTime,
+                metadata: metadata.isEmpty ? nil : metadata,
+                source: .wellpathInput,
+                timezone: deviceTimezone,
+                eventInstanceId: UUID()
+            )
+
+            // Insert into patient_samples
+            try await supabase
+                .from("patient_samples")
+                .insert(sample)
+                .execute()
 
             await MainActor.run {
                 dismiss()

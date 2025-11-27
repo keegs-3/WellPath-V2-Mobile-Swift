@@ -2,10 +2,11 @@
 //  StrengthTrainingEntryView.swift
 //  WellPath
 //
-//  Entry form for logging Strength Training workouts
+//  Entry form for logging Strength Training workouts to patient_samples
 //
 
 import SwiftUI
+import Supabase
 
 struct StrengthTrainingEntryView: View {
     @Environment(\.dismiss) var dismiss
@@ -13,13 +14,14 @@ struct StrengthTrainingEntryView: View {
     @State private var endDateTime = Date()
     @State private var selectedType: String = ""
     @State private var selectedIntensity: String = ""
-    @State private var selectedMuscleGroup: String = ""
-    @State private var strengthTypes: [ReferenceOption] = []
-    @State private var intensityLevels: [ReferenceOption] = []
-    @State private var muscleGroups: [ReferenceOption] = []
+    @State private var selectedMuscleGroups: Set<String> = []
+    @State private var strengthTypes: [StrengthReferenceOption] = []
+    @State private var intensityLevels: [StrengthReferenceOption] = []
+    @State private var muscleGroups: [StrengthReferenceOption] = []
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showMuscleGroupPicker = false
 
     private let supabase = SupabaseManager.shared.client
 
@@ -29,6 +31,13 @@ struct StrengthTrainingEntryView: View {
 
     var durationMinutes: Double {
         duration / 60
+    }
+
+    var muscleGroupsDisplayText: String {
+        let names = muscleGroups
+            .filter { selectedMuscleGroups.contains($0.referenceKey) }
+            .map { $0.displayName }
+        return names.joined(separator: ", ")
     }
 
     var body: some View {
@@ -96,7 +105,7 @@ struct StrengthTrainingEntryView: View {
                         Picker("Type", selection: $selectedType) {
                             Text("Select Type").tag("")
                             ForEach(strengthTypes, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                                Text(option.displayName).tag(option.referenceKey)
                             }
                         }
                     } header: {
@@ -107,14 +116,27 @@ struct StrengthTrainingEntryView: View {
                         Picker("Intensity", selection: $selectedIntensity) {
                             Text("Not specified").tag("")
                             ForEach(intensityLevels, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                                Text(option.displayName).tag(option.referenceKey)
                             }
                         }
 
-                        Picker("Muscle Group", selection: $selectedMuscleGroup) {
-                            Text("Not specified").tag("")
-                            ForEach(muscleGroups, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                        // Multi-select for muscle groups
+                        Button(action: { showMuscleGroupPicker = true }) {
+                            HStack {
+                                Text("Muscle Groups")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if selectedMuscleGroups.isEmpty {
+                                    Text("Not specified")
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text(muscleGroupsDisplayText)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
                     } header: {
@@ -162,16 +184,75 @@ struct StrengthTrainingEntryView: View {
             // Initialize end time to 1 hour after start
             endDateTime = startDateTime.addingTimeInterval(3600)
         }
+        .sheet(isPresented: $showMuscleGroupPicker) {
+            MuscleGroupPickerSheet(
+                muscleGroups: muscleGroups,
+                selectedMuscleGroups: $selectedMuscleGroups
+            )
+        }
     }
+}
 
-    private func loadReferenceData() async {
+// MARK: - Multi-Select Muscle Group Picker
+
+struct MuscleGroupPickerSheet: View {
+    let muscleGroups: [StrengthReferenceOption]
+    @Binding var selectedMuscleGroups: Set<String>
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(muscleGroups, id: \.id) { option in
+                    Button(action: {
+                        if selectedMuscleGroups.contains(option.referenceKey) {
+                            selectedMuscleGroups.remove(option.referenceKey)
+                        } else {
+                            selectedMuscleGroups.insert(option.referenceKey)
+                        }
+                    }) {
+                        HStack {
+                            Text(option.displayName)
+                                .foregroundColor(.primary)
+                            Spacer()
+                            if selectedMuscleGroups.contains(option.referenceKey) {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Muscle Groups")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Clear") {
+                        selectedMuscleGroups.removeAll()
+                    }
+                    .foregroundColor(.red)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - StrengthTrainingEntryView Private Functions
+
+private extension StrengthTrainingEntryView {
+    func loadReferenceData() async {
         isLoading = true
 
         do {
             // Load strength types from data_entry_fields_reference
-            let typesResponse: [ReferenceOption] = try await supabase
+            let typesResponse: [StrengthReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
+                .select("id, display_name, reference_key")
                 .eq("reference_category", value: "strength_types")
                 .eq("is_active", value: true)
                 .order("display_order")
@@ -179,9 +260,9 @@ struct StrengthTrainingEntryView: View {
                 .value
 
             // Load intensity levels from data_entry_fields_reference
-            let intensityResponse: [ReferenceOption] = try await supabase
+            let intensityResponse: [StrengthReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
+                .select("id, display_name, reference_key")
                 .eq("reference_category", value: "workout_intensity")
                 .eq("is_active", value: true)
                 .order("display_order")
@@ -189,9 +270,9 @@ struct StrengthTrainingEntryView: View {
                 .value
 
             // Load muscle groups from data_entry_fields_reference
-            let muscleGroupResponse: [ReferenceOption] = try await supabase
+            let muscleGroupResponse: [StrengthReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
+                .select("id, display_name, reference_key")
                 .eq("reference_category", value: "muscle_groups")
                 .eq("is_active", value: true)
                 .order("display_order")
@@ -203,8 +284,8 @@ struct StrengthTrainingEntryView: View {
                 intensityLevels = intensityResponse
                 muscleGroups = muscleGroupResponse
 
-                // Set default type to traditional
-                selectedType = strengthTypes.first?.id ?? ""
+                // Set default type to first option
+                selectedType = strengthTypes.first?.referenceKey ?? ""
 
                 isLoading = false
             }
@@ -218,7 +299,7 @@ struct StrengthTrainingEntryView: View {
         }
     }
 
-    private func saveStrengthTrainingEntry() async {
+    func saveStrengthTrainingEntry() async {
         guard duration > 0 else {
             errorMessage = "End time must be after start time"
             return
@@ -234,119 +315,45 @@ struct StrengthTrainingEntryView: View {
 
         do {
             // Get user ID
-            let userId = try await supabase.auth.session.user.id.uuidString
-
-            // Generate event instance ID to link all fields together
-            let eventInstanceId = UUID().uuidString
-
-            // Format dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let startTimestampString = dateFormatter.string(from: startDateTime)
-            let endTimestampString = dateFormatter.string(from: endDateTime)
-
-            // Extract just the date (YYYY-MM-DD) from start
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month, .day], from: startDateTime)
-            let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+            let userId = try await supabase.auth.session.user.id
 
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // Calculate duration in minutes
-            let durationValue = durationMinutes
+            // Build metadata with workout attributes
+            var metadata: [String: AnyJSON] = [
+                WorkoutMetadataKeys.workoutType: .string(selectedType)
+            ]
 
-            // Insert strength start timestamp
-            try await supabase
-                .from("patient_data_entries")
-                .insert([
-                    "patient_id": userId,
-                    "field_id": "DEF_STRENGTH_START",
-                    "entry_date": dateString,
-                    "value_timestamp": startTimestampString,
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
-                .execute()
-
-            // Insert strength end timestamp
-            try await supabase
-                .from("patient_data_entries")
-                .insert([
-                    "patient_id": userId,
-                    "field_id": "DEF_STRENGTH_END",
-                    "entry_date": dateString,
-                    "value_timestamp": endTimestampString,
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
-                .execute()
-
-            // Insert strength duration
-            try await supabase
-                .from("patient_data_entries")
-                .insert([
-                    "patient_id": userId,
-                    "field_id": "DEF_STRENGTH_DURATION",
-                    "entry_date": dateString,
-                    "entry_timestamp": endTimestampString,
-                    "value_quantity": "\(durationValue)",
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
-                .execute()
-
-            // Insert strength type (required)
-            try await supabase
-                .from("patient_data_entries")
-                .insert([
-                    "patient_id": userId,
-                    "field_id": "DEF_STRENGTH_TYPE",
-                    "entry_date": dateString,
-                    "entry_timestamp": startTimestampString,
-                    "value_reference": selectedType,
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
-                .execute()
-
-            // Optional: Insert intensity
             if !selectedIntensity.isEmpty {
-                try await supabase
-                    .from("patient_data_entries")
-                    .insert([
-                        "patient_id": userId,
-                        "field_id": "DEF_STRENGTH_INTENSITY",
-                        "entry_date": dateString,
-                        "entry_timestamp": startTimestampString,
-                        "value_reference": selectedIntensity,
-                        "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId,
-                        "user_timezone": deviceTimezone
-                    ])
-                    .execute()
+                metadata[WorkoutMetadataKeys.intensity] = .string(selectedIntensity)
             }
 
-            // Optional: Insert muscle group
-            if !selectedMuscleGroup.isEmpty {
-                try await supabase
-                    .from("patient_data_entries")
-                    .insert([
-                        "patient_id": userId,
-                        "field_id": "DEF_STRENGTH_MUSCLE_GROUPS",
-                        "entry_date": dateString,
-                        "entry_timestamp": startTimestampString,
-                        "value_reference": selectedMuscleGroup,
-                        "source": "wellpath_input",
-                        "event_instance_id": eventInstanceId,
-                        "user_timezone": deviceTimezone
-                    ])
-                    .execute()
+            if !selectedMuscleGroups.isEmpty {
+                // Store as array to support multi-select (aggregation uses @> containment)
+                let muscleGroupArray = selectedMuscleGroups.map { AnyJSON.string($0) }
+                metadata[WorkoutMetadataKeys.muscleGroups] = .array(muscleGroupArray)
             }
+
+            // Create single patient_samples entry with duration and metadata
+            let sample = PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.strengthDuration,
+                value: durationMinutes,
+                unit: "minute",
+                timestamp: startDateTime,
+                endTime: endDateTime,  // Workout has duration (start != end)
+                metadata: metadata,
+                source: .wellpathInput,
+                timezone: deviceTimezone,
+                eventInstanceId: UUID()
+            )
+
+            // Insert into patient_samples
+            try await supabase
+                .from("patient_samples")
+                .insert(sample)
+                .execute()
 
             await MainActor.run {
                 dismiss()
@@ -358,6 +365,20 @@ struct StrengthTrainingEntryView: View {
                 isSaving = false
             }
         }
+    }
+}
+
+// MARK: - Supporting Models
+
+struct StrengthReferenceOption: Codable, Identifiable {
+    let id: String
+    let displayName: String
+    let referenceKey: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+        case referenceKey = "reference_key"
     }
 }
 

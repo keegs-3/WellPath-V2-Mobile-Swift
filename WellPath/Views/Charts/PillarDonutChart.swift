@@ -38,23 +38,26 @@ struct PillarDonutChart: View {
                     .opacity(selectedPillar == nil || selectedPillar == pillar ? 1.0 : 0.3)
                 }
             }
-            .frame(height: 200)
+            .frame(height: 160)
             .chartBackground { chartProxy in
-                GeometryReader { geometry in
-                    if let plotFrame = chartProxy.plotFrame {
-                        let frame = geometry[plotFrame]
+                ZStack {
+                    Color.clear
+                    GeometryReader { geometry in
+                        if let plotFrame = chartProxy.plotFrame {
+                            let frame = geometry[plotFrame]
 
-                        // Building columns icon in center
-                        VStack(spacing: 8) {
-                            Image(systemName: "building.columns")
-                                .font(.system(size: 48))
-                                .foregroundColor(.primary)
-                            Text("7 Pillars")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
+                            // Building columns icon in center
+                            VStack(spacing: 8) {
+                                Image(systemName: "building.columns")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(.primary)
+                                Text("7 Pillars")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                            }
+                            .position(x: frame.midX, y: frame.midY)
                         }
-                        .position(x: frame.midX, y: frame.midY)
                     }
                 }
             }
@@ -105,7 +108,7 @@ struct PillarDonutChart: View {
             .padding(.horizontal)
         }
         .padding(.vertical)
-        .background(Color(white: 0.95))
+        .background(Color(uiColor: .tertiarySystemGroupedBackground))
         .cornerRadius(12)
     }
 }

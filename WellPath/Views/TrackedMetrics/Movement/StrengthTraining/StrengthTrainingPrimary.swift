@@ -14,6 +14,7 @@ struct StrengthTrainingPrimary: View {
     @StateObject private var viewModel = StrengthTrainingPrimaryViewModel()
     @State private var showingDetailView = false
     @State private var showingEntryForm = false
+    @State private var showingDataManagement = false
     @State private var selectedView: PrimaryView = .chart
 
     enum PrimaryView: String, CaseIterable {
@@ -56,6 +57,14 @@ struct StrengthTrainingPrimary: View {
             .navigationTitle("Strength Training")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingDataManagement = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingEntryForm = true
@@ -63,6 +72,9 @@ struct StrengthTrainingPrimary: View {
                         Image(systemName: "plus")
                     }
                 }
+            }
+            .sheet(isPresented: $showingDataManagement) {
+                MetricDataManagementView(config: .strengthTraining(color: color))
             }
             .sheet(isPresented: $showingDetailView) {
                 NavigationStack {

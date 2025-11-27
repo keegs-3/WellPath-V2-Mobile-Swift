@@ -2,11 +2,12 @@
 //  HealthKitSyncService.swift
 //  WellPath
 //
-//  Automatically syncs HealthKit data to the backend
+//  Automatically syncs HealthKit data to the unified patient_samples table
 //
 
 import Foundation
 import HealthKit
+import Supabase
 
 @MainActor
 class HealthKitSyncService: ObservableObject {
@@ -14,7 +15,6 @@ class HealthKitSyncService: ObservableObject {
 
     private let healthStore = HKHealthStore()
     private let supabase = SupabaseManager.shared.client
-    private let mapper = HealthKitFieldMapper.shared
 
     @Published var isSyncing = false
     @Published var lastSyncDate: Date?
@@ -22,6 +22,52 @@ class HealthKitSyncService: ObservableObject {
 
     private init() {
         loadLastSyncDate()
+    }
+
+    // MARK: - Background Observers
+
+    /// Enable background delivery for automatic syncing when HealthKit data changes
+    func enableBackgroundDelivery() async {
+        print("🔔 Setting up HealthKit background observers...")
+
+        // Data types to observe
+        let typesToObserve: [HKSampleType] = [
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.quantityType(forIdentifier: .dietaryProtein)!,
+            HKObjectType.quantityType(forIdentifier: .dietaryWater)!,
+            HKObjectType.quantityType(forIdentifier: .bodyMass)!,
+            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+        ]
+
+        for type in typesToObserve {
+            // Enable background delivery
+            healthStore.enableBackgroundDelivery(for: type, frequency: .immediate) { success, error in
+                if success {
+                    print("✅ Background delivery enabled for \(type)")
+                } else if let error = error {
+                    print("❌ Failed to enable background delivery for \(type): \(error)")
+                }
+            }
+
+            // Set up observer query
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] query, completionHandler, error in
+                if let error = error {
+                    print("❌ Observer query error for \(type): \(error)")
+                    completionHandler()
+                    return
+                }
+
+                print("🔔 HealthKit data changed for \(type), triggering sync...")
+                Task { @MainActor in
+                    await self?.performFullSync()
+                }
+
+                completionHandler()
+            }
+
+            healthStore.execute(query)
+            print("👀 Observer query set up for \(type)")
+        }
     }
 
     // MARK: - Sync Control
@@ -35,12 +81,9 @@ class HealthKitSyncService: ObservableObject {
 
         isSyncing = true
         syncError = nil
-        print("🔄 Starting HealthKit sync...")
+        print("🔄 Starting HealthKit sync to patient_samples...")
 
         do {
-            // Load field mappings
-            try await mapper.loadMappings()
-
             // Sync different data types
             try await syncProtein()
             try await syncSteps()
@@ -49,9 +92,7 @@ class HealthKitSyncService: ObservableObject {
             try await syncSleep()
 
             // Update last sync date
-            let syncEndDate = Date()
-            let syncStartDate = lastSyncDate ?? syncEndDate.addingTimeInterval(-7*24*60*60)
-            lastSyncDate = syncEndDate
+            lastSyncDate = Date()
             saveLastSyncDate()
 
             print("✅ HealthKit sync completed successfully")
@@ -65,7 +106,7 @@ class HealthKitSyncService: ObservableObject {
         isSyncing = false
     }
 
-    // MARK: - Individual Data Type Syncs
+    // MARK: - Protein Sync
 
     private func syncProtein() async throws {
         print("🥩 Syncing protein data...")
@@ -74,12 +115,56 @@ class HealthKitSyncService: ObservableObject {
             throw HealthKitSyncError.dataTypeNotAvailable
         }
 
-        let fieldId = try await mapper.getFieldId(for: "HKQuantityTypeIdentifierDietaryProtein")
+        guard let userId = try? await supabase.auth.session.user.id else {
+            throw HealthKitSyncError.notAuthenticated
+        }
+
         let samples = try await fetchQuantitySamples(type: proteinType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        try await writeSamplesToBackend(samples: samples, fieldId: fieldId, unit: .gram())
-        print("✅ Synced \(samples.count) protein entries")
+        var patientSamples: [PatientSample] = []
+
+        for sample in samples {
+            // Skip if already synced
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+                continue
+            }
+
+            let proteinGrams = sample.quantity.doubleValue(for: .gram())
+            let sampleTimeZone = getOriginalTimeZone(from: sample)
+
+            // Create quantity sample with metadata for type/timing
+            // HealthKit doesn't provide protein type/timing, so we use "other" defaults
+            let metadata: [String: AnyJSON] = [
+                ProteinMetadataKeys.proteinType: .string("other"),
+                FoodMetadataKeys.foodTiming: .string("other")
+            ]
+
+            patientSamples.append(PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.proteinGrams,
+                value: proteinGrams,
+                unit: "gram",
+                timestamp: sample.startDate,
+                metadata: metadata,
+                source: .healthkit,
+                timezone: sampleTimeZone.identifier,
+                eventInstanceId: UUID(),
+                healthKitUUID: sample.uuid.uuidString,
+                healthKitSourceName: sample.sourceRevision.source.name
+            ))
+        }
+
+        if !patientSamples.isEmpty {
+            try await supabase
+                .from("patient_samples")
+                .insert(patientSamples)
+                .execute()
+        }
+
+        print("✅ Synced \(patientSamples.count) protein samples")
     }
+
+    // MARK: - Steps Sync
 
     private func syncSteps() async throws {
         print("👣 Syncing steps data...")
@@ -88,12 +173,48 @@ class HealthKitSyncService: ObservableObject {
             throw HealthKitSyncError.dataTypeNotAvailable
         }
 
-        let fieldId = try await mapper.getFieldId(for: "HKQuantityTypeIdentifierStepCount")
+        guard let userId = try? await supabase.auth.session.user.id else {
+            throw HealthKitSyncError.notAuthenticated
+        }
+
         let samples = try await fetchQuantitySamples(type: stepsType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        try await writeSamplesToBackend(samples: samples, fieldId: fieldId, unit: .count())
-        print("✅ Synced \(samples.count) step entries")
+        var patientSamples: [PatientSample] = []
+
+        for sample in samples {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+                continue
+            }
+
+            let stepCount = sample.quantity.doubleValue(for: .count())
+            let sampleTimeZone = getOriginalTimeZone(from: sample)
+
+            patientSamples.append(PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.steps,
+                value: stepCount,
+                unit: "count",
+                timestamp: sample.startDate,
+                endTime: sample.endDate,  // Steps have duration
+                source: .healthkit,
+                timezone: sampleTimeZone.identifier,
+                eventInstanceId: UUID(),
+                healthKitUUID: sample.uuid.uuidString,
+                healthKitSourceName: sample.sourceRevision.source.name
+            ))
+        }
+
+        if !patientSamples.isEmpty {
+            try await supabase
+                .from("patient_samples")
+                .insert(patientSamples)
+                .execute()
+        }
+
+        print("✅ Synced \(patientSamples.count) step samples")
     }
+
+    // MARK: - Water Sync
 
     private func syncWater() async throws {
         print("💧 Syncing water data...")
@@ -102,12 +223,48 @@ class HealthKitSyncService: ObservableObject {
             throw HealthKitSyncError.dataTypeNotAvailable
         }
 
-        let fieldId = try await mapper.getFieldId(for: "HKQuantityTypeIdentifierDietaryWater")
+        guard let userId = try? await supabase.auth.session.user.id else {
+            throw HealthKitSyncError.notAuthenticated
+        }
+
         let samples = try await fetchQuantitySamples(type: waterType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        try await writeSamplesToBackend(samples: samples, fieldId: fieldId, unit: .literUnit(with: .milli))
-        print("✅ Synced \(samples.count) water entries")
+        var patientSamples: [PatientSample] = []
+
+        for sample in samples {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+                continue
+            }
+
+            // Convert to fluid ounces for consistency
+            let waterOunces = sample.quantity.doubleValue(for: .fluidOunceUS())
+            let sampleTimeZone = getOriginalTimeZone(from: sample)
+
+            patientSamples.append(PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.hydrationOunces,
+                value: waterOunces,
+                unit: "fluid_ounce",
+                timestamp: sample.startDate,
+                source: .healthkit,
+                timezone: sampleTimeZone.identifier,
+                eventInstanceId: UUID(),
+                healthKitUUID: sample.uuid.uuidString,
+                healthKitSourceName: sample.sourceRevision.source.name
+            ))
+        }
+
+        if !patientSamples.isEmpty {
+            try await supabase
+                .from("patient_samples")
+                .insert(patientSamples)
+                .execute()
+        }
+
+        print("✅ Synced \(patientSamples.count) water samples")
     }
+
+    // MARK: - Weight Sync
 
     private func syncWeight() async throws {
         print("⚖️ Syncing weight data...")
@@ -116,12 +273,47 @@ class HealthKitSyncService: ObservableObject {
             throw HealthKitSyncError.dataTypeNotAvailable
         }
 
-        let fieldId = try await mapper.getFieldId(for: "HKQuantityTypeIdentifierBodyMass")
+        guard let userId = try? await supabase.auth.session.user.id else {
+            throw HealthKitSyncError.notAuthenticated
+        }
+
         let samples = try await fetchQuantitySamples(type: weightType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        try await writeSamplesToBackend(samples: samples, fieldId: fieldId, unit: .gramUnit(with: .kilo))
-        print("✅ Synced \(samples.count) weight entries")
+        var patientSamples: [PatientSample] = []
+
+        for sample in samples {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+                continue
+            }
+
+            let weightKg = sample.quantity.doubleValue(for: .gramUnit(with: .kilo))
+            let sampleTimeZone = getOriginalTimeZone(from: sample)
+
+            patientSamples.append(PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.weight,
+                value: weightKg,
+                unit: "kilogram",
+                timestamp: sample.startDate,
+                source: .healthkit,
+                timezone: sampleTimeZone.identifier,
+                eventInstanceId: UUID(),
+                healthKitUUID: sample.uuid.uuidString,
+                healthKitSourceName: sample.sourceRevision.source.name
+            ))
+        }
+
+        if !patientSamples.isEmpty {
+            try await supabase
+                .from("patient_samples")
+                .insert(patientSamples)
+                .execute()
+        }
+
+        print("✅ Synced \(patientSamples.count) weight samples")
     }
+
+    // MARK: - Sleep Sync
 
     private func syncSleep() async throws {
         print("😴 Syncing sleep data...")
@@ -136,56 +328,47 @@ class HealthKitSyncService: ObservableObject {
 
         let samples = try await fetchCategorySamples(type: sleepType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        // Get reference types for sleep stages
-        let sleepStageTypes = try await fetchSleepStageTypes()
-
-        // Batch all sleep entries
-        var sleepEntries: [PatientSleepDataEntry] = []
+        var patientSamples: [PatientSample] = []
         let deviceTimezone = TimeZone.current.identifier
 
         for sample in samples {
             // Skip if already synced
-            if try await isSleepAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
                 continue
             }
 
             let sleepValue = HKCategoryValueSleepAnalysis(rawValue: sample.value)
-            let healthKitIdentifier = mapSleepValueToHealthKitIdentifier(sleepValue)
+            let categoryValue = mapSleepValueToCategory(sleepValue)
 
-            // Find matching sleep stage type
-            guard let stageType = sleepStageTypes.first(where: { $0.healthkitIdentifier == healthKitIdentifier }) else {
-                print("⚠️ No stage type found for \(healthKitIdentifier)")
+            // Skip "in bed" periods - we only want actual sleep stages
+            // In bed (6) doesn't map to our 0-3 sleep stage values
+            if categoryValue == nil {
                 continue
             }
 
-            let eventInstanceId = UUID()
-
-            // Create sleep data entry
-            sleepEntries.append(PatientSleepDataEntry(
+            patientSamples.append(PatientSample.category(
                 patientId: userId,
-                eventInstanceId: eventInstanceId,
-                periodStart: sample.startDate,
-                periodEnd: sample.endDate,
-                periodTypeId: stageType.id.uuidString,
-                source: "healthkit",
-                userTimezone: deviceTimezone,
-                metadata: [
-                    "healthkit_uuid": .string(sample.uuid.uuidString),
-                    "healthkit_source_name": .string(sample.sourceRevision.source.name)
-                ]
+                categoryType: CategoryTypes.sleepStage,
+                value: categoryValue!,
+                startTime: sample.startDate,
+                endTime: sample.endDate,
+                source: .healthkit,
+                timezone: deviceTimezone,
+                eventInstanceId: UUID(),
+                healthKitUUID: sample.uuid.uuidString,
+                healthKitSourceName: sample.sourceRevision.source.name
             ))
         }
 
-        // Bulk insert all sleep entries - statement-level trigger processes them in batch
-        if !sleepEntries.isEmpty {
+        if !patientSamples.isEmpty {
             try await supabase
-                .from("patient_sleep_data_entries")
-                .insert(sleepEntries)
+                .from("patient_samples")
+                .insert(patientSamples)
                 .execute()
         }
 
-        print("✅ Synced \(sleepEntries.count) sleep periods")
-        print("ℹ️ Events, sessions, and aggregations calculated automatically by database triggers")
+        print("✅ Synced \(patientSamples.count) sleep stage samples")
+        print("ℹ️ Sleep sessions and aggregations calculated automatically by database triggers")
     }
 
     // MARK: - HealthKit Queries
@@ -228,73 +411,16 @@ class HealthKitSyncService: ObservableObject {
         }
     }
 
-    // MARK: - Backend Writes
+    // MARK: - Deduplication
 
-    private func writeSamplesToBackend(samples: [HKQuantitySample], fieldId: String, unit: HKUnit) async throws {
-        guard let userId = try? await supabase.auth.session.user.id else {
-            throw HealthKitSyncError.notAuthenticated
-        }
-
-        var entries: [PatientDataEntry] = []
-
-        for sample in samples {
-            // Skip if already synced (check by healthkit_uuid)
-            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
-                continue
-            }
-
-            let value = sample.quantity.doubleValue(for: unit)
-            let dateFormatter = ISO8601DateFormatter()
-            let timestampString = dateFormatter.string(from: sample.startDate)
-
-            // Extract date only using ORIGINAL timezone from HealthKit metadata
-            let sampleTimeZone = getOriginalTimeZone(from: sample)
-            let dateOnlyFormatter = DateFormatter()
-            dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
-            dateOnlyFormatter.timeZone = sampleTimeZone  // Use original timezone
-            let dateString = dateOnlyFormatter.string(from: sample.startDate)
-
-            entries.append(PatientDataEntry(
-                patientId: userId.uuidString,
-                fieldId: fieldId,
-                entryDate: dateString,
-                entryTimestamp: timestampString,
-                valueQuantity: value,
-                valueTimestamp: nil,
-                valueReference: nil,
-                source: "healthkit",
-                healthkitUuid: sample.uuid.uuidString,
-                healthkitSourceName: sample.sourceRevision.source.name,
-                eventInstanceId: nil,
-                userTimezone: sampleTimeZone.identifier
-            ))
-        }
-
-        if !entries.isEmpty {
-            _ = try await supabase
-                .from("patient_data_entries")
-                .insert(entries)
-                .execute()
-        }
-    }
-
+    /// Check if a HealthKit sample has already been synced (checks metadata JSONB)
     private func isAlreadySynced(healthKitUUID: String) async throws -> Bool {
-        let count: Int = try await supabase
-            .from("patient_data_entries")
-            .select("id", head: false, count: .exact)
-            .eq("healthkit_uuid", value: healthKitUUID)
-            .execute()
-            .count ?? 0
-
-        return count > 0
-    }
-
-    private func isSleepAlreadySynced(healthKitUUID: String) async throws -> Bool {
-        // Check if this HealthKit UUID exists in metadata
-        let response: [PatientSleepDataEntry] = try await supabase
-            .from("patient_sleep_data_entries")
+        // Query patient_samples for matching healthkit_uuid in metadata
+        let response: [PatientSample] = try await supabase
+            .from("patient_samples")
             .select()
             .contains("metadata", value: ["healthkit_uuid": .string(healthKitUUID)])
+            .limit(1)
             .execute()
             .value
 
@@ -308,42 +434,32 @@ class HealthKitSyncService: ObservableObject {
         // Try to get timezone from HealthKit metadata
         if let tzString = sample.metadata?[HKMetadataKeyTimeZone] as? String,
            let timeZone = TimeZone(identifier: tzString) {
-            print("📍 Using original timezone from HealthKit: \(tzString)")
             return timeZone
         }
 
         // Fallback to device current timezone
-        print("⚠️ No timezone metadata, using device timezone: \(TimeZone.current.identifier)")
         return TimeZone.current
     }
 
-    private func fetchSleepStageTypes() async throws -> [SleepStageType] {
-        return try await supabase
-            .from("data_entry_fields_reference")
-            .select("id, reference_key")
-            .eq("reference_category", value: "sleep_period_types")
-            .execute()
-            .value
-    }
-
-    private func mapSleepValueToHealthKitIdentifier(_ value: HKCategoryValueSleepAnalysis?) -> String {
-        guard let value = value else { return "HKCategoryValueSleepAnalysisInBed" }
+    /// Map HealthKit sleep value to our category integer (0=Awake, 1=REM, 2=Core, 3=Deep)
+    private func mapSleepValueToCategory(_ value: HKCategoryValueSleepAnalysis?) -> Int? {
+        guard let value = value else { return nil }
 
         switch value {
-        case .inBed:
-            return "HKCategoryValueSleepAnalysisInBed"
-        case .asleepUnspecified:
-            return "HKCategoryValueSleepAnalysisAsleepUnspecified"
         case .awake:
-            return "HKCategoryValueSleepAnalysisAwake"
-        case .asleepCore:
-            return "HKCategoryValueSleepAnalysisAsleepCore"
-        case .asleepDeep:
-            return "HKCategoryValueSleepAnalysisAsleepDeep"
+            return SleepStageValues.awake  // 0
         case .asleepREM:
-            return "HKCategoryValueSleepAnalysisAsleepREM"
+            return SleepStageValues.rem    // 1
+        case .asleepCore:
+            return SleepStageValues.core   // 2
+        case .asleepDeep:
+            return SleepStageValues.deep   // 3
+        case .asleepUnspecified:
+            return SleepStageValues.core   // Default to Core/Light
+        case .inBed:
+            return nil  // Skip "in bed" - not a sleep stage
         @unknown default:
-            return "HKCategoryValueSleepAnalysisAsleepUnspecified"
+            return SleepStageValues.core
         }
     }
 
@@ -358,67 +474,13 @@ class HealthKitSyncService: ObservableObject {
     private func saveLastSyncDate() {
         UserDefaults.standard.set(lastSyncDate, forKey: "lastHealthKitSync")
     }
-}
 
-// MARK: - Models
-
-struct PatientDataEntry: Codable {
-    let patientId: String
-    let fieldId: String
-    let entryDate: String
-    let entryTimestamp: String?
-    let valueQuantity: Double?
-    let valueTimestamp: String?
-    let valueReference: String?
-    let source: String
-    let healthkitUuid: String
-    let healthkitSourceName: String
-    let eventInstanceId: String?
-    let userTimezone: String?
-
-    enum CodingKeys: String, CodingKey {
-        case patientId = "patient_id"
-        case fieldId = "field_id"
-        case entryDate = "entry_date"
-        case entryTimestamp = "entry_timestamp"
-        case valueQuantity = "value_quantity"
-        case valueTimestamp = "value_timestamp"
-        case valueReference = "value_reference"
-        case source
-        case healthkitUuid = "healthkit_uuid"
-        case healthkitSourceName = "healthkit_source_name"
-        case eventInstanceId = "event_instance_id"
-        case userTimezone = "user_timezone"
-    }
-}
-
-struct SleepStageType: Codable {
-    let id: UUID
-    let referenceKey: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case referenceKey = "reference_key"
-    }
-
-    var healthkitIdentifier: String {
-        // Map reference_key to HealthKit identifier
-        switch referenceKey.lowercased() {
-        case "in_bed":
-            return "HKCategoryValueSleepAnalysisInBed"
-        case "asleep":
-            return "HKCategoryValueSleepAnalysisAsleepUnspecified"
-        case "awake":
-            return "HKCategoryValueSleepAnalysisAwake"
-        case "core":
-            return "HKCategoryValueSleepAnalysisAsleepCore"
-        case "deep":
-            return "HKCategoryValueSleepAnalysisAsleepDeep"
-        case "rem":
-            return "HKCategoryValueSleepAnalysisAsleepREM"
-        default:
-            return "HKCategoryValueSleepAnalysisAsleepUnspecified"
-        }
+    /// Reset sync state to force a full resync from the last 7 days
+    func resetSyncState() {
+        lastSyncDate = nil
+        UserDefaults.standard.removeObject(forKey: "lastHealthKitSync")
+        syncError = nil
+        print("🔄 Sync state reset - next sync will fetch last 7 days of data")
     }
 }
 

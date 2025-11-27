@@ -9,8 +9,6 @@ packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: 2.0.0
-  SleepChartKit:
-    path: ../SleepChartKit-main
 
 targets:
   WellPath:
@@ -22,8 +20,6 @@ targets:
     dependencies:
       - package: Supabase
         product: Supabase
-      - package: SleepChartKit
-        product: SleepChartKit
     info:
       path: WellPath/Info.plist
       properties:

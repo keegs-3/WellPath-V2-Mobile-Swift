@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ChallengesView: View {
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Text("Challenges coming soon...")
             }

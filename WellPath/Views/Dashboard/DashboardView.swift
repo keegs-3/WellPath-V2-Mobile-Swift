@@ -13,7 +13,7 @@ struct DashboardView: View {
     @State private var showQuickActions = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                         // WellPath Score
@@ -141,7 +141,7 @@ struct TrackedMetricsButton: View {
             Text("WellPath Data")
                 .font(.title2)
                 .fontWeight(.semibold)
-                .foregroundColor(.black)
+                .foregroundColor(.primary)
 
             Spacer()
 
@@ -151,16 +151,7 @@ struct TrackedMetricsButton: View {
         .padding(.vertical, 16)
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.9),
-                    Color(white: 0.97).opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
     }
@@ -179,18 +170,18 @@ struct WellPathScoreCard: View {
                     .stroke(Color.gray.opacity(0.2), lineWidth: 8)
                     .frame(width: 60, height: 60)
 
-                // Progress ring - Black
+                // Progress ring - Green
                 // Cap at 0.995 to always show a tiny sliver
                 Circle()
                     .trim(from: 0, to: min(CGFloat(score) / 100, 0.995))
-                    .stroke(.black, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .stroke(Color(red: 0.56, green: 0.82, blue: 0.31), style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .frame(width: 60, height: 60)
                     .rotationEffect(.degrees(-90))
 
-                // Score text - black
+                // Score text - Green
                 Text("\(score)")
                     .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.black)
+                    .foregroundColor(Color(red: 0.56, green: 0.82, blue: 0.31))
             }
 
             // Right side - Text
@@ -199,7 +190,7 @@ struct WellPathScoreCard: View {
                     Text("WellPath Score")
                         .font(.title2)
                         .fontWeight(.semibold)
-                        .foregroundColor(.black)
+                        .foregroundColor(.primary)
 
                     // Tooltip placeholder
                     Image(systemName: "info.circle")
@@ -218,16 +209,7 @@ struct WellPathScoreCard: View {
         .padding(.vertical, 16)
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.9),
-                    Color(white: 0.97).opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
     }

@@ -13,16 +13,11 @@ struct SleepPercentagesChart: View {
     @StateObject private var viewModel: SleepPercentagesViewModel
     @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_SLEEP_ANALYSIS_PERCENTAGES")
 
-    @State private var selectedView: PercentagesView = .chart
+    @State private var showAbout = false
     @State private var selectedPeriod: TimePeriod = .week
     @State private var selectedStage: SleepStage?
     @State private var selectedBarDate: Date?
     @State private var scrollPosition: Date
-
-    enum PercentagesView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
 
     // Helper to get date granularity for period matching
     private func getDateGranularity(for period: TimePeriod) -> Calendar.Component {
@@ -94,20 +89,11 @@ struct SleepPercentagesChart: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // View picker (Chart/About)
-            Picker("View", selection: $selectedView) {
-                ForEach(PercentagesView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
             // Content
-            if selectedView == .chart {
-                chartView
+            if showAbout {
+                aboutContentView
             } else {
-                aboutView
+                chartView
             }
         }
         .task {
@@ -191,7 +177,7 @@ struct SleepPercentagesChart: View {
 
     private var chartHeader: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 24) {
+            HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(getTimeInBedLabel())
                         .font(.caption)
@@ -213,6 +199,19 @@ struct SleepPercentagesChart: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                 }
+
+                Spacer()
+
+                // Info button (top-aligned with metrics)
+                Button(action: {
+                    withAnimation {
+                        showAbout = true
+                    }
+                }) {
+                    Image(systemName: "info.circle")
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -222,7 +221,7 @@ struct SleepPercentagesChart: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal)
-        .padding(.top, 16)
+        .padding(.top, 12)
         .padding(.bottom, 12)
     }
 
@@ -824,63 +823,81 @@ struct SleepPercentagesChart: View {
         }
     }
 
-    private var aboutView: some View {
-        ScrollView {
-            if let education = educationViewModel.education {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let about = education.aboutContent {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(color)
-                                Text("About Sleep Stage Percentages")
-                                    .font(.headline)
-                            }
-                            Text(about)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let impact = education.longevityImpact {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "heart.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Health Impact")
-                                    .font(.headline)
-                            }
-                            Text(impact)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let tips = education.quickTips {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "lightbulb.circle.fill")
-                                    .foregroundColor(color)
-                                Text("Quick Tips")
-                                    .font(.headline)
-                            }
-
-                            ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text("\(index + 1).")
-                                        .fontWeight(.semibold)
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if let education = educationViewModel.education {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let about = education.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
                                         .foregroundColor(color)
-                                    Text(tip)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
+                                    Text("About")
+                                        .font(.headline)
+                                }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let impact = education.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let tips = education.quickTips {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
+                    .padding()
+                    .padding(.top, 40) // Space for close button
                 }
-                .padding()
             }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
         }
+        .background(Color.clear)
     }
 }
 

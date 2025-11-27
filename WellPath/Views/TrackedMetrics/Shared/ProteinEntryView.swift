@@ -2,10 +2,11 @@
 //  ProteinEntryView.swift
 //  WellPath
 //
-//  Entry form for logging protein intake
+//  Entry form for logging protein intake to patient_samples
 //
 
 import SwiftUI
+import Supabase
 
 struct ProteinEntryView: View {
     @Environment(\.dismiss) var dismiss
@@ -86,14 +87,14 @@ struct ProteinEntryView: View {
                         Picker("Type", selection: $selectedType) {
                             Text("Select Type").tag("")
                             ForEach(proteinTypes, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                                Text(option.displayName).tag(option.referenceKey)
                             }
                         }
 
                         Picker("Timing", selection: $selectedTiming) {
                             Text("Select Timing").tag("")
                             ForEach(mealTimings, id: \.id) { option in
-                                Text(option.displayName).tag(option.id)
+                                Text(option.displayName).tag(option.referenceKey)
                             }
                         }
                     }
@@ -144,7 +145,7 @@ struct ProteinEntryView: View {
             // Load protein types from data_entry_fields_reference
             let typesResponse: [ReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
+                .select("id, display_name, reference_key")
                 .eq("reference_category", value: "protein_types")
                 .eq("is_active", value: true)
                 .order("display_order")
@@ -154,8 +155,8 @@ struct ProteinEntryView: View {
             // Load meal timings from data_entry_fields_reference
             let timingsResponse: [ReferenceOption] = try await supabase
                 .from("data_entry_fields_reference")
-                .select("id, display_name")
-                .eq("reference_category", value: "protein_timing")
+                .select("id, display_name, reference_key")
+                .eq("reference_category", value: "food_timing")
                 .eq("is_active", value: true)
                 .order("display_order")
                 .execute()
@@ -166,8 +167,8 @@ struct ProteinEntryView: View {
                 mealTimings = timingsResponse
 
                 // Set default selections if available
-                selectedType = proteinTypes.first?.id ?? ""
-                selectedTiming = mealTimings.first?.id ?? ""
+                selectedType = proteinTypes.first?.referenceKey ?? ""
+                selectedTiming = mealTimings.first?.referenceKey ?? ""
 
                 isLoading = false
             }
@@ -193,76 +194,37 @@ struct ProteinEntryView: View {
 
         do {
             // Get user ID
-            let userId = try await supabase.auth.session.user.id.uuidString
-
-            // Generate event instance ID to link all fields together
-            let eventInstanceId = UUID().uuidString
-
-            // Format dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let timestampString = dateFormatter.string(from: selectedDateTime)
-
-            // Extract just the date (YYYY-MM-DD)
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month, .day], from: selectedDateTime)
-            let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+            let userId = try await supabase.auth.session.user.id
 
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // =============================================================
-            // INSERT ALL PROTEIN FIELDS IN A SINGLE BATCH
-            // =============================================================
-            // This ensures all entries are inserted together for proper
-            // aggregation trigger processing
-
-            // Build array of entries - always include protein grams
-            var batchEntries: [[String: String]] = [
-                [
-                    "patient_id": userId,
-                    "field_id": "DEF_PROTEIN_GRAMS",
-                    "entry_date": dateString,
-                    "entry_timestamp": timestampString,
-                    "value_quantity": "\(amountValue)",
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ]
-            ]
-
-            // Add optional type entry
+            // Build metadata with protein type and timing
+            var metadata: [String: AnyJSON] = [:]
             if !selectedType.isEmpty {
-                batchEntries.append([
-                    "patient_id": userId,
-                    "field_id": "DEF_PROTEIN_TYPE",
-                    "entry_date": dateString,
-                    "entry_timestamp": timestampString,
-                    "value_reference": selectedType,
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
+                metadata[ProteinMetadataKeys.proteinType] = .string(selectedType)
             }
-
-            // Add optional timing entry
             if !selectedTiming.isEmpty {
-                batchEntries.append([
-                    "patient_id": userId,
-                    "field_id": "DEF_PROTEIN_TIMING",
-                    "entry_date": dateString,
-                    "entry_timestamp": timestampString,
-                    "value_reference": selectedTiming,
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
+                metadata["food_timing"] = .string(selectedTiming)
             }
 
-            // Insert all entries in a single batch
+            // Create single patient_samples entry
+            let sample = PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.proteinGrams,
+                value: amountValue,
+                unit: "gram",
+                timestamp: selectedDateTime,
+                metadata: metadata,
+                source: .wellpathInput,
+                timezone: deviceTimezone,
+                eventInstanceId: UUID()
+            )
+
+            // Insert into patient_samples
             try await supabase
-                .from("patient_data_entries")
-                .insert(batchEntries)
+                .from("patient_samples")
+                .insert(sample)
                 .execute()
 
             await MainActor.run {
@@ -281,12 +243,14 @@ struct ProteinEntryView: View {
 // MARK: - Supporting Models
 
 struct ReferenceOption: Codable, Identifiable {
-    let id: String
+    let id: UUID
     let displayName: String
+    let referenceKey: String
 
     enum CodingKeys: String, CodingKey {
-        case id = "id"  // Changed to use UUID id column
+        case id
         case displayName = "display_name"
+        case referenceKey = "reference_key"
     }
 }
 

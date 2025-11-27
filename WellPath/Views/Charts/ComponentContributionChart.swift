@@ -48,7 +48,8 @@ struct ComponentContributionChart: View {
                     .opacity(selectedComponent == nil || selectedComponent == item.0 ? 1.0 : 0.3)
                 }
             }
-            .frame(height: 200)
+            .frame(height: 160)
+            .chartBackground { proxy in Color.clear }
 
             // Legend
             VStack(spacing: 12) {
@@ -92,7 +93,7 @@ struct ComponentContributionChart: View {
             .padding(.horizontal)
         }
         .padding(.vertical)
-        .background(Color(white: 0.95))
+        .background(Color(uiColor: .tertiarySystemGroupedBackground))
         .cornerRadius(12)
     }
 }

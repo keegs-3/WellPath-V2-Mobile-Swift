@@ -32,6 +32,11 @@ struct WellPathApp: App {
         }
 
         print("🚀 Starting initial HealthKit sync...")
+
+        // Enable background observers for automatic syncing
+        await syncService.enableBackgroundDelivery()
+
+        // Perform initial sync
         await syncService.performFullSync()
     }
 }

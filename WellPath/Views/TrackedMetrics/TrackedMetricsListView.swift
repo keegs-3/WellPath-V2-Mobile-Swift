@@ -18,7 +18,7 @@ struct MetricViewRegistry {
             AnyView(SleepDurationPrimary(pillar: pillar, color: color))
         },
         "SCREEN_SLEEP_ANALYSIS": { pillar, color in
-            AnyView(SleepAnalysisPrimary(pillar: pillar, color: color))
+            AnyView(SleepAnalysisScreen(pillar: pillar, color: color))
         },
         "SCREEN_SLEEP_CONSISTENCY": { pillar, color in
             AnyView(SleepConsistencyPrimary(pillar: pillar, color: color))
@@ -26,42 +26,42 @@ struct MetricViewRegistry {
 
         // Healthful Nutrition
         "SCREEN_PROTEIN": { pillar, color in
-            AnyView(ProteinPrimary(pillar: pillar, color: color))
+            AnyView(ProteinScreen(pillar: pillar, color: color))
         },
         "SCREEN_LEGUMES": { pillar, color in
-            AnyView(LegumesPrimary(pillar: pillar, color: color))
+            AnyView(LegumesScreen(pillar: pillar, color: color))
         },
         "SCREEN_LEGUMES_PRIMARY": { pillar, color in
-            AnyView(LegumesPrimary(pillar: pillar, color: color))
+            AnyView(LegumesScreen(pillar: pillar, color: color))
         },
         "SCREEN_VEGETABLES": { pillar, color in
-            AnyView(VegetablesPrimary(pillar: pillar, color: color))
+            AnyView(VegetablesScreen(pillar: pillar, color: color))
         },
         "SCREEN_VEGETABLES_PRIMARY": { pillar, color in
-            AnyView(VegetablesPrimary(pillar: pillar, color: color))
+            AnyView(VegetablesScreen(pillar: pillar, color: color))
         },
         "SCREEN_WHOLE_GRAINS": { pillar, color in
-            AnyView(WholeGrainsPrimary(pillar: pillar, color: color))
+            AnyView(WholeGrainsScreen(pillar: pillar, color: color))
         },
         "SCREEN_WHOLE_GRAINS_PRIMARY": { pillar, color in
-            AnyView(WholeGrainsPrimary(pillar: pillar, color: color))
+            AnyView(WholeGrainsScreen(pillar: pillar, color: color))
         },
         "SCREEN_FRUITS": { pillar, color in
-            AnyView(FruitsPrimary(pillar: pillar, color: color))
+            AnyView(FruitsScreen(pillar: pillar, color: color))
         },
         "SCREEN_FRUITS_PRIMARY": { pillar, color in
-            AnyView(FruitsPrimary(pillar: pillar, color: color))
+            AnyView(FruitsScreen(pillar: pillar, color: color))
         },
 
         // Movement + Exercise
         "SCREEN_STEPS": { pillar, color in
-            AnyView(StepsPrimary(pillar: pillar, color: color))
+            AnyView(StepsScreen(pillar: pillar, color: color))
         },
         "SCREEN_STRENGTH": { pillar, color in
-            AnyView(StrengthTrainingPrimary(pillar: pillar, color: color))
+            AnyView(StrengthTrainingScreen(pillar: pillar, color: color))
         },
         "SCREEN_STRENGTH_TRAINING": { pillar, color in
-            AnyView(StrengthTrainingPrimary(pillar: pillar, color: color))
+            AnyView(StrengthTrainingScreen(pillar: pillar, color: color))
         }
     ]
 

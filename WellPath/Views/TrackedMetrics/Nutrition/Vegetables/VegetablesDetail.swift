@@ -72,191 +72,199 @@ struct VegetablesDetail: View {
     }
 }
 
-// MARK: - Timing View (Chart/About split)
+// MARK: - Timing View (Timeline with info button)
 
 struct VegetablesTimingView: View {
     let color: Color
     @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_VEGETABLES_MEAL_TIMING")
-    @State private var selectedView: TimingView = .chart
-
-    enum TimingView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
+    @State private var showAbout = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // View picker
-            Picker("View", selection: $selectedView) {
-                ForEach(TimingView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-
-            // Content
-            if selectedView == .chart {
-                VegetablesMealTimingStackedChart(color: color)
+            if showAbout {
+                aboutContentView
             } else {
-                // About content (scrollable)
-                ScrollView {
-                    if let education = educationViewModel.education {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if let about = education.aboutContent {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "info.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("About Vegetables Timing")
-                                            .font(.headline)
-                                    }
-                                    Text(about)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let impact = education.longevityImpact {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "heart.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Health Impact")
-                                            .font(.headline)
-                                    }
-                                    Text(impact)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let tips = education.quickTips {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "lightbulb.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Quick Tips")
-                                            .font(.headline)
-                                    }
-
-                                    ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text("\(index + 1).")
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(color)
-                                            Text(tip)
-                                                .font(.body)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-                }
+                NutrientTimingTimelineView(nutrientType: .vegetables, color: color, showAbout: $showAbout)
             }
         }
         .task {
             await educationViewModel.loadEducation()
         }
     }
+
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if let education = educationViewModel.education {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let about = education.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("About")
+                                        .font(.headline)
+                                }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let impact = education.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let tips = education.quickTips {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .padding(.top, 40)
+                }
+            }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.bar")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
+        }
+        .background(Color.clear)
+    }
 }
 
-// MARK: - Type View (Chart/About split)
+// MARK: - Type View (Variety score with type breakdown)
 
 struct VegetablesTypeView: View {
     let color: Color
     @StateObject private var educationViewModel = TabEducationViewModel(metricId: "DISP_VEGETABLES_TYPE")
-    @State private var selectedView: TypeView = .chart
-
-    enum TypeView: String, CaseIterable {
-        case chart = "Chart"
-        case about = "About"
-    }
+    @State private var showAbout = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // View picker
-            Picker("View", selection: $selectedView) {
-                ForEach(TypeView.allCases, id: \.self) { view in
-                    Text(view.rawValue).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-
-            // Content
-            if selectedView == .chart {
-                VegetablesTypeStackedChart(color: color)
+            if showAbout {
+                aboutContentView
             } else {
-                // About content (scrollable)
-                ScrollView {
-                    if let education = educationViewModel.education {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if let about = education.aboutContent {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "info.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("About Vegetables Types")
-                                            .font(.headline)
-                                    }
-                                    Text(about)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let impact = education.longevityImpact {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "heart.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Health Impact")
-                                            .font(.headline)
-                                    }
-                                    Text(impact)
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            if let tips = education.quickTips {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "lightbulb.circle.fill")
-                                            .foregroundColor(color)
-                                        Text("Quick Tips")
-                                            .font(.headline)
-                                    }
-
-                                    ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text("\(index + 1).")
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(color)
-                                            Text(tip)
-                                                .font(.body)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-                }
+                NutrientTypeView(nutrientType: .vegetables, color: color, showAbout: $showAbout)
             }
         }
         .task {
             await educationViewModel.loadEducation()
         }
+    }
+
+    private var aboutContentView: some View {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                if let education = educationViewModel.education {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let about = education.aboutContent {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "info.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("About")
+                                        .font(.headline)
+                                }
+                                Text(about)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let impact = education.longevityImpact {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Health Impact")
+                                        .font(.headline)
+                                }
+                                Text(impact)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let tips = education.quickTips {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "lightbulb.circle.fill")
+                                        .foregroundColor(color)
+                                    Text("Quick Tips")
+                                        .font(.headline)
+                                }
+
+                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(color)
+                                        Text(tip)
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .padding(.top, 40)
+                }
+            }
+            .background(Color.clear)
+
+            // Close button (floating, top-right)
+            Button(action: {
+                withAnimation {
+                    showAbout = false
+                }
+            }) {
+                Image(systemName: "chart.pie")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
+        }
+        .background(Color.clear)
     }
 }
 

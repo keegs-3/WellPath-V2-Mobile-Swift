@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - Biomarker Reading
 struct BiomarkerReading: Codable, Identifiable {
@@ -17,6 +18,7 @@ struct BiomarkerReading: Codable, Identifiable {
     let testDate: String
     let source: String?
     let notes: String?
+    let cyclePhase: String?  // For hormone biomarkers: Follicular, Luteal, Ovulatory
     let createdAt: String?
     let updatedAt: String?
 
@@ -29,6 +31,7 @@ struct BiomarkerReading: Codable, Identifiable {
         case testDate = "test_date"
         case source
         case notes
+        case cyclePhase = "cycle_phase"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -65,14 +68,19 @@ struct BiometricReading: Codable, Identifiable {
 struct BiomarkerDetail: Codable, Identifiable {
     let id: UUID
     let biomarker: String?
-    let rangeName: String
+    let rangeName: String  // This IS the bucket now: "OPTIMAL", "IN RANGE", "OUT OF RANGE"
     let rangeNameBackend: String
     let rangeLow: Double?
     let rangeHigh: Double?
     let frontendDisplay: String?
     let gender: String?
     let directionality: String?
-    let rangeBucket: String?
+    let menopausalStatus: String?
+    let cycleStage: String?
+    let uniqueCondition: String?
+
+    // rangeName IS the bucket - provide computed property for compatibility
+    var rangeBucket: String { rangeName }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -84,7 +92,9 @@ struct BiomarkerDetail: Codable, Identifiable {
         case frontendDisplay = "frontend_display"
         case gender
         case directionality
-        case rangeBucket = "range_bucket"
+        case menopausalStatus = "menopausal_status"
+        case cycleStage = "cycle_stage"
+        case uniqueCondition = "unique_condition"
     }
 }
 
@@ -92,16 +102,18 @@ struct BiomarkerDetail: Codable, Identifiable {
 struct BiometricDetail: Codable, Identifiable {
     let id: UUID
     let biometric: String?
-    let rangeName: String?
+    let rangeName: String?  // This IS the bucket now: "OPTIMAL", "IN RANGE", "OUT OF RANGE"
     let rangeNameBackend: String?
     let rangeLow: Double?
     let rangeHigh: Double?
     let frontendDisplaySpecific: String?
     let gender: String?
-    let ageMin: Int?
-    let ageMax: Int?
+    let ageLow: Double?  // Database stores as real (float4) with values like 29.99
+    let ageHigh: Double? // Database stores as real (float4) with values like 29.99
     let directionality: String?
-    let rangeBucket: String?
+
+    // rangeName IS the bucket - provide computed property for compatibility
+    var rangeBucket: String? { rangeName }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -112,10 +124,9 @@ struct BiometricDetail: Codable, Identifiable {
         case rangeHigh = "range_high"
         case frontendDisplaySpecific = "frontend_display_specific"
         case gender
-        case ageMin = "age_min"
-        case ageMax = "age_max"
+        case ageLow = "age_low"
+        case ageHigh = "age_high"
         case directionality
-        case rangeBucket = "range_bucket"
     }
 }
 
@@ -267,11 +278,46 @@ struct UnitConversion: Codable, Identifiable {
     }
 }
 
+// MARK: - Range Segment (for visual indicator)
+struct RangeSegment: Identifiable {
+    let id = UUID()
+    let rangeName: String
+    let rangeBucket: String
+    let rangeLow: Double
+    let rangeHigh: Double
+    let isArtificialLow: Bool  // True if this segment extends to 0 artificially
+    let isArtificialHigh: Bool // True if this segment extends to 3x artificially
+    let isPatientSegment: Bool // True if patient value is in this segment
+
+    var color: Color {
+        switch rangeBucket.uppercased() {
+        case "OPTIMAL":
+            return .green
+        case "IN RANGE", "IN-RANGE":
+            return .blue
+        default: // "OUT OF RANGE", "OUT-OF-RANGE"
+            return .red
+        }
+    }
+
+    // Initialize with default false for artificial bounds and patient segment
+    init(rangeName: String, rangeBucket: String, rangeLow: Double, rangeHigh: Double, isArtificialLow: Bool = false, isArtificialHigh: Bool = false, isPatientSegment: Bool = false) {
+        self.rangeName = rangeName
+        self.rangeBucket = rangeBucket
+        self.rangeLow = rangeLow
+        self.rangeHigh = rangeHigh
+        self.isArtificialLow = isArtificialLow
+        self.isArtificialHigh = isArtificialHigh
+        self.isPatientSegment = isPatientSegment
+    }
+}
+
 // MARK: - View Models for UI
 struct BiomarkerCardData: Identifiable {
     let id = UUID()
     let name: String
     let value: String
+    let numericValue: Double? // Numeric value for range indicator positioning
     let status: String
     let rangeName: String
     let optimalRange: String
@@ -279,12 +325,14 @@ struct BiomarkerCardData: Identifiable {
     let trendData: [Double]
     let unit: String
     let category: String?
+    let rangeSegments: [RangeSegment] // All range segments for visual indicator
 }
 
 struct BiometricCardData: Identifiable {
     let id = UUID()
     let name: String
     let value: String
+    let numericValue: Double? // Numeric value for range indicator positioning
     let status: String
     let rangeName: String
     let optimalRange: String
@@ -292,4 +340,5 @@ struct BiometricCardData: Identifiable {
     let trendData: [Double]
     let unit: String
     let category: String?
+    let rangeSegments: [RangeSegment] // All range segments for visual indicator
 }

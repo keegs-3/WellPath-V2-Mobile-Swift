@@ -1,0 +1,550 @@
+//
+//  NutrientTypeViewModel.swift
+//  WellPath
+//
+//  Generic ViewModel for nutrient type distribution (legumes, vegetables, whole grains, fruits)
+//  Uses Variety Score (count + evenness) instead of tier-based Quality Score
+//
+
+import Foundation
+import SwiftUI
+
+/// Represents a discovered type aggregation for a nutrient
+struct TypeAggregation: Identifiable {
+    let aggId: String
+    let displayName: String
+    var color: Color
+    var description: String?
+
+    var id: String { aggId }
+}
+
+/// Target count for variety score calculation per period
+struct VarietyTarget {
+    let target: Int  // types needed for 100% count score
+}
+
+@MainActor
+class NutrientTypeViewModel: ObservableObject {
+    @Published var typeAggregations: [TypeAggregation] = []
+    @Published var typeData: [String: Double] = [:]  // agg_id -> servings
+    @Published var isLoading = false
+    @Published var scoringExplanation: String?
+    private var targets: [String: VarietyTarget] = [:]  // period_type -> target
+
+    let supabase = SupabaseManager.shared.client
+    private let baseColor: Color
+    let nutrientType: NutrientTimingType
+
+    init(nutrientType: NutrientTimingType, baseColor: Color) {
+        self.nutrientType = nutrientType
+        self.baseColor = baseColor
+    }
+
+    /// Returns the display_metrics metric_id for this nutrient type
+    private var typeMetricId: String {
+        "DISP_\(nutrientType.rawValue)_TYPE"
+    }
+
+    var totalServings: Double {
+        typeData.values.reduce(0, +)
+    }
+
+    var hasData: Bool {
+        totalServings > 0
+    }
+
+    /// Discovers type aggregations for this nutrient type from the database
+    func discoverTypeAggregations() async {
+        do {
+            // Fetch scoring explanation and thresholds from database
+            await loadScoringExplanation()
+            await loadVarietyThresholds()
+
+            struct AggMetric: Codable {
+                let aggId: String
+                let metricName: String
+                let displayName: String
+
+                enum CodingKeys: String, CodingKey {
+                    case aggId = "agg_id"
+                    case metricName = "metric_name"
+                    case displayName = "display_name"
+                }
+            }
+
+            // Query for type aggregations matching pattern: AGG_{NUTRIENT}_TYPE_*
+            let prefix = "AGG_\(nutrientType.rawValue)_TYPE_"
+
+            let results: [AggMetric] = try await supabase
+                .from("aggregation_metrics")
+                .select("agg_id, metric_name, display_name")
+                .like("agg_id", pattern: "\(prefix)%")
+                .execute()
+                .value
+
+            print("🍽️ Discovered \(results.count) type aggregations for \(nutrientType.displayName)")
+
+            // Fetch descriptions from data_entry_fields_reference
+            let descriptions = await fetchTypeDescriptions()
+
+            // Sort by display name, but put "Other" last
+            let sortedResults = results.sorted { a, b in
+                let aIsOther = a.aggId.hasSuffix("_OTHER")
+                let bIsOther = b.aggId.hasSuffix("_OTHER")
+
+                if aIsOther && !bIsOther { return false }
+                if !aIsOther && bIsOther { return true }
+                return a.displayName < b.displayName
+            }
+
+            // Assign gradient colors based on position
+            let colorCount = Double(sortedResults.count)
+            typeAggregations = sortedResults.enumerated().map { index, agg in
+                let isOther = agg.aggId.hasSuffix("_OTHER")
+
+                // Clean display name by removing nutrient prefix
+                let cleanName = cleanTypeName(agg.displayName)
+
+                let color: Color
+                if isOther {
+                    color = Color(red: 0.56, green: 0.56, blue: 0.58) // System gray
+                } else {
+                    // Gradient from dark to light based on position
+                    let progress = colorCount > 1 ? Double(index) / (colorCount - 1) : 0
+                    let opacity = 1.0 - (progress * 0.5) // Range from 1.0 to 0.5
+                    color = baseColor.opacity(opacity)
+                }
+
+                // Extract reference_key from aggId (e.g., AGG_LEGUMES_TYPE_LENTILS -> lentils)
+                let referenceKey = extractReferenceKey(from: agg.aggId, prefix: prefix)
+                let description = descriptions[referenceKey]
+
+                return TypeAggregation(
+                    aggId: agg.aggId,
+                    displayName: cleanName,
+                    color: color,
+                    description: description
+                )
+            }
+
+        } catch {
+            print("❌ Error discovering type aggregations: \(error)")
+        }
+    }
+
+    /// Fetches type descriptions from data_entry_fields_reference
+    private func fetchTypeDescriptions() async -> [String: String] {
+        do {
+            struct ReferenceData: Codable {
+                let referenceKey: String
+                let description: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case referenceKey = "reference_key"
+                    case description
+                }
+            }
+
+            // Map nutrient type to reference category (e.g., LEGUMES -> legumes_types)
+            let category = "\(nutrientType.rawValue.lowercased())_types"
+
+            let results: [ReferenceData] = try await supabase
+                .from("data_entry_fields_reference")
+                .select("reference_key, description")
+                .eq("reference_category", value: category)
+                .execute()
+                .value
+
+            // Build dictionary of reference_key -> description
+            var descriptions: [String: String] = [:]
+            for ref in results {
+                if let desc = ref.description {
+                    descriptions[ref.referenceKey] = desc
+                }
+            }
+
+            print("🍽️ Loaded \(descriptions.count) type descriptions for \(category)")
+            return descriptions
+
+        } catch {
+            print("❌ Error fetching type descriptions: \(error)")
+            return [:]
+        }
+    }
+
+    /// Loads scoring explanation from display_metrics
+    private func loadScoringExplanation() async {
+        do {
+            struct MetricScoring: Codable {
+                let scoringExplanation: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case scoringExplanation = "scoring_explanation"
+                }
+            }
+
+            let results: [MetricScoring] = try await supabase
+                .from("display_metrics")
+                .select("scoring_explanation")
+                .eq("metric_id", value: typeMetricId)
+                .limit(1)
+                .execute()
+                .value
+
+            scoringExplanation = results.first?.scoringExplanation
+            print("🍽️ Loaded scoring explanation for \(typeMetricId): \(scoringExplanation != nil ? "found" : "not found")")
+
+        } catch {
+            print("❌ Error loading scoring explanation: \(error)")
+        }
+    }
+
+    /// Loads variety score targets from database
+    private func loadVarietyThresholds() async {
+        do {
+            struct TargetRow: Codable {
+                let periodType: String
+                let diversityTarget: Int
+
+                enum CodingKeys: String, CodingKey {
+                    case periodType = "period_type"
+                    case diversityTarget = "diversity_target"
+                }
+            }
+
+            let results: [TargetRow] = try await supabase
+                .from("display_metric_variety_score_thresholds")
+                .select("period_type, diversity_target")
+                .eq("display_metric_id", value: typeMetricId)
+                .execute()
+                .value
+
+            // Build targets dictionary
+            for row in results {
+                targets[row.periodType] = VarietyTarget(target: row.diversityTarget)
+            }
+
+            print("🍽️ Loaded \(targets.count) variety targets for \(typeMetricId)")
+
+        } catch {
+            print("❌ Error loading variety targets: \(error)")
+            // Fallback defaults if database fails
+            targets = [
+                "daily": VarietyTarget(target: 3),
+                "weekly": VarietyTarget(target: 4),
+                "monthly": VarietyTarget(target: 5),
+                "yearly": VarietyTarget(target: 5)
+            ]
+        }
+    }
+
+    /// Extracts reference_key from aggId (e.g., AGG_LEGUMES_TYPE_LENTILS -> lentils)
+    private func extractReferenceKey(from aggId: String, prefix: String) -> String {
+        // Remove prefix and convert to lowercase
+        let key = aggId.replacingOccurrences(of: prefix, with: "").lowercased()
+        return key
+    }
+
+    /// Cleans the display name by removing nutrient prefix
+    private func cleanTypeName(_ displayName: String) -> String {
+        var name = displayName
+
+        // Remove nutrient name from display (e.g., "Legumes Lentils" -> "Lentils")
+        for nutrient in NutrientTimingType.allCases {
+            name = name.replacingOccurrences(of: "\(nutrient.displayName) ", with: "")
+        }
+
+        return name.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Loads data for a specific period and date
+    func loadDataForPeriod(period: TimePeriod, date: Date) async {
+        isLoading = true
+        typeData.removeAll()
+
+        do {
+            let userId = try await supabase.auth.session.user.id
+
+            // Map to aggregated period type (not bar chart granularity)
+            let periodType: String
+            switch period {
+            case .day: periodType = "daily"
+            case .week: periodType = "weekly"
+            case .month: periodType = "monthly"
+            case .sixMonth: periodType = "six_month"
+            case .year: periodType = "yearly"
+            }
+            let aggIds = typeAggregations.map { $0.aggId }
+
+            // Calculate period start
+            let periodStart = getPeriodStart(for: period, date: date)
+            let iso8601String = periodStart.ISO8601Format()
+
+            print("🥗 Querying \(nutrientType.displayName) types for period: \(periodType)")
+            print("🥗   Period start (UTC): \(periodStart)")
+            print("🥗   ISO8601 string: \(iso8601String)")
+
+            // For Day: use SUM (daily total)
+            // For Week/Month/Year: use AVG (average per day)
+            let calculationType = period == .day ? "SUM" : "AVG"
+
+            let results: [AggregationResult] = try await supabase
+                .from("aggregation_results_cache")
+                .select()
+                .eq("patient_id", value: userId)
+                .in("agg_metric_id", values: aggIds)
+                .eq("period_type", value: periodType)
+                .eq("calculation_type_id", value: calculationType)
+                .eq("period_start", value: iso8601String)
+                .execute()
+                .value
+
+            print("🥗 Found \(results.count) type results for period")
+
+            // Store results
+            for result in results {
+                typeData[result.aggMetricId] = result.value
+            }
+
+            // Update colors based on consumption amounts (highest = darkest)
+            updateColorsBasedOnConsumption()
+
+        } catch {
+            print("❌ Error loading type data: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Updates colors so highest consumption = darkest shade
+    /// Uses a wider opacity range for better visual differentiation
+    private func updateColorsBasedOnConsumption() {
+        // Get types sorted by consumption (excluding Other)
+        let sortedTypes = typeAggregations
+            .filter { !$0.aggId.hasSuffix("_OTHER") }
+            .sorted { (typeData[$0.aggId] ?? 0) > (typeData[$1.aggId] ?? 0) }
+
+        let count = sortedTypes.count
+
+        // Define opacity steps for better differentiation
+        // More types = more granular steps, fewer types = bigger jumps
+        let opacities: [Double]
+        switch count {
+        case 0:
+            opacities = []
+        case 1:
+            opacities = [1.0]
+        case 2:
+            opacities = [1.0, 0.55] // Big contrast for 2 types
+        case 3:
+            opacities = [1.0, 0.7, 0.45]
+        case 4:
+            opacities = [1.0, 0.8, 0.6, 0.4]
+        case 5:
+            opacities = [1.0, 0.85, 0.7, 0.55, 0.4]
+        default:
+            // For 6+ types, calculate evenly spaced opacities from 1.0 to 0.35
+            opacities = (0..<count).map { index in
+                1.0 - (Double(index) / Double(count - 1)) * 0.65
+            }
+        }
+
+        for (index, type) in sortedTypes.enumerated() {
+            if let aggIndex = typeAggregations.firstIndex(where: { $0.aggId == type.aggId }) {
+                let opacity = index < opacities.count ? opacities[index] : 0.4
+                typeAggregations[aggIndex].color = baseColor.opacity(opacity)
+            }
+        }
+    }
+
+    // MARK: - Variety Score Calculation
+
+    /// Calculates the Variety Score (0-100) based on count and evenness
+    /// Formula: (Count Score × 0.5) + (Evenness Score × 0.5)
+    /// - Count Score: types consumed vs target (from database, period-aware)
+    /// - Evenness Score: Shannon entropy (rewards balanced distribution)
+    func calculateVarietyScore(for period: TimePeriod = .week) -> Double {
+        guard hasData else { return 0 }
+
+        let countScore = calculateCountScore(for: period)
+        let evennessScore = calculateEvennessScore()
+
+        return (countScore * 0.5) + (evennessScore * 0.5)
+    }
+
+    /// Count Score: types consumed vs target (capped at 100)
+    /// Target comes from database, varies by period
+    private func calculateCountScore(for period: TimePeriod) -> Double {
+        let typesConsumed = typeAggregations.filter { type in
+            !type.aggId.hasSuffix("_OTHER") && (typeData[type.aggId] ?? 0) > 0
+        }.count
+
+        guard typesConsumed > 0 else { return 0 }
+
+        // Map TimePeriod to database period_type
+        let periodKey: String
+        switch period {
+        case .day: periodKey = "daily"
+        case .week: periodKey = "weekly"
+        case .month: periodKey = "monthly"
+        case .sixMonth: periodKey = "monthly"  // Use monthly targets for 6M
+        case .year: periodKey = "yearly"
+        }
+
+        // Get target (fallback to sensible default)
+        let target = targets[periodKey]?.target ?? 3
+
+        // Score = types consumed / target, capped at 100%
+        return min(Double(typesConsumed) / Double(target), 1.0) * 100
+    }
+
+    /// Evenness Score using normalized Shannon entropy
+    /// Perfect evenness (equal distribution) = 100
+    /// Single type dominance = 0
+    /// Formula: (-Σ(p × ln(p)) / ln(n)) × 100 where p = proportion, n = types consumed
+    private func calculateEvennessScore() -> Double {
+        // Get non-zero values (excluding "Other" if we want to focus on named types)
+        let nonZeroValues = typeAggregations
+            .compactMap { type -> Double? in
+                let value = typeData[type.aggId] ?? 0
+                return value > 0 ? value : nil
+            }
+
+        let n = nonZeroValues.count
+        guard n > 1 else {
+            // If only 1 type consumed, evenness is 0 (no diversity)
+            // If 0 types, return 0
+            return n == 1 ? 0 : 0
+        }
+
+        let total = nonZeroValues.reduce(0, +)
+        guard total > 0 else { return 0 }
+
+        // Calculate Shannon entropy: H = -Σ(p × ln(p))
+        var entropy: Double = 0
+        for value in nonZeroValues {
+            let p = value / total
+            if p > 0 {
+                entropy -= p * log(p)
+            }
+        }
+
+        // Maximum entropy for n items = ln(n)
+        let maxEntropy = log(Double(n))
+        guard maxEntropy > 0 else { return 0 }
+
+        // Normalized entropy (Pielou's evenness): H / ln(n)
+        let normalizedEntropy = entropy / maxEntropy
+
+        return normalizedEntropy * 100
+    }
+
+    // MARK: - Helper Methods
+
+    func getDisplayName(for aggId: String) -> String {
+        typeAggregations.first { $0.aggId == aggId }?.displayName ?? aggId
+    }
+
+    func getColor(for aggId: String) -> Color {
+        typeAggregations.first { $0.aggId == aggId }?.color ?? .gray
+    }
+
+    /// Get types sorted by consumption amount (highest first)
+    func getSortedTypesByConsumption() -> [TypeAggregation] {
+        typeAggregations.sorted {
+            let value1 = typeData[$0.aggId] ?? 0
+            let value2 = typeData[$1.aggId] ?? 0
+
+            // "Other" always goes last
+            if $0.aggId.hasSuffix("_OTHER") && !$1.aggId.hasSuffix("_OTHER") { return false }
+            if !$0.aggId.hasSuffix("_OTHER") && $1.aggId.hasSuffix("_OTHER") { return true }
+
+            return value1 > value2
+        }
+    }
+
+    /// Get types with data only, sorted by consumption
+    func getTypesWithData() -> [TypeAggregation] {
+        getSortedTypesByConsumption().filter { (typeData[$0.aggId] ?? 0) > 0 }
+    }
+
+    // MARK: - Period Calculation Helpers
+
+    private func getPeriodStart(for period: TimePeriod, date: Date) -> Date {
+        let calendar = Calendar.current
+        var utcCalendar = Calendar.current
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+
+        switch period {
+        case .day:
+            let localComponents = calendar.dateComponents([.year, .month, .day], from: date)
+            var utcComponents = DateComponents()
+            utcComponents.year = localComponents.year
+            utcComponents.month = localComponents.month
+            utcComponents.day = localComponents.day
+            utcComponents.hour = 0
+            utcComponents.minute = 0
+            utcComponents.second = 0
+            utcComponents.timeZone = TimeZone(identifier: "UTC")
+            return utcCalendar.date(from: utcComponents)!
+
+        case .week:
+            let localComponents = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
+            let weekday = localComponents.weekday!
+            let daysFromMonday = (weekday == 1) ? -6 : (2 - weekday)
+            let localMonday = calendar.date(byAdding: .day, value: daysFromMonday, to: date)!
+            let mondayComponents = calendar.dateComponents([.year, .month, .day], from: localMonday)
+
+            var utcComponents = DateComponents()
+            utcComponents.year = mondayComponents.year
+            utcComponents.month = mondayComponents.month
+            utcComponents.day = mondayComponents.day
+            utcComponents.hour = 0
+            utcComponents.minute = 0
+            utcComponents.second = 0
+            utcComponents.timeZone = TimeZone(identifier: "UTC")
+            return utcCalendar.date(from: utcComponents)!
+
+        case .month:
+            let localComponents = calendar.dateComponents([.year, .month], from: date)
+            var utcComponents = DateComponents()
+            utcComponents.year = localComponents.year
+            utcComponents.month = localComponents.month
+            utcComponents.day = 1
+            utcComponents.hour = 0
+            utcComponents.minute = 0
+            utcComponents.second = 0
+            utcComponents.timeZone = TimeZone(identifier: "UTC")
+            return utcCalendar.date(from: utcComponents)!
+
+        case .sixMonth:
+            let localComponents = calendar.dateComponents([.year, .month], from: date)
+            let year = localComponents.year!
+            let month = localComponents.month!
+            let startMonth = month <= 6 ? 1 : 7
+
+            var utcComponents = DateComponents()
+            utcComponents.year = year
+            utcComponents.month = startMonth
+            utcComponents.day = 1
+            utcComponents.hour = 0
+            utcComponents.minute = 0
+            utcComponents.second = 0
+            utcComponents.timeZone = TimeZone(identifier: "UTC")
+            return utcCalendar.date(from: utcComponents)!
+
+        case .year:
+            let localComponents = calendar.dateComponents([.year], from: date)
+            var utcComponents = DateComponents()
+            utcComponents.year = localComponents.year
+            utcComponents.month = 1
+            utcComponents.day = 1
+            utcComponents.hour = 0
+            utcComponents.minute = 0
+            utcComponents.second = 0
+            utcComponents.timeZone = TimeZone(identifier: "UTC")
+            return utcCalendar.date(from: utcComponents)!
+        }
+    }
+}

@@ -20,72 +20,47 @@ struct MarkerContainerRow: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            // Left side - Score ring
+            // Left - Score ring with icon
             ZStack {
                 // Background ring
                 Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 4)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 6)
                     .frame(width: 60, height: 60)
 
-                // Progress ring - colored by marker color
+                // Progress ring
                 Circle()
                     .trim(from: 0, to: min(CGFloat(marker.itemPercentage) / 100, 0.995))
-                    .stroke(markerColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(markerColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .frame(width: 60, height: 60)
                     .rotationEffect(.degrees(-90))
 
-                // Score and icon
-                VStack(spacing: 2) {
-                    Image(systemName: markerIcon)
-                        .font(.system(size: 16))
-                        .foregroundColor(markerColor)
-
-                    Text("\(marker.percentageInt)")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.primary)
-                }
+                // Icon in center
+                Image(systemName: markerIcon)
+                    .font(.system(size: 20))
+                    .foregroundColor(markerColor)
             }
 
-            // Middle - Marker name and info
+            // Middle - Name and score
             VStack(alignment: .leading, spacing: 4) {
                 Text(marker.itemDisplayName)
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.primary)
 
-                HStack(spacing: 4) {
-                    Text(marker.weightPercentage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text("•")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text(marker.isBiometric ? "Biometric" : "Biomarker")
-                        .font(.caption)
-                        .foregroundColor(markerColor)
-                }
+                Text("\(Int(marker.itemPercentage.rounded())) / 100")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
             }
 
             Spacer()
 
-            // Right side - Chevron
+            // Right - Chevron
             Image(systemName: "chevron.right")
                 .foregroundColor(.secondary)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 16)
         .padding(.horizontal, 16)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.9),
-                    Color(white: 0.97).opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
     }

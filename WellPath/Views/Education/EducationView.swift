@@ -9,7 +9,7 @@ import SwiftUI
 
 struct EducationView: View {
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Text("Education modules coming soon...")
             }

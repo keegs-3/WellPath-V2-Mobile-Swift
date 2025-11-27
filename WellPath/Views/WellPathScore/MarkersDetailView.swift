@@ -110,7 +110,7 @@ struct MarkersDetailView: View {
     // MARK: - Score History Content
 
     private var scoreHistoryContent: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 24) {
             // Markers score trend chart
             ComponentScoreTrendChart(
                 componentType: "markers",
@@ -119,70 +119,32 @@ struct MarkersDetailView: View {
             )
             .padding(.top, 8)
 
-            // List of biomarkers and biometrics with weights
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Biomarkers & Biometrics")
+            // Biomarkers Section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Biomarkers")
                     .font(.system(size: 20, weight: .semibold))
                     .padding(.horizontal)
 
-                // Search bar
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-
-                    TextField("Search markers", text: $searchText)
-                        .textFieldStyle(.plain)
-
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                )
-                .padding(.horizontal)
-
                 if isLoadingMarkers {
-                    ProgressView("Loading markers...")
+                    ProgressView("Loading biomarkers...")
                         .frame(maxWidth: .infinity)
                         .padding()
-                } else if markers.isEmpty {
+                } else if filteredMarkers.filter({ !$0.isBiometric }).isEmpty {
                     VStack(spacing: 12) {
-                        Image(systemName: "chart.xyaxis.line")
-                            .font(.system(size: 48))
+                        Image(systemName: "testtube.2")
+                            .font(.system(size: 36))
                             .foregroundColor(.secondary.opacity(0.5))
-                        Text("No markers available")
+                        Text("No biomarkers available")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                } else if filteredMarkers.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary.opacity(0.5))
-                        Text("No results for \"\(searchText)\"")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
+                    .padding(.vertical, 24)
                 } else {
                     VStack(spacing: 12) {
-                        ForEach(filteredMarkers) { marker in
+                        ForEach(filteredMarkers.filter({ !$0.isBiometric })) { marker in
                             NavigationLink(destination: BiomarkerDetailView(
                                 name: marker.name,
-                                value: "", // BiomarkerDetailView fetches this
-                                status: "", // BiomarkerDetailView fetches this
-                                optimalRange: "", // BiomarkerDetailView fetches this
-                                trend: "", // BiomarkerDetailView fetches this
                                 isBiometric: marker.isBiometric
                             )) {
                                 MarkerContainerRow(marker: marker)
@@ -193,6 +155,44 @@ struct MarkersDetailView: View {
                     .padding(.horizontal)
                 }
             }
+
+            // Biometrics Section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Biometrics")
+                    .font(.system(size: 20, weight: .semibold))
+                    .padding(.horizontal)
+
+                if isLoadingMarkers {
+                    ProgressView("Loading biometrics...")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                } else if filteredMarkers.filter({ $0.isBiometric }).isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.system(size: 36))
+                            .foregroundColor(.secondary.opacity(0.5))
+                        Text("No biometrics available")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(filteredMarkers.filter({ $0.isBiometric })) { marker in
+                            NavigationLink(destination: BiomarkerDetailView(
+                                name: marker.name,
+                                isBiometric: marker.isBiometric
+                            )) {
+                                MarkerContainerRow(marker: marker)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+
             .padding(.bottom, 32)
         }
     }

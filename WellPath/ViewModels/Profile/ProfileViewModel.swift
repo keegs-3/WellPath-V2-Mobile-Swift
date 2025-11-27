@@ -16,6 +16,8 @@ struct PatientDetails: Codable {
     let gender: String?
     let biologicalSex: String?
     let dateOfBirth: String?
+    let menopausalStatus: String?
+    let isAthlete: Bool?
 
     enum CodingKeys: String, CodingKey {
         case patientId = "patient_id"
@@ -25,6 +27,8 @@ struct PatientDetails: Codable {
         case gender
         case biologicalSex = "biological_sex"
         case dateOfBirth = "date_of_birth"
+        case menopausalStatus = "menopausal_status"
+        case isAthlete = "is_athlete"
     }
 }
 

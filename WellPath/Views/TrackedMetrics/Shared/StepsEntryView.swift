@@ -2,10 +2,11 @@
 //  StepsEntryView.swift
 //  WellPath
 //
-//  Entry form for logging daily steps
+//  Entry form for logging daily steps to patient_samples
 //
 
 import SwiftUI
+import Supabase
 
 struct StepsEntryView: View {
     @Environment(\.dismiss) var dismiss
@@ -104,7 +105,7 @@ struct StepsEntryView: View {
     }
 
     private func saveStepsEntry() async {
-        guard let countValue = Int(stepCount), countValue > 0 else {
+        guard let countValue = Double(stepCount), countValue > 0 else {
             errorMessage = "Please enter a valid step count"
             return
         }
@@ -114,37 +115,27 @@ struct StepsEntryView: View {
 
         do {
             // Get user ID
-            let userId = try await supabase.auth.session.user.id.uuidString
-
-            // Generate event instance ID for this entry
-            let eventInstanceId = UUID().uuidString
-
-            // Format dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let timestampString = dateFormatter.string(from: selectedDateTime)
-
-            // Extract just the date (YYYY-MM-DD)
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month, .day], from: selectedDateTime)
-            let dateString = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+            let userId = try await supabase.auth.session.user.id
 
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // Insert step count entry
+            // Create patient_samples entry
+            let sample = PatientSample.quantity(
+                patientId: userId,
+                quantityType: QuantityTypes.steps,
+                value: countValue,
+                unit: "count",
+                timestamp: selectedDateTime,
+                source: .wellpathInput,
+                timezone: deviceTimezone,
+                eventInstanceId: UUID()
+            )
+
+            // Insert into patient_samples
             try await supabase
-                .from("patient_data_entries")
-                .insert([
-                    "patient_id": userId,
-                    "field_id": "DEF_STEPS_DAY",
-                    "entry_date": dateString,
-                    "entry_timestamp": timestampString,
-                    "value_quantity": "\(countValue)",
-                    "source": "wellpath_input",
-                    "event_instance_id": eventInstanceId,
-                    "user_timezone": deviceTimezone
-                ])
+                .from("patient_samples")
+                .insert(sample)
                 .execute()
 
             await MainActor.run {

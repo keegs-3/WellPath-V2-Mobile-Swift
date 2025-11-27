@@ -12,6 +12,7 @@ struct HealthKitTestView: View {
     @State private var isAvailable = false
     @State private var testMessage = "Testing..."
     @State private var stepCount: Double = 0
+    @StateObject private var syncService = HealthKitSyncService.shared
 
     var body: some View {
         ScrollView {
@@ -47,6 +48,57 @@ struct HealthKitTestView: View {
                         .background(Color.blue)
                         .foregroundColor(.white)
                         .cornerRadius(8)
+                    }
+                    .padding()
+                    .background(Color(uiColor: .secondarySystemBackground))
+                    .cornerRadius(8)
+
+                    // Sync to Backend Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sync to Backend")
+                            .font(.headline)
+
+                        if let lastSync = syncService.lastSyncDate {
+                            Text("Last synced: \(lastSync.formatted())")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Never synced")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if let error = syncService.syncError {
+                            Text("Error: \(error)")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+
+                        Button(syncService.isSyncing ? "Syncing..." : "Sync HealthKit Data to Database") {
+                            Task {
+                                await syncService.performFullSync()
+                            }
+                        }
+                        .disabled(syncService.isSyncing)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(syncService.isSyncing ? Color.gray : Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+
+                        Button("Reset Sync State (Force Full Resync)") {
+                            syncService.resetSyncState()
+                        }
+                        .disabled(syncService.isSyncing)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(syncService.isSyncing ? Color.gray : Color.orange)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+
+                        Text("Syncs: Steps, Sleep, Protein, Water, Weight")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                     .padding()
                     .background(Color(uiColor: .secondarySystemBackground))
