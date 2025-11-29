@@ -346,7 +346,7 @@ class SurveyService {
     ) async throws -> PatientSurveyResponse {
         struct ResponseInsert: Encodable {
             let patientId: UUID
-            let questionNumber: String
+            let questionNumber: Double  // Database expects numeric, not string
             let responseOptionId: UUID?
             let responseText: String?
             let responseValue: Double?
@@ -362,9 +362,16 @@ class SurveyService {
             }
         }
 
+        // Convert string question number to Double for database numeric column
+        guard let questionNumberDouble = Double(questionNumber) else {
+            throw NSError(domain: "SurveyService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid question number format: \(questionNumber)"
+            ])
+        }
+
         let insert = ResponseInsert(
             patientId: patientId,
-            questionNumber: questionNumber,
+            questionNumber: questionNumberDouble,
             responseOptionId: responseOptionId,
             responseText: responseText,
             responseValue: responseValue,
@@ -372,15 +379,23 @@ class SurveyService {
         )
 
         // Upsert based on patient_id + question_number
-        let response: PatientSurveyResponse = try await client
-            .from("patient_survey_responses")
-            .upsert(insert, onConflict: "patient_id,question_number")
-            .select()
-            .single()
-            .execute()
-            .value
+        print("SurveyService: Saving response for question \(questionNumber) (as \(questionNumberDouble))")
 
-        return response
+        do {
+            let response: PatientSurveyResponse = try await client
+                .from("patient_survey_responses")
+                .upsert(insert, onConflict: "patient_id,question_number")
+                .select()
+                .single()
+                .execute()
+                .value
+
+            print("SurveyService: Successfully saved response for question \(questionNumber)")
+            return response
+        } catch {
+            print("SurveyService: ERROR saving response for question \(questionNumber): \(error)")
+            throw error
+        }
     }
 
     // MARK: - Save Multiple Responses (for multi-select)
