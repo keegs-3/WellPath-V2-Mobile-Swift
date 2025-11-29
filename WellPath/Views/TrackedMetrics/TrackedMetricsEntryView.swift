@@ -11,7 +11,7 @@ struct TrackedMetricsEntryView: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section("Sleep") {
                     NavigationLink("Log Sleep") {

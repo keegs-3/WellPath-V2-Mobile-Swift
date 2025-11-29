@@ -1033,18 +1033,20 @@ class SleepPercentagesViewModel: ObservableObject {
                 if stageDataCache[result.aggMetricId] == nil {
                     stageDataCache[result.aggMetricId] = []
                 }
-                let localDate = result.periodStart.toLocalDateForTimeline()
+                let isHourly = periodType == "hourly"
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
                 stageDataCache[result.aggMetricId]?.append(SleepChartDataPoint(
                     date: localDate,
-                    value: result.value,
+                    value: result.value ?? 0,
                     label: ""
                 ))
             }
 
             // Group time data for chart display
             for result in timeResults {
-                let localDate = result.periodStart.toLocalDateForTimeline()
-                let dataPoint = SleepChartDataPoint(date: localDate, value: result.value, label: "")
+                let isHourlyTime = periodType == "hourly"
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourlyTime)
+                let dataPoint = SleepChartDataPoint(date: localDate, value: result.value ?? 0, label: "")
 
                 if result.aggMetricId == "AGG_TIME_IN_BED" {
                     timeInBedCache.append(dataPoint)
@@ -1053,10 +1055,10 @@ class SleepPercentagesViewModel: ObservableObject {
                 }
             }
 
-            // Group daily time data for average calculations
+            // Group daily time data for average calculations (always daily, never hourly)
             for result in dailyTimeResults {
-                let localDate = result.periodStart.toLocalDateForTimeline()
-                let dataPoint = SleepChartDataPoint(date: localDate, value: result.value, label: "")
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: false)
+                let dataPoint = SleepChartDataPoint(date: localDate, value: result.value ?? 0, label: "")
 
                 if result.aggMetricId == "AGG_TIME_IN_BED" {
                     dailyTimeInBedCache.append(dataPoint)
@@ -1109,12 +1111,12 @@ class SleepPercentagesViewModel: ObservableObject {
                 .execute()
                 .value
 
-            // Merge new data into cache
+            // Merge new data into cache (loadMoreDaysBackward uses daily period_type)
             for result in stageResults {
-                let localDate = result.periodStart.toLocalDateForTimeline()
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: false)
                 let dataPoint = SleepChartDataPoint(
                     date: localDate,
-                    value: result.value,
+                    value: result.value ?? 0,
                     label: ""
                 )
                 stageDataCache[result.aggMetricId, default: []].append(dataPoint)
@@ -1140,10 +1142,10 @@ class SleepPercentagesViewModel: ObservableObject {
                 .value
 
             for result in timeResults {
-                let localDate = result.periodStart.toLocalDateForTimeline()
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: false)
                 let dataPoint = SleepChartDataPoint(
                     date: localDate,
-                    value: result.value,
+                    value: result.value ?? 0,
                     label: ""
                 )
                 if result.aggMetricId == "AGG_TIME_IN_BED" {

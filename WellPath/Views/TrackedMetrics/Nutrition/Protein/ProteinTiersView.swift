@@ -48,7 +48,7 @@ struct ProteinTiersView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
-                .padding(.top, 8)
+                .padding(.top, 16)
                 .onChange(of: selectedPeriod) { oldValue, newPeriod in
                     Task {
                         await viewModel.loadDataForPeriod(period: newPeriod, date: currentDate)
@@ -230,6 +230,10 @@ struct ProteinTiersView: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -240,6 +244,7 @@ struct ProteinTiersView: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()
@@ -267,7 +272,7 @@ struct ProteinTiersView: View {
     // MARK: - Scoring Explanation Modal
 
     private var scoringExplanationModal: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if let explanation = viewModel.scoringExplanation {

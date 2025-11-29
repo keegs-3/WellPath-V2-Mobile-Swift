@@ -13,7 +13,7 @@ struct ProfileView: View {
     @State private var showSignOutAlert = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Profile Header
@@ -45,13 +45,28 @@ struct ProfileView: View {
 
                     // Profile Options
                     VStack(spacing: 0) {
-                        ProfileOptionRow(icon: "person.fill", title: "Personal Info")
+                        NavigationLink(destination: PersonalInfoView()) {
+                            ProfileOptionRow(icon: "person.fill", title: "Personal Info")
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         Divider().padding(.leading, 60)
 
-                        ProfileOptionRow(icon: "list.clipboard.fill", title: "Questionnaire")
+                        NavigationLink(destination: HealthProfileView()) {
+                            ProfileOptionRow(icon: "heart.text.square.fill", title: "Health Profile")
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         Divider().padding(.leading, 60)
 
-                        ProfileOptionRow(icon: "lock.fill", title: "Change Password")
+                        NavigationLink(destination: ChangePasswordView()) {
+                            ProfileOptionRow(icon: "lock.fill", title: "Change Password")
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        Divider().padding(.leading, 60)
+
+                        NavigationLink(destination: UnitPreferencesView()) {
+                            ProfileOptionRow(icon: "ruler.fill", title: "Unit Preferences")
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         Divider().padding(.leading, 60)
 
                         NavigationLink(destination: HealthKitAuthorizationView()) {

@@ -1569,7 +1569,7 @@ struct AggregationResult: Codable {
     let periodType: String
     let periodStart: Date
     let periodEnd: Date
-    let value: Double
+    let value: Double?  // Optional to handle null values from database
 
     enum CodingKeys: String, CodingKey {
         case aggMetricId = "agg_metric_id"

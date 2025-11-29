@@ -579,7 +579,7 @@ class InfiniteScrollChartManager: ObservableObject {
 
                 points.append(ChartDataPoint(
                     date: barDate,
-                    value: result.value,
+                    value: result.value ?? 0.0,
                     label: ""
                 ))
             }
@@ -1746,7 +1746,7 @@ struct DetailChildMetricsSheet: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Horizontal tab bar
                 HorizontalTabBar(
@@ -2098,35 +2098,16 @@ class MetricDetailViewModel: ObservableObject {
         error = nil
 
         do {
-            // Step 0: First, get the primary_screen_id from display_screens_primary
-            // The screenId is the display_screen_id, not the primary_screen_id
-            let primaryScreens: [PrimaryScreen] = try await supabase
-                .from("display_screens_primary")
-                .select()
-                .eq("display_screen_id", value: screenId)
-                .eq("is_active", value: true)
-                .limit(1)
-                .execute()
-                .value
-
-            guard let primaryScreen = primaryScreens.first else {
-                print("⚠️ No primary screen found for display_screen_id: \(screenId)")
-                isLoading = false
-                return
-            }
-
-            print("✅ Found primary screen: \(primaryScreen.primaryScreenId) for display_screen_id: \(screenId)")
-
-            // Step 1: Get metric IDs linked to this primary screen
+            // Query display_screens_display_metrics directly using screen_id
             let links: [ScreenMetricLink] = try await supabase
-                .from("display_screens_primary_display_metrics")
+                .from("display_screens_display_metrics")
                 .select()
-                .eq("primary_screen_id", value: primaryScreen.primaryScreenId)
+                .eq("screen_id", value: screenId)
                 .order("display_order", ascending: true)
                 .execute()
                 .value
 
-            print("📊 Found \(links.count) metric links for primary_screen_id \(primaryScreen.primaryScreenId)")
+            print("📊 Found \(links.count) metric links for screen_id \(screenId)")
 
             let metricIds = links.map { $0.metricId }
 
@@ -2216,7 +2197,7 @@ class MetricDetailViewModel: ObservableObject {
 // MARK: - Preview
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         MetricDetailView(
             screen: DisplayScreen(
                 id: "1",

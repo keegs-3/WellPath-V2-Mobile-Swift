@@ -68,7 +68,7 @@ struct SleepEntryView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     DatePicker("Start", selection: $asleepStart, in: asleepStartRange)

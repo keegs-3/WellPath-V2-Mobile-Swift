@@ -27,7 +27,9 @@ struct SleepAnalysisScreen: View {
                 // Sleep Stages card (main chart)
                 MetricCardView(
                     title: "Sleep Stages",
-                    color: color
+                    color: color,
+                    metricId: "DISP_SLEEP_STAGES",
+                    pillar: pillar
                 ) {
                     SleepStagesMiniCard(color: color, chartViewModel: chartViewModel)
                 } fullScreen: {
@@ -37,7 +39,9 @@ struct SleepAnalysisScreen: View {
                 // Amounts card
                 MetricCardView(
                     title: "Stage Amounts",
-                    color: color
+                    color: color,
+                    metricId: "DISP_SLEEP_STAGE_AMOUNTS",
+                    pillar: pillar
                 ) {
                     SleepAmountsMiniCard(color: color, chartViewModel: chartViewModel)
                 } fullScreen: {
@@ -48,7 +52,9 @@ struct SleepAnalysisScreen: View {
                 // Percentages card
                 MetricCardView(
                     title: "Stage Percentages",
-                    color: color
+                    color: color,
+                    metricId: "DISP_SLEEP_STAGE_PERCENTAGES",
+                    pillar: pillar
                 ) {
                     SleepPercentagesMiniCard(color: color, chartViewModel: chartViewModel)
                 } fullScreen: {
@@ -59,7 +65,9 @@ struct SleepAnalysisScreen: View {
                 // Comparisons card
                 MetricCardView(
                     title: "Comparisons",
-                    color: color
+                    color: color,
+                    metricId: "DISP_SLEEP_COMPARISONS",
+                    pillar: pillar
                 ) {
                     SleepComparisonsMiniCard(color: color)
                 } fullScreen: {
@@ -72,6 +80,10 @@ struct SleepAnalysisScreen: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -82,6 +94,7 @@ struct SleepAnalysisScreen: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()

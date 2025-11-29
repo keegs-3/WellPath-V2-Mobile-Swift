@@ -15,7 +15,7 @@ struct QuickActionsView: View {
     @State private var showingProteinEntry = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 // Group actions by category
                 ForEach(viewModel.actionsByCategory.keys.sorted(), id: \.self) { category in

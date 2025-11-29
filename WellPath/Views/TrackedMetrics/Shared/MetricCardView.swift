@@ -13,15 +13,21 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
     let color: Color
     let content: Content
     let fullScreenContent: FullScreenContent
+    let metricId: String?
+    let pillar: String?
 
     init(
         title: String,
         color: Color,
+        metricId: String? = nil,
+        pillar: String? = nil,
         @ViewBuilder content: () -> Content,
         @ViewBuilder fullScreen: () -> FullScreenContent
     ) {
         self.title = title
         self.color = color
+        self.metricId = metricId
+        self.pillar = pillar
         self.content = content()
         self.fullScreenContent = fullScreen()
     }
@@ -30,15 +36,25 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
         NavigationLink {
             fullScreenContent
                 .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.large)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                // Card header with title and chevron
+                // Card header with title, favorite star, and chevron
                 HStack {
                     Text(title)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
+
+                    // Favorite star (if metricId provided)
+                    if let metricId = metricId {
+                        MetricFavoriteStar(
+                            metricId: metricId,
+                            displayName: title,
+                            pillar: pillar ?? "",
+                            color: color
+                        )
+                    }
 
                     Spacer()
 
@@ -60,15 +76,57 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
     }
 }
 
+// MARK: - Metric Favorite Star (inline, small)
+
+struct MetricFavoriteStar: View {
+    let metricId: String
+    let displayName: String
+    let pillar: String
+    let color: Color
+
+    @ObservedObject private var favoritesService = FavoritesService.shared
+    @State private var isAnimating = false
+
+    private var isFavorite: Bool {
+        favoritesService.isFavorite(type: .metric, id: metricId)
+    }
+
+    var body: some View {
+        Button {
+            isAnimating = true
+            Task {
+                await favoritesService.toggleFavorite(
+                    type: .metric,
+                    id: metricId,
+                    displayName: displayName,
+                    pillar: pillar
+                )
+                isAnimating = false
+            }
+        } label: {
+            Image(systemName: isFavorite ? "star.fill" : "star")
+                .font(.system(size: 14))
+                .foregroundColor(isFavorite ? .yellow : .secondary.opacity(0.5))
+                .scaleEffect(isAnimating ? 1.3 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isAnimating)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
 // Convenience initializer for cards without full-screen expansion (rare case)
 extension MetricCardView where FullScreenContent == EmptyView {
     init(
         title: String,
         color: Color,
+        metricId: String? = nil,
+        pillar: String? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.color = color
+        self.metricId = metricId
+        self.pillar = pillar
         self.content = content()
         self.fullScreenContent = EmptyView()
     }
@@ -85,6 +143,10 @@ struct MetricScreenBackground: ViewModifier {
         content
             .background(
                 ZStack {
+                    // Base background that extends to bottom
+                    Color(uiColor: .systemGroupedBackground)
+
+                    // Gradient overlay at top
                     VStack(spacing: 0) {
                         LinearGradient(
                             colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -95,6 +157,7 @@ struct MetricScreenBackground: ViewModifier {
                         Spacer()
                     }
 
+                    // Watermark icon
                     VStack {
                         HStack {
                             Spacer()

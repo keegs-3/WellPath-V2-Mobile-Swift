@@ -10,7 +10,7 @@ import SwiftUI
 struct DashboardView: View {
     @StateObject private var scoreViewModel = WellPathScoreViewModel()
     @State private var showProfile = false
-    @State private var showQuickActions = false
+    @State private var showHealthProfile = false
 
     var body: some View {
         NavigationStack {
@@ -44,11 +44,6 @@ struct DashboardView: View {
 
                         // Weekly Goal Progress - TODO: Build curved visualization
                         // PillarChartCard()
-
-                        // Tracked Metrics Navigation
-                        NavigationLink(destination: TrackedMetricsListView()) {
-                            TrackedMetricsButton()
-                        }
                     }
                     .padding()
             }
@@ -94,9 +89,9 @@ struct DashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        showQuickActions = true
+                        showHealthProfile = true
                     }) {
-                        Image(systemName: "plus")
+                        Image(systemName: "heart.text.square.fill")
                             .font(.system(size: 18, weight: .semibold))
                     }
                 }
@@ -113,47 +108,15 @@ struct DashboardView: View {
             .sheet(isPresented: $showProfile) {
                 ProfileView()
             }
-            .sheet(isPresented: $showQuickActions) {
-                QuickActionsView()
+            .fullScreenCover(isPresented: $showHealthProfile) {
+                HealthProfileView(onDismiss: {
+                    showHealthProfile = false
+                })
             }
             .task {
                 await scoreViewModel.loadWellPathScore()
             }
         }
-    }
-}
-
-struct TrackedMetricsButton: View {
-    var body: some View {
-        HStack(spacing: 20) {
-            // Logo on the left
-            ZStack {
-                Circle()
-                    .fill(Color(red: 0.78, green: 0.96, blue: 0.46))
-                    .frame(width: 60, height: 60)
-
-                Image("black_grey")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 46, height: 46)
-            }
-
-            Text("WellPath Data")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 16)
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
     }
 }
 

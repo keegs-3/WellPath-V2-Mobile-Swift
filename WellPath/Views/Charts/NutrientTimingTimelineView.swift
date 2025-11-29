@@ -47,20 +47,22 @@ struct NutrientTimingTimelineView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 0) {
                 if viewModel.isLoading {
                     ProgressView()
                         .padding()
                 } else {
-                    // Period selector (exclude 6M for timing view)
-                    Picker("Period", selection: $selectedPeriod) {
-                        ForEach([TimePeriod.day, .week, .month, .year], id: \.self) { period in
-                            Text(period.rawValue).tag(period)
+                    // Content container with dark background (starts at picker)
+                    VStack(spacing: 0) {
+                        // Period selector (exclude 6M for timing view)
+                        Picker("Period", selection: $selectedPeriod) {
+                            ForEach([TimePeriod.day, .week, .month, .year], id: \.self) { period in
+                                Text(period.rawValue).tag(period)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.top, 16)
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                        .padding(.top, 16)
                     .onChange(of: selectedPeriod) { oldValue, newPeriod in
                         Task {
                             await viewModel.loadDataForPeriod(period: newPeriod, date: currentDate)
@@ -86,101 +88,104 @@ struct NutrientTimingTimelineView: View {
                                 showAbout = true
                             }
                         }) {
-                            Image(systemName: "info.circle")
+                            Image(systemName: "info.circle.fill")
                                 .font(.title3)
                                 .foregroundColor(color)
                         }
                     }
                     .padding(.horizontal)
                     .padding(.top, 4)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 12)
 
-                    // Summary ALWAYS shown (with NO DATA state if empty)
-                    NutrientTimingStatsView(
-                        color: color,
-                        mealData: mealDataForPeriod.map { (name: $0.name, value: $0.value, percentage: $0.percentage) },
-                        avgPerMeal: viewModel.periodData["avg_per_meal"] ?? 0,
-                        entriesCount: Int(viewModel.periodData["entries_count"] ?? 0),
-                        unitLabel: nutrientType.unitLabel,
-                        hasData: hasData
-                    )
+                        // Summary ALWAYS shown (with NO DATA state if empty)
+                        NutrientTimingStatsView(
+                            color: color,
+                            mealData: mealDataForPeriod.map { (name: $0.name, value: $0.value, percentage: $0.percentage) },
+                            avgPerMeal: viewModel.periodData["avg_per_meal"] ?? 0,
+                            entriesCount: Int(viewModel.periodData["entries_count"] ?? 0),
+                            unitLabel: nutrientType.unitLabel,
+                            hasData: hasData
+                        )
 
-                    // Timeline title
-                    HStack {
-                        Text("Daily Distribution")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+                        // Timeline title with unit
+                        HStack {
+                            Text("Daily Distribution (\(nutrientType.unitLabel))")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 16)
 
-                    // Meal timing cards with timeline overlay (or no data message)
-                    if hasData {
-                        VStack(spacing: 8) {
-                            ForEach(Array(mealDataForPeriod.enumerated()), id: \.element.name) { index, meal in
-                                NutrientMealCard(
-                                    mealName: meal.name,
-                                    value: meal.value,
-                                    percentage: meal.percentage,
-                                    color: meal.color,
-                                    unitLabel: nutrientType.unitLabel
-                                )
-                                .overlay(alignment: .leading) {
-                                    GeometryReader { geometry in
-                                        ZStack {
-                                            // Vertical connecting lines
-                                            if mealDataForPeriod.count > 1 {
-                                                VStack(spacing: 0) {
-                                                    // Line above dot
-                                                    Rectangle()
-                                                        .fill(Color.secondary.opacity(0.3))
-                                                        .frame(width: 2, height: geometry.size.height / 2)
-                                                        .opacity(index == 0 ? 0 : 1)
+                        // Meal timing cards with timeline overlay (or no data message)
+                        if hasData {
+                            VStack(spacing: 8) {
+                                ForEach(Array(mealDataForPeriod.enumerated()), id: \.element.name) { index, meal in
+                                    NutrientMealCard(
+                                        mealName: meal.name,
+                                        value: meal.value,
+                                        percentage: meal.percentage,
+                                        color: meal.color,
+                                        unitLabel: nutrientType.unitLabel
+                                    )
+                                    .overlay(alignment: .leading) {
+                                        GeometryReader { geometry in
+                                            ZStack {
+                                                // Vertical connecting lines
+                                                if mealDataForPeriod.count > 1 {
+                                                    VStack(spacing: 0) {
+                                                        // Line above dot
+                                                        Rectangle()
+                                                            .fill(Color.secondary.opacity(0.3))
+                                                            .frame(width: 2, height: geometry.size.height / 2)
+                                                            .opacity(index == 0 ? 0 : 1)
 
-                                                    // Line below dot
-                                                    Rectangle()
-                                                        .fill(Color.secondary.opacity(0.3))
-                                                        .frame(width: 2, height: geometry.size.height / 2)
-                                                        .opacity(index == mealDataForPeriod.count - 1 ? 0 : 1)
+                                                        // Line below dot
+                                                        Rectangle()
+                                                            .fill(Color.secondary.opacity(0.3))
+                                                            .frame(width: 2, height: geometry.size.height / 2)
+                                                            .opacity(index == mealDataForPeriod.count - 1 ? 0 : 1)
+                                                    }
                                                 }
-                                            }
 
-                                            // Dot centered vertically on card
-                                            Circle()
-                                                .fill(meal.color)
-                                                .frame(width: 12, height: 12)
+                                                // Dot centered vertically on card
+                                                Circle()
+                                                    .fill(meal.color)
+                                                    .frame(width: 12, height: 12)
+                                            }
+                                            .frame(width: 12, height: geometry.size.height)
+                                            .offset(x: -16)
                                         }
-                                        .frame(width: 12)
-                                        .offset(x: -16)
                                     }
                                 }
                             }
-                        }
-                        .padding(.leading, 28)
-                        .padding(.trailing, 16)
-                    } else {
-                        // No data placeholder
-                        VStack(spacing: 12) {
-                            Image(systemName: "chart.bar.xaxis")
-                                .font(.system(size: 40))
-                                .foregroundColor(.secondary.opacity(0.5))
+                            .padding(.leading, 28)
+                            .padding(.trailing, 16)
+                            .padding(.top, 8)
+                        } else {
+                            // No data placeholder
+                            VStack(spacing: 12) {
+                                Image(systemName: "chart.bar.xaxis")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.secondary.opacity(0.5))
 
-                            Text("No meal data for this period")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                Text("No meal data for this period")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
                     }
+                    .padding(.bottom, 16)
+                    .background(Color(uiColor: .systemGroupedBackground))
                 }
             }
-            .padding(.bottom, 16)
         }
-        // Background provided by parent via metricScreenBackground modifier
         .task {
             await viewModel.discoverMealAggregations()
             await viewModel.loadDataForPeriod(period: selectedPeriod, date: currentDate)
@@ -244,13 +249,13 @@ struct NutrientMealCard: View {
 
     private func formatValue(_ value: Double) -> String {
         if value == 0 {
-            return "0\(unitLabel)"
+            return "0"
         } else if value >= 100 {
-            return String(format: "%.0f\(unitLabel)", value)
+            return String(format: "%.0f", value)
         } else if value >= 10 {
-            return String(format: "%.1f\(unitLabel)", value)
+            return String(format: "%.1f", value)
         } else {
-            return String(format: "%.2f\(unitLabel)", value)
+            return String(format: "%.2f", value)
         }
     }
 }

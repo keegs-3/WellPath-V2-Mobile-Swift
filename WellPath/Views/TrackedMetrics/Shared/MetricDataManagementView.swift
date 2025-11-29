@@ -140,6 +140,28 @@ extension MetricDataConfig {
         )
     }
 
+    // MARK: - Biometrics
+
+    static func bodyweight(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Body Weight",
+            quantityTypes: [QuantityTypes.weight],
+            color: color,
+            icon: "scalemass",
+            valueFormatter: { value, unit in
+                // Value is stored in canonical unit (pounds)
+                let displayUnit = unit ?? "lb"
+                if displayUnit == "kg" || displayUnit == "kilogram" {
+                    return String(format: "%.1f kg", value)
+                } else {
+                    return String(format: "%.1f lb", value)
+                }
+            },
+            metadataFields: [],  // Body weight has no metadata
+            isDuration: false
+        )
+    }
+
     // MARK: - Duration Metrics
 
     static func strengthTraining(color: Color) -> MetricDataConfig {

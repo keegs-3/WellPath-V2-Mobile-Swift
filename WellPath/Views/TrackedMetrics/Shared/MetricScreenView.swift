@@ -50,7 +50,10 @@ struct MetricScreenView<PrimaryContent: View, SubCards: View>: View {
         }
         .background(
             ZStack {
-                // Gradient background
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -61,7 +64,7 @@ struct MetricScreenView<PrimaryContent: View, SubCards: View>: View {
                     Spacer()
                 }
 
-                // Background icon
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()

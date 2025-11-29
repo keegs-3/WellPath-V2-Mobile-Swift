@@ -1426,7 +1426,7 @@ struct AllRecordsView: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         BiomarkerDetailView(
             name: "Vitamin D",
             value: "45.2 ng/mL",

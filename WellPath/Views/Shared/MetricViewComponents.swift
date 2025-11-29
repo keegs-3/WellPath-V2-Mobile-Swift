@@ -112,7 +112,7 @@ struct MetricChildSheet: View {
     let color: Color
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List(metrics) { metric in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(metric.metricName)

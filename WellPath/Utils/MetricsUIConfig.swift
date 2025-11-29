@@ -12,23 +12,33 @@ struct MetricsUIConfig {
     // MARK: - Pillar Configuration (from database)
 
     static let pillarColors: [String: Color] = [
+        // 7 Scoring Pillars
         "Healthful Nutrition": Color(hex: "#8DD8FF") ?? .blue,
         "Movement + Exercise": Color(hex: "#EB875D") ?? .orange,
         "Restorative Sleep": Color(hex: "#80CBC4") ?? .teal,
         "Stress Management": Color(hex: "#ED8D8D") ?? .pink,
         "Cognitive Health": Color(hex: "#C6B5FF") ?? .purple,
         "Connection + Purpose": Color(hex: "#ADD399") ?? .green,
-        "Core Care": Color(hex: "#F4D284") ?? .yellow
+        "Core Care": Color(hex: "#F4D284") ?? .yellow,
+        // Bio3 (Non-scoring)
+        "Biometrics": Color(hex: "#66CCFF") ?? .cyan,
+        "Biomarkers": Color(hex: "#BD8FF0") ?? .purple,
+        "Biological Age": Color(hex: "#E066FF") ?? .pink
     ]
 
     static let pillarIcons: [String: String] = [
+        // 7 Scoring Pillars
         "Healthful Nutrition": "fork.knife",
         "Movement + Exercise": "figure.walk",
         "Restorative Sleep": "bed.double.fill",
         "Cognitive Health": "brain.head.profile",
         "Stress Management": "heart.fill",
         "Connection + Purpose": "person.2.fill",
-        "Core Care": "cross.fill"
+        "Core Care": "cross.fill",
+        // Bio3 (Non-scoring)
+        "Biometrics": "waveform.path.ecg",
+        "Biomarkers": "testtube.2",
+        "Biological Age": "hourglass"
     ]
 
     // MARK: - Screen/Metric Icons
@@ -132,9 +142,68 @@ struct MetricsUIConfig {
             return "star.fill"
         }
 
-        // Core Care
+        // Core Care - Biometrics
+        if lowercased.contains("body weight") || lowercased.contains("bodyweight") || lowercased.contains("weight") {
+            return "scalemass"
+        }
+        if lowercased.contains("bmi") {
+            return "figure.stand"
+        }
+        if lowercased.contains("body fat") || lowercased.contains("bodyfat") {
+            return "percent"
+        }
+        if lowercased.contains("visceral") {
+            return "circle.inset.filled"
+        }
+        if lowercased.contains("waist") || lowercased.contains("hip ratio") {
+            return "ruler"
+        }
+        if lowercased.contains("smm") || lowercased.contains("ffm") || lowercased.contains("muscle mass") {
+            return "figure.strengthtraining.traditional"
+        }
+        if lowercased.contains("resting heart") || lowercased.contains("resting hr") {
+            return "heart"
+        }
+        if lowercased.contains("hrv") || lowercased.contains("heart rate variability") {
+            return "waveform.path.ecg"
+        }
+        if lowercased.contains("vo2") {
+            return "lungs"
+        }
+        if lowercased.contains("grip") {
+            return "hand.raised"
+        }
         if lowercased.contains("biometric") {
-            return "chart.line.uptrend.xyaxis"
+            return "waveform.path.ecg"
+        }
+        if lowercased.contains("biomarker") {
+            return "testtube.2"
+        }
+        if lowercased.contains("biological age") {
+            return "hourglass"
+        }
+
+        // Bio3 Category icons
+        if lowercased.contains("body composition") {
+            return "figure.stand"
+        }
+        if lowercased.contains("cardiovascular") {
+            return "heart.fill"
+        }
+        if lowercased.contains("strength") && !lowercased.contains("training") {
+            return "dumbbell.fill"
+        }
+        if lowercased.contains("metabolism") {
+            return "flame.fill"
+        }
+        if lowercased.contains("inflammation") {
+            return "waveform.path.ecg"
+        }
+        if lowercased.contains("hormone") {
+            return "pills.fill"
+        }
+        if lowercased.contains("immune") || lowercased.contains("renal") {
+            return "shield.fill"
         }
         if lowercased.contains("screening") {
             return "cross.case.fill"

@@ -267,7 +267,7 @@ extension InlineRangeBar {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         LabResultRecordView(
             record: BiomarkerDataPoint(date: Date(), value: 27),
             metricName: "Alkaline Phosphatase",

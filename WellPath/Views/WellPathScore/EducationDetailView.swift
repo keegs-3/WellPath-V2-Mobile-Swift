@@ -316,7 +316,7 @@ struct EducationRow: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         EducationDetailView(pillarName: "Healthful Nutrition")
     }
 }

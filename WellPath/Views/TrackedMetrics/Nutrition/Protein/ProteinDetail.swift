@@ -47,32 +47,6 @@ struct ProteinDetail: View {
                 }
             }
         }
-        .background(
-            ZStack {
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 900)
-                    Spacer()
-                }
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        Image(systemName: screenIcon)
-                            .font(.system(size: 200))
-                            .foregroundStyle(Color.white.opacity(0.2))
-                            .rotationEffect(.degrees(-15))
-                            .offset(x: 50, y: -50)
-                    }
-                    Spacer()
-                }
-            }
-            .ignoresSafeArea()
-        )
         .navigationTitle("Protein Details")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -100,6 +74,10 @@ struct ProteinTimingView: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -110,6 +88,7 @@ struct ProteinTimingView: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()
@@ -296,6 +275,10 @@ struct ProteinPerBodyWeightView: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -306,6 +289,7 @@ struct ProteinPerBodyWeightView: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()
@@ -610,7 +594,7 @@ struct ProteinPerBodyWeightView: View {
                     Spacer()
                 }
                 .padding(.top, 12)
-                .padding(.bottom, 24)
+                .padding(.bottom, 16)
             }
         }
     }
@@ -929,19 +913,20 @@ class ProteinPerBodyWeightViewModel: ObservableObject {
 
             // 3. Calculate ratio for each protein data point
             for proteinResult in proteinResults {
-                let localDate = proteinResult.periodStart.toLocalDateForTimeline()
+                let isHourly = periodType == "hourly"
+                let localDate = proteinResult.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
 
                 if let index = timeline.firstIndex(where: {
                     calendar.isDate($0.date, equalTo: localDate, toGranularity: granularity)
                 }) {
-                    let proteinGrams = proteinResult.value
+                    let proteinGrams = proteinResult.value ?? 0.0
 
                     // Find the most recent weight reading <= this date (carry forward)
                     let weightKg = findWeightForDate(localDate, from: weightReadings)
 
                     // Calculate ratio if we have both values
                     let perKg: Double
-                    if let weight = weightKg, weight > 0 {
+                    if let weight = weightKg, weight > 0, proteinGrams > 0 {
                         perKg = proteinGrams / weight
                     } else {
                         perKg = 0

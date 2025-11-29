@@ -222,12 +222,13 @@ class NutrientTimingViewModel: ObservableObject {
             // Store results directly - backend already computed averages for non-day periods
             var totalValue: Double = 0
             for result in results {
-                periodData[result.aggMetricId] = result.value
-                totalValue += result.value
+                let val = result.value ?? 0.0
+                periodData[result.aggMetricId] = val
+                totalValue += val
             }
 
             // Calculate avg per meal
-            let mealCount = results.filter { $0.value > 0 }.count
+            let mealCount = results.filter { ($0.value ?? 0) > 0 }.count
             periodData["avg_per_meal"] = mealCount > 0 ? totalValue / Double(mealCount) : 0
             periodData["entries_count"] = Double(results.count)
 
@@ -367,10 +368,11 @@ class NutrientTimingViewModel: ObservableObject {
                 if mealDataCache[result.aggMetricId] == nil {
                     mealDataCache[result.aggMetricId] = []
                 }
-                let localDate = result.periodStart.toLocalDateForTimeline()
+                let isHourly = periodType == "hourly"
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
                 mealDataCache[result.aggMetricId]?.append(ChartDataPoint(
                     date: localDate,
-                    value: result.value,
+                    value: result.value ?? 0.0,
                     label: ""
                 ))
             }

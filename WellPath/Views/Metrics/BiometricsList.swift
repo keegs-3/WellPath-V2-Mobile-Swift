@@ -164,7 +164,7 @@ struct BiometricsList: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         BiometricsList()
     }
 }

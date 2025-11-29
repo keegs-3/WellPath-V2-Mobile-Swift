@@ -25,6 +25,10 @@ struct ProteinPrimary: View {
         contentView
             .background(
                 ZStack {
+                    // Base background that extends to bottom
+                    Color(uiColor: .systemGroupedBackground)
+
+                    // Gradient overlay at top
                     VStack(spacing: 0) {
                         LinearGradient(
                             colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -35,6 +39,7 @@ struct ProteinPrimary: View {
                         Spacer()
                     }
 
+                    // Watermark icon
                     VStack {
                         HStack {
                             Spacer()

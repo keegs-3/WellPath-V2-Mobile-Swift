@@ -234,7 +234,7 @@ struct BiomarkerCard: View {
 }
 
 #Preview {
-    NavigationView {
+    NavigationStack {
         BiomarkersList()
     }
 }

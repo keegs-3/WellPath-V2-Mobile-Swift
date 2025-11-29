@@ -449,10 +449,12 @@ class MealTimingViewModel: ObservableObject {
                     mealDataCache[result.aggMetricId] = []
                 }
                 // Convert UTC period_start to local date for timeline matching
-                let localDate = result.periodStart.toLocalDateForTimeline()
+                // For hourly data, use standard UTC→local conversion; for daily+, extract UTC date as local
+                let isHourly = periodType == "hourly"
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
                 mealDataCache[result.aggMetricId]?.append(ChartDataPoint(
                     date: localDate,
-                    value: result.value,
+                    value: result.value ?? 0.0,
                     label: ""
                 ))
             }

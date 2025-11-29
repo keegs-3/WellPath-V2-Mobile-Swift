@@ -140,7 +140,7 @@ class ProteinPrimaryViewModel: ObservableObject {
             let calendar = Calendar.current
             let today = calendar.startOfDay(for: Date())
 
-            // Get today's value (daily aggregation)
+            // Get today's value (daily SUM aggregation)
             struct AggResult: Codable {
                 let value: Double
                 let periodStart: Date
@@ -157,6 +157,7 @@ class ProteinPrimaryViewModel: ObservableObject {
                 .eq("patient_id", value: patientId)
                 .eq("agg_metric_id", value: "AGG_PROTEIN_GRAMS")
                 .eq("period_type", value: "daily")
+                .eq("calculation_type_id", value: "SUM")
                 .gte("period_start", value: ISO8601DateFormatter().string(from: today))
                 .lt("period_start", value: ISO8601DateFormatter().string(from: calendar.date(byAdding: .day, value: 1, to: today)!))
                 .limit(1)
@@ -165,8 +166,9 @@ class ProteinPrimaryViewModel: ObservableObject {
 
             todayValue = todayResults.first?.value
 
-            // Get weekly average (last 7 days of daily values)
-            let weekAgo = calendar.date(byAdding: .day, value: -7, to: today)!
+            // Get weekly average (last 7 days of daily SUM values, including today)
+            let weekAgo = calendar.date(byAdding: .day, value: -6, to: today)!
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
 
             let weekResults: [AggResult] = try await supabase
                 .from("aggregation_results_cache")
@@ -174,8 +176,9 @@ class ProteinPrimaryViewModel: ObservableObject {
                 .eq("patient_id", value: patientId)
                 .eq("agg_metric_id", value: "AGG_PROTEIN_GRAMS")
                 .eq("period_type", value: "daily")
+                .eq("calculation_type_id", value: "SUM")
                 .gte("period_start", value: ISO8601DateFormatter().string(from: weekAgo))
-                .lt("period_start", value: ISO8601DateFormatter().string(from: today))
+                .lt("period_start", value: ISO8601DateFormatter().string(from: tomorrow))
                 .execute()
                 .value
 

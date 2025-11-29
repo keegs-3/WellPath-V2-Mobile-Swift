@@ -21,6 +21,15 @@ struct DisplayScreen: Codable, Identifiable {
     let layoutType: String?
     let defaultTimePeriod: String?
 
+    // New educational content fields (migrated from display_screens_primary)
+    let title: String?
+    let subtitle: String?
+    let description: String?
+    let aboutContent: String?
+    let longevityImpact: String?
+    let quickTips: [String]?
+    let hasGoal: Bool?
+
     enum CodingKeys: String, CodingKey {
         case id
         case screenId = "screen_id"
@@ -33,6 +42,80 @@ struct DisplayScreen: Codable, Identifiable {
         case screenType = "screen_type"
         case layoutType = "layout_type"
         case defaultTimePeriod = "default_time_period"
+        case title
+        case subtitle
+        case description
+        case aboutContent = "about_content"
+        case longevityImpact = "longevity_impact"
+        case quickTips = "quick_tips"
+        case hasGoal = "has_goal"
+    }
+
+    // Custom decoder that handles JSONB arrays gracefully
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(String.self, forKey: .id)
+        screenId = try container.decode(String.self, forKey: .screenId)
+        name = try container.decode(String.self, forKey: .name)
+        overview = try container.decodeIfPresent(String.self, forKey: .overview)
+        pillar = try container.decodeIfPresent(String.self, forKey: .pillar)
+        icon = try container.decodeIfPresent(String.self, forKey: .icon)
+        displayOrder = try container.decodeIfPresent(Int.self, forKey: .displayOrder)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
+        screenType = try container.decodeIfPresent(String.self, forKey: .screenType)
+        layoutType = try container.decodeIfPresent(String.self, forKey: .layoutType)
+        defaultTimePeriod = try container.decodeIfPresent(String.self, forKey: .defaultTimePeriod)
+
+        // New educational content fields - fail silently if columns don't exist
+        title = try? container.decodeIfPresent(String.self, forKey: .title)
+        subtitle = try? container.decodeIfPresent(String.self, forKey: .subtitle)
+        description = try? container.decodeIfPresent(String.self, forKey: .description)
+        aboutContent = try? container.decodeIfPresent(String.self, forKey: .aboutContent)
+        longevityImpact = try? container.decodeIfPresent(String.self, forKey: .longevityImpact)
+        quickTips = try? container.decodeIfPresent([String].self, forKey: .quickTips)
+        hasGoal = try? container.decodeIfPresent(Bool.self, forKey: .hasGoal)
+    }
+
+    // Direct initializer for manual construction (e.g., previews)
+    init(
+        id: String,
+        screenId: String,
+        name: String,
+        overview: String? = nil,
+        pillar: String? = nil,
+        icon: String? = nil,
+        displayOrder: Int? = nil,
+        isActive: Bool? = nil,
+        screenType: String? = nil,
+        layoutType: String? = nil,
+        defaultTimePeriod: String? = nil,
+        title: String? = nil,
+        subtitle: String? = nil,
+        description: String? = nil,
+        aboutContent: String? = nil,
+        longevityImpact: String? = nil,
+        quickTips: [String]? = nil,
+        hasGoal: Bool? = nil
+    ) {
+        self.id = id
+        self.screenId = screenId
+        self.name = name
+        self.overview = overview
+        self.pillar = pillar
+        self.icon = icon
+        self.displayOrder = displayOrder
+        self.isActive = isActive
+        self.screenType = screenType
+        self.layoutType = layoutType
+        self.defaultTimePeriod = defaultTimePeriod
+        self.title = title
+        self.subtitle = subtitle
+        self.description = description
+        self.aboutContent = aboutContent
+        self.longevityImpact = longevityImpact
+        self.quickTips = quickTips
+        self.hasGoal = hasGoal
     }
 }
 
@@ -70,186 +153,15 @@ struct DisplayMetric: Codable, Identifiable {
     }
 }
 
-// Primary screen configuration
-struct PrimaryScreen: Codable, Identifiable {
-    let id: String                      // Supabase row ID
-    let primaryScreenId: String         // primary_screen_id (business key)
-    let displayScreenId: String         // display_screen_id (FK to display_screens)
-    let title: String?                  // title
-    let subtitle: String?               // subtitle
-    let description: String?            // description
-    let displayOrder: Int?              // display_order
-    let layoutType: String?             // layout_type
-    let hasDetailScreen: Bool?          // has_detail_screen
-    let detailButtonText: String?       // detail_button_text
-    let detailButtonIcon: String?       // detail_button_icon
-    let educationContentId: String?     // education_content_id
-    let hasGoal: Bool?                  // has_goal
-    let isActive: Bool?                 // is_active
-    let createdAt: Date?                // created_at
-    let updatedAt: Date?                // updated_at
-
-    // Education content fields
-    let aboutContent: String?           // about_content
-    let longevityImpact: String?        // longevity_impact
-    let quickTips: [String]?            // quick_tips (JSONB array)
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case primaryScreenId = "primary_screen_id"
-        case displayScreenId = "display_screen_id"
-        case title
-        case subtitle
-        case description
-        case displayOrder = "display_order"
-        case layoutType = "layout_type"
-        case hasDetailScreen = "has_detail_screen"
-        case detailButtonText = "detail_button_text"
-        case detailButtonIcon = "detail_button_icon"
-        case educationContentId = "education_content_id"
-        case hasGoal = "has_goal"
-        case isActive = "is_active"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-        case aboutContent = "about_content"
-        case longevityImpact = "longevity_impact"
-        case quickTips = "quick_tips"
-    }
-
-    // Custom decoder that handles JSONB arrays
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        id = try container.decode(String.self, forKey: .id)
-        primaryScreenId = try container.decode(String.self, forKey: .primaryScreenId)
-        displayScreenId = try container.decode(String.self, forKey: .displayScreenId)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
-        description = try container.decodeIfPresent(String.self, forKey: .description)
-        displayOrder = try container.decodeIfPresent(Int.self, forKey: .displayOrder)
-        layoutType = try container.decodeIfPresent(String.self, forKey: .layoutType)
-        hasDetailScreen = try container.decodeIfPresent(Bool.self, forKey: .hasDetailScreen)
-        detailButtonText = try container.decodeIfPresent(String.self, forKey: .detailButtonText)
-        detailButtonIcon = try container.decodeIfPresent(String.self, forKey: .detailButtonIcon)
-        educationContentId = try container.decodeIfPresent(String.self, forKey: .educationContentId)
-        hasGoal = try container.decodeIfPresent(Bool.self, forKey: .hasGoal)
-        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
-        createdAt = try? container.decodeIfPresent(Date.self, forKey: .createdAt)
-        updatedAt = try? container.decodeIfPresent(Date.self, forKey: .updatedAt)
-
-        // Education content - fail silently if columns don't exist
-        aboutContent = try? container.decodeIfPresent(String.self, forKey: .aboutContent)
-        longevityImpact = try? container.decodeIfPresent(String.self, forKey: .longevityImpact)
-        quickTips = try? container.decodeIfPresent([String].self, forKey: .quickTips)
-
-        print("✅ Decoded PrimaryScreen: about=\(aboutContent != nil), longevity=\(longevityImpact != nil), tips=\(quickTips != nil)")
-    }
-}
-
-// Detail screen configuration
-struct DetailScreen: Codable, Identifiable {
-    let id: String                      // Supabase row ID
-    let detailScreenId: String          // detail_screen_id (business key)
-    let displayScreenId: String         // display_screen_id (FK to display_screens)
-    let title: String?                  // title
-    let subtitle: String?               // subtitle
-    let description: String?            // description
-    let layoutType: String?             // layout_type
-    let educationContentId: String?     // education_content_id
-    let showInsights: Bool?             // show_insights
-    let isActive: Bool?                 // is_active
-    let createdAt: Date?                // created_at
-    let updatedAt: Date?                // updated_at
-
-    // JSONB fields - skipped for now as they're arrays/objects
-    // let sectionConfig: [String: Any]?
-    // let tabConfig: [String: Any]?
-    // let detailedInfo: [String: Any]?
-    // let faq: [Any]?
-    // let relatedArticles: [Any]?
-    // let insightsConfig: [String: Any]?
-    // let metadata: [String: Any]?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case detailScreenId = "detail_screen_id"
-        case displayScreenId = "display_screen_id"
-        case title
-        case subtitle
-        case description
-        case layoutType = "layout_type"
-        case educationContentId = "education_content_id"
-        case showInsights = "show_insights"
-        case isActive = "is_active"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-        // JSONB fields not included in CodingKeys - will be ignored during decoding
-    }
-}
-
-// Junction table: Primary Screen → Display Metric
-struct PrimaryMetricLink: Codable, Identifiable {
-    let id: String                      // Supabase row ID
-    let primaryScreenId: String         // primary_screen_id (FK)
-    let metricId: String                // metric_id (FK to display_metrics)
-    let displayOrder: Int?              // display_order
-    let isFeatured: Bool?               // is_featured
-    let isComparison: Bool?             // is_comparison
-    let overrideTitle: String?          // override_title
-    let overrideDescription: String?    // override_description
-    let overrideChartType: String?      // override_chart_type
-    let contextLabel: String?           // context_label
-    let contextDescription: String?     // context_description
-    let createdAt: Date?                // created_at
-    let updatedAt: Date?                // updated_at
-    // metadata is JSONB - skipped
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case primaryScreenId = "primary_screen_id"
-        case metricId = "metric_id"
-        case displayOrder = "display_order"
-        case isFeatured = "is_featured"
-        case isComparison = "is_comparison"
-        case overrideTitle = "override_title"
-        case overrideDescription = "override_description"
-        case overrideChartType = "override_chart_type"
-        case contextLabel = "context_label"
-        case contextDescription = "context_description"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-        // metadata NOT included - it's JSONB
-    }
-}
-
-// Junction table: Detail Screen → Display Metric
-struct DetailMetricLink: Codable, Identifiable {
-    let id: String                      // Supabase row ID
-    let detailScreenId: String          // detail_screen_id (FK)
-    let metricId: String                // metric_id (FK to display_metrics)
-    let displayOrder: Int?              // display_order
-    let isFeatured: Bool?               // is_featured
-    let isComparison: Bool?             // is_comparison
-    let overrideDescription: String?    // override_description
-    let overrideChartType: String?      // override_chart_type
-    let contextLabel: String?           // context_label
-    let contextDescription: String?     // context_description
-    let metadata: String?               // metadata (JSONB)
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case detailScreenId = "detail_screen_id"
-        case metricId = "metric_id"
-        case displayOrder = "display_order"
-        case isFeatured = "is_featured"
-        case isComparison = "is_comparison"
-        case overrideDescription = "override_description"
-        case overrideChartType = "override_chart_type"
-        case contextLabel = "context_label"
-        case contextDescription = "context_description"
-        case metadata
-    }
-}
+// LEGACY MODELS REMOVED:
+// - PrimaryScreen (table display_screens_primary dropped)
+// - DetailScreen (table display_screens_detail dropped)
+// - PrimaryMetricLink (table display_screens_primary_display_metrics dropped)
+// - DetailMetricLink (table display_screens_detail_display_metrics dropped)
+//
+// New simplified structure uses:
+// - display_screens (with educational content fields)
+// - display_screens_display_metrics (links screens to metrics with display_order)
 
 // Parent detail section (tabs in modal)
 struct ParentDetailSection: Codable, Identifiable {
@@ -290,16 +202,24 @@ struct UserMetricPreference: Codable {
     }
 }
 
-// Junction table link with extended properties
+// Junction table link with extended properties (display_screens_display_metrics)
 struct ScreenMetricLink: Codable {
-    let primaryScreenId: String
+    let screenId: String
     let metricId: String
     let displayOrder: Int?
+    let overrideTitle: String?
+    let overrideDescription: String?
+    let overrideChartType: String?
+    let contextLabel: String?
 
     enum CodingKeys: String, CodingKey {
-        case primaryScreenId = "primary_screen_id"
+        case screenId = "screen_id"
         case metricId = "metric_id"
         case displayOrder = "display_order"
+        case overrideTitle = "override_title"
+        case overrideDescription = "override_description"
+        case overrideChartType = "override_chart_type"
+        case contextLabel = "context_label"
     }
 }
 

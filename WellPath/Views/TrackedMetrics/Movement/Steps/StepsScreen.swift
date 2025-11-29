@@ -41,6 +41,10 @@ struct StepsScreen: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -51,6 +55,7 @@ struct StepsScreen: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()
@@ -77,10 +82,19 @@ struct StepsScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 16) {
+                    MetricFavoriteStar(
+                        metricId: "DISP_STEPS",
+                        displayName: "Steps",
+                        pillar: pillar,
+                        color: color
+                    )
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -286,6 +300,10 @@ struct StepsFullView: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -296,6 +314,7 @@ struct StepsFullView: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()

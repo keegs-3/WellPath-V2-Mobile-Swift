@@ -26,7 +26,9 @@ struct ProteinScreen: View {
                 // Protein Amount card
                 MetricCardView(
                     title: viewModel.amountTitle,
-                    color: color
+                    color: color,
+                    metricId: "DISP_PROTEIN_GRAMS",
+                    pillar: pillar
                 ) {
                     ProteinAmountMiniCard(color: color, viewModel: viewModel)
                 } fullScreen: {
@@ -36,7 +38,9 @@ struct ProteinScreen: View {
                 // Timing card
                 MetricCardView(
                     title: viewModel.timingTitle,
-                    color: color
+                    color: color,
+                    metricId: "DISP_PROTEIN_TIMING",
+                    pillar: pillar
                 ) {
                     ProteinTimingMiniCard(color: color)
                 } fullScreen: {
@@ -46,7 +50,9 @@ struct ProteinScreen: View {
                 // Type card
                 MetricCardView(
                     title: viewModel.typeTitle,
-                    color: color
+                    color: color,
+                    metricId: "DISP_PROTEIN_TYPE",
+                    pillar: pillar
                 ) {
                     ProteinTypeMiniCard(color: color)
                 } fullScreen: {
@@ -56,7 +62,9 @@ struct ProteinScreen: View {
                 // Ratio card
                 MetricCardView(
                     title: viewModel.ratioTitle,
-                    color: color
+                    color: color,
+                    metricId: "DISP_PROTEIN_RATIO",
+                    pillar: pillar
                 ) {
                     ProteinRatioMiniCard(color: color)
                 } fullScreen: {
@@ -68,6 +76,10 @@ struct ProteinScreen: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -78,6 +90,7 @@ struct ProteinScreen: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()
@@ -227,6 +240,10 @@ struct ProteinAmountFullView: View {
         }
         .background(
             ZStack {
+                // Base background that extends to bottom
+                Color(uiColor: .systemGroupedBackground)
+
+                // Gradient overlay at top
                 VStack(spacing: 0) {
                     LinearGradient(
                         colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
@@ -237,6 +254,7 @@ struct ProteinAmountFullView: View {
                     Spacer()
                 }
 
+                // Watermark icon
                 VStack {
                     HStack {
                         Spacer()

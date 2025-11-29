@@ -234,7 +234,7 @@ struct NutrientTypeView: View {
     // MARK: - Variety Score Explanation Modal
 
     private var varietyScoreExplanationModal: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if let explanation = viewModel.scoringExplanation {

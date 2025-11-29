@@ -20,6 +20,7 @@ class TrackedMetricsViewModel: ObservableObject {
     private let supabase = SupabaseManager.shared.client
 
     // Pillar order from pillars_base.display_order
+    // Includes 7 scoring pillars + Bio3 (Biometrics, Biomarkers, Biological Age)
     private let pillarOrder = [
         "Healthful Nutrition",
         "Movement + Exercise",
@@ -27,7 +28,10 @@ class TrackedMetricsViewModel: ObservableObject {
         "Stress Management",
         "Cognitive Health",
         "Connection + Purpose",
-        "Core Care"
+        "Core Care",
+        "Biometrics",
+        "Biomarkers",
+        "Biological Age"
     ]
 
     func loadMetricsData() async {
@@ -84,9 +88,8 @@ class TrackedMetricsViewModel: ObservableObject {
     }
 
     func loadMetricCounts() async {
-        // NOTE: Legacy code - screen_id doesn't exist in display_metrics table anymore
-        // Metrics are now linked via junction tables (display_screens_primary_display_metrics, etc.)
-        // TODO: Query junction tables if metric counts are needed
+        // NOTE: Metrics are linked via display_screens_display_metrics junction table
+        // Query that table to get metric counts per screen
         do {
             print("🔍 Loading metric counts (skipped - legacy code)...")
 
@@ -129,5 +132,10 @@ class TrackedMetricsViewModel: ObservableObject {
 
     func getMetricCount(forScreen screenId: String) -> Int {
         return metricCountsByScreen[screenId] ?? 0
+    }
+
+    /// All screens flattened from all pillars
+    var allScreens: [DisplayScreen] {
+        return screensByPillar.values.flatMap { $0 }
     }
 }

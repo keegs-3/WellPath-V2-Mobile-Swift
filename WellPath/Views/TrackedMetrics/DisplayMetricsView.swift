@@ -121,9 +121,9 @@ class DisplayMetricsViewModel: ObservableObject {
 
             // First, get the metric IDs from the junction table
             let links: [ScreenMetricLink] = try await supabase
-                .from("display_screens_primary_display_metrics")
+                .from("display_screens_display_metrics")
                 .select()
-                .eq("primary_screen_id", value: screenId)
+                .eq("screen_id", value: screenId)
                 .order("display_order", ascending: true)
                 .execute()
                 .value

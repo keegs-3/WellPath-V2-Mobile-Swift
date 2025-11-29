@@ -58,7 +58,6 @@ struct NutrientScreen: View {
     @StateObject private var viewModel: StandardMetricViewModel
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
-    @State private var showAbout = false
 
     init(config: NutrientScreenConfig, pillar: String, color: Color) {
         self.config = config
@@ -68,18 +67,26 @@ struct NutrientScreen: View {
     }
 
     var body: some View {
-        MetricScreenView(
-            title: config.title,
-            color: color,
-            screenIcon: config.screenIcon,
-            primaryContent: {
-                primaryCard
-            },
-            subCards: {
+        ScrollView {
+            VStack(spacing: 12) {
+                // Servings card (primary metric)
+                MetricCardView(
+                    title: "\(config.title) Servings",
+                    color: color,
+                    metricId: config.metricId,
+                    pillar: pillar
+                ) {
+                    NutrientServingsMiniCard(viewModel: viewModel, color: color)
+                } fullScreen: {
+                    NutrientServingsFullView(viewModel: viewModel, color: color, screenIcon: config.screenIcon)
+                }
+
                 // Timing card
                 MetricCardView(
                     title: "Meal Timing",
-                    color: color
+                    color: color,
+                    metricId: config.metricId.replacingOccurrences(of: "SERVINGS", with: "TIMING"),
+                    pillar: pillar
                 ) {
                     NutrientTimingMiniCardGeneric(nutrientType: config.nutrientType, color: color)
                 } fullScreen: {
@@ -90,7 +97,9 @@ struct NutrientScreen: View {
                 // Type card
                 MetricCardView(
                     title: "\(config.title) Type",
-                    color: color
+                    color: color,
+                    metricId: config.metricId.replacingOccurrences(of: "SERVINGS", with: "TYPE"),
+                    pillar: pillar
                 ) {
                     NutrientTypeMiniCardGeneric(nutrientType: config.nutrientType, color: color)
                 } fullScreen: {
@@ -98,9 +107,56 @@ struct NutrientScreen: View {
                         .metricScreenBackground(color: color, icon: config.screenIcon)
                 }
             }
+            .padding()
+            .padding(.bottom, 24)
+        }
+        .background(
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+                    Spacer()
+                }
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: config.screenIcon)
+                            .font(.system(size: 200))
+                            .foregroundStyle(Color.white.opacity(0.2))
+                            .rotationEffect(.degrees(-15))
+                            .offset(x: 50, y: -50)
+                    }
+                    Spacer()
+                }
+            }
+            .ignoresSafeArea()
         )
-        .onDataManagement { showingDataManagement = true }
-        .onAddEntry { showingEntryForm = true }
+        .navigationTitle(config.title)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    showingDataManagement = true
+                } label: {
+                    Image(systemName: "list.bullet")
+                }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingEntryForm = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
         .sheet(isPresented: $showingEntryForm) {
             entryView
         }
@@ -127,9 +183,79 @@ struct NutrientScreen: View {
             EmptyView()
         }
     }
+}
 
-    // Primary chart card
-    private var primaryCard: some View {
+// MARK: - Nutrient Servings Mini Card
+
+struct NutrientServingsMiniCard: View {
+    @ObservedObject var viewModel: StandardMetricViewModel
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if viewModel.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Spacer()
+                }
+                .frame(height: 60)
+            } else if viewModel.metrics.first != nil {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Today")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text("--")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            Text("servings")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Weekly Avg")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text("--")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(color)
+                            Text("servings")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Text("No data")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .frame(height: 60)
+            }
+        }
+    }
+}
+
+// MARK: - Nutrient Servings Full View
+
+struct NutrientServingsFullView: View {
+    @ObservedObject var viewModel: StandardMetricViewModel
+    let color: Color
+    let screenIcon: String
+    @State private var showAbout = false
+
+    var body: some View {
         VStack(spacing: 0) {
             if showAbout {
                 aboutContentView
@@ -148,83 +274,85 @@ struct NutrientScreen: View {
                 }
             }
         }
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .cornerRadius(12)
+        .background(
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+                    Spacer()
+                }
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: screenIcon)
+                            .font(.system(size: 200))
+                            .foregroundStyle(Color.white.opacity(0.2))
+                            .rotationEffect(.degrees(-15))
+                            .offset(x: 50, y: -50)
+                    }
+                    Spacer()
+                }
+            }
+            .ignoresSafeArea()
+        )
     }
 
     private var aboutContentView: some View {
         ZStack(alignment: .topTrailing) {
             ScrollView {
                 VStack(spacing: 24) {
-                    if viewModel.isLoading {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("Loading content...")
-                                .font(.caption)
+                    if let about = viewModel.aboutContent {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "info.circle.fill")
+                                    .foregroundColor(color)
+                                Text("About")
+                                    .font(.headline)
+                            }
+                            Text(about)
+                                .font(.body)
                                 .foregroundColor(.secondary)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 40)
-                    } else if let error = viewModel.error {
-                        VStack(spacing: 16) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.largeTitle)
-                                .foregroundColor(.orange)
-                            Text("Unable to load content")
-                                .font(.headline)
-                            Text(error)
-                                .font(.caption)
+                    }
+
+                    if let impact = viewModel.longevityImpact {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "heart.circle.fill")
+                                    .foregroundColor(color)
+                                Text("Health Impact")
+                                    .font(.headline)
+                            }
+                            Text(impact)
+                                .font(.body)
                                 .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
                         }
-                        .padding()
-                    } else {
-                        if let about = viewModel.aboutContent {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "info.circle.fill")
-                                        .foregroundColor(color)
-                                    Text("About")
-                                        .font(.headline)
-                                }
-                                Text(about)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
+                    }
+
+                    if let tips = viewModel.quickTips, !tips.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "lightbulb.circle.fill")
+                                    .foregroundColor(color)
+                                Text("Quick Tips")
+                                    .font(.headline)
                             }
-                        }
 
-                        if let impact = viewModel.longevityImpact {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "heart.circle.fill")
+                            ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("\(index + 1).")
+                                        .fontWeight(.semibold)
                                         .foregroundColor(color)
-                                    Text("Health Impact")
-                                        .font(.headline)
-                                }
-                                Text(impact)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        if let tips = viewModel.quickTips, !tips.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "lightbulb.circle.fill")
-                                        .foregroundColor(color)
-                                    Text("Quick Tips")
-                                        .font(.headline)
-                                }
-
-                                ForEach(Array(tips.enumerated()), id: \.offset) { index, tip in
-                                    HStack(alignment: .top, spacing: 8) {
-                                        Text("\(index + 1).")
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(color)
-                                        Text(tip)
-                                            .font(.body)
-                                            .foregroundColor(.secondary)
-                                    }
+                                    Text(tip)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                         }

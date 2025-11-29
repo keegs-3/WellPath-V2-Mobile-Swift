@@ -33,9 +33,11 @@ struct MainTabView: View {
                     }
                     .tag(2)
 
-                MetricsView()
+                NavigationStack {
+                    TrackedMetricsListView()
+                }
                     .tabItem {
-                        Label("Metrics", systemImage: "chart.bar.fill")
+                        Label("Data", systemImage: "list.bullet.clipboard.fill")
                     }
                     .tag(3)
 

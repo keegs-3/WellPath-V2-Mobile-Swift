@@ -49,7 +49,56 @@ class UnitConversionService: ObservableObject {
     /// Whether initial load has completed
     private var isLoaded = false
 
+    // MARK: - User Preferences
+
+    @Published var preferredWeightUnit: WeightDisplayUnit = .lb
+    @Published var preferredHeightUnit: HeightDisplayUnit2 = .ftIn
+    @Published var preferencesLoaded = false
+
     private init() {}
+
+    /// Load user's unit preferences
+    func loadUserPreferences() async {
+        guard !preferencesLoaded else { return }
+
+        do {
+            let userId = try await supabase.auth.session.user.id
+
+            struct UnitPrefs: Codable {
+                let weightUnit: String?
+                let heightUnit: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case weightUnit = "weight_unit"
+                    case heightUnit = "height_unit"
+                }
+            }
+
+            let results: [UnitPrefs] = try await supabase
+                .from("patient_unit_preferences")
+                .select("weight_unit, height_unit")
+                .eq("patient_id", value: userId.uuidString)
+                .limit(1)
+                .execute()
+                .value
+
+            if let prefs = results.first {
+                if let w = prefs.weightUnit, let unit = WeightDisplayUnit(rawValue: w) {
+                    preferredWeightUnit = unit
+                }
+                if let h = prefs.heightUnit, let unit = HeightDisplayUnit2(rawValue: h) {
+                    preferredHeightUnit = unit
+                }
+            }
+
+            preferencesLoaded = true
+            print("✅ User unit preferences loaded: weight=\(preferredWeightUnit.rawValue)")
+
+        } catch {
+            print("⚠️ Could not load user unit preferences: \(error)")
+            preferencesLoaded = true  // Prevent retries
+        }
+    }
 
     // MARK: - Public API
 
@@ -146,6 +195,57 @@ class UnitConversionService: ObservableObject {
     /// Convert pounds to kilograms
     func lbToKg(_ lb: Double) -> Double {
         return convert(lb, from: "pound", to: "kilogram") ?? (lb * 0.453592)
+    }
+
+    // MARK: - Preference-Aware Conversions
+
+    /// Convert weight from stored unit to user's preferred unit
+    func convertWeightToPreferred(value: Double, fromUnit: String?) -> (value: Double, unit: String) {
+        let sourceUnit = (fromUnit ?? "kilogram").lowercased()
+        let sourceIsKg = sourceUnit.contains("kg") || sourceUnit.contains("kilogram")
+        let sourceIsLb = sourceUnit.contains("lb") || sourceUnit.contains("pound")
+
+        switch preferredWeightUnit {
+        case .kg:
+            if sourceIsKg {
+                return (value, "kg")
+            } else if sourceIsLb {
+                return (lbToKg(value), "kg")
+            }
+        case .lb:
+            if sourceIsLb {
+                return (value, "lb")
+            } else if sourceIsKg {
+                return (kgToLb(value), "lb")
+            }
+        }
+
+        // Unknown source unit, return as-is
+        return (value, fromUnit ?? "")
+    }
+
+    /// Convert length from stored unit to user's preferred unit (for waist/hip)
+    func convertLengthToPreferred(value: Double, fromUnit: String?) -> (value: Double, unit: String) {
+        let sourceUnit = (fromUnit ?? "centimeter").lowercased()
+        let sourceIsCm = sourceUnit.contains("cm") || sourceUnit.contains("centimeter")
+        let sourceIsIn = sourceUnit.contains("in") || sourceUnit.contains("inch")
+
+        switch preferredHeightUnit {
+        case .cm:
+            if sourceIsCm {
+                return (value, "cm")
+            } else if sourceIsIn {
+                return (value * 2.54, "cm")
+            }
+        case .ftIn:
+            if sourceIsIn {
+                return (value, "in")
+            } else if sourceIsCm {
+                return (value / 2.54, "in")
+            }
+        }
+
+        return (value, fromUnit ?? "")
     }
 
     /// Convert g/kg ratio to g/lb ratio

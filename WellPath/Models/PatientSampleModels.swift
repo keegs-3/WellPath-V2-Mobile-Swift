@@ -276,10 +276,20 @@ struct QuantityTypes {
     static let cardioDuration = "cardio_duration"
     static let yogaDuration = "yoga_duration"
 
-    // Physical
-    static let weight = "weight"
+    // Physical / Biometrics
+    static let weight = "bodyweight"
     static let height = "height"
     static let heartRate = "heart_rate"
+    static let waistMeasurement = "waist_measurement"
+    static let hipMeasurement = "hip_measurement"
+    static let bloodPressureSystolic = "blood_pressure_systolic"
+    static let bloodPressureDiastolic = "blood_pressure_diastolic"
+    static let restingHeartRate = "resting_heart_rate"
+    static let hrv = "hrv"
+    static let vo2Max = "vo2_max"
+    static let bodyFatPercentage = "body_fat_percentage"
+    static let gripStrength = "grip_strength"
+    static let appendicularSkeletalMuscleMass = "appendicular_skeletal_muscle_mass"
 
     // Mental
     static let meditationDuration = "meditation_duration"

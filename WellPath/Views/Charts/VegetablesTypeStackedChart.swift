@@ -402,7 +402,8 @@ class VegetablesTypeChartViewModel: ObservableObject {
             var dateMap: [Date: [String: Double]] = [:]
             for result in results {
                 // Convert UTC period_start to local date for timeline matching
-                let localDate = result.periodStart.toLocalDateForTimeline()
+                let isHourly = periodType == "hourly"
+                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
                 if dateMap[localDate] == nil {
                     dateMap[localDate] = [:]
                 }
