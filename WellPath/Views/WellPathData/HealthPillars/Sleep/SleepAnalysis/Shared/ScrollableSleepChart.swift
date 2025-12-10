@@ -99,6 +99,11 @@ struct ScrollableSleepChart: View {
     @State private var lastScrollUpdate: Date = Date.distantPast
     @State private var hasInitializedScroll = false  // Track if we've scrolled to initial position
 
+    // Cached data to prevent recomputation during scrolling
+    @State private var cachedGroupedData: [(date: Date, sessions: [SleepSession])] = []
+    @State private var cachedTimeRange: ChartTimeRange?
+    @State private var lastDataVersion: Int = 0  // Track when data changes
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             summaryMetrics
@@ -121,6 +126,40 @@ struct ScrollableSleepChart: View {
                 }
             }
         }
+        .onChange(of: viewModel.sleepSessions.count) { _, newCount in
+            // Refresh cached data when sessions change
+            refreshCachedData()
+        }
+    }
+
+    // MARK: - Data Caching
+
+    /// Refresh cached data only when underlying data changes
+    private func refreshCachedData() {
+        let newVersion = viewModel.sleepSessions.count
+        guard newVersion != lastDataVersion else { return }
+
+        lastDataVersion = newVersion
+        cachedGroupedData = computeGroupedByDate()
+        cachedTimeRange = computeTimeRange()
+    }
+
+    /// Get cached grouped data, computing if necessary
+    private func getGroupedData() -> [(date: Date, sessions: [SleepSession])] {
+        if cachedGroupedData.isEmpty && !viewModel.sleepSessions.isEmpty {
+            cachedGroupedData = computeGroupedByDate()
+        }
+        return cachedGroupedData
+    }
+
+    /// Get cached time range, computing if necessary
+    private func getTimeRange() -> ChartTimeRange {
+        if let cached = cachedTimeRange {
+            return cached
+        }
+        let computed = computeTimeRange()
+        cachedTimeRange = computed
+        return computed
     }
 
     private var chartView: some View {
@@ -134,7 +173,8 @@ struct ScrollableSleepChart: View {
                 barWidthRatio: viewMode.barWidthRatio,
                 minimumDayWidth: minimumDayWidth
             )
-            let timeRange = calculateTimeRange()
+            // Use cached time range to avoid recomputation during scrolling
+            let timeRange = getTimeRange()
 
             chartContent(layout: layout, timeRange: timeRange)
         }
@@ -155,7 +195,8 @@ struct ScrollableSleepChart: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: daySpacing) {
-                    ForEach(groupedByDate(), id: \.date) { group in
+                    // Use cached grouped data to avoid recomputation during scrolling
+                    ForEach(getGroupedData(), id: \.date) { group in
                         dayColumn(for: group, layout: layout, timeRange: timeRange)
                             .id(group.date)
                     }
@@ -170,6 +211,10 @@ struct ScrollableSleepChart: View {
                 updateVisibleRange(leadingDate: newID)
             }
             .onAppear {
+                // Ensure cached data is initialized on appear
+                if cachedGroupedData.isEmpty && !viewModel.sleepSessions.isEmpty {
+                    refreshCachedData()
+                }
                 scrollToTodayIfNeeded(proxy: proxy)
             }
         }
@@ -260,7 +305,7 @@ struct ScrollableSleepChart: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             let calendar = Calendar.current
             let today = calendar.startOfDay(for: Date())
-            let groups = groupedByDate()
+            let groups = getGroupedData()  // Use cached data
             guard let lastGroupDate = groups.last?.date else { return }
 
             let targetDate = groups.first(where: { calendar.isDate($0.date, inSameDayAs: today) })?.date
@@ -281,7 +326,8 @@ struct ScrollableSleepChart: View {
     // MARK: - Visible Range Management
 
     private func updateVisibleRange(leadingDate: Date) {
-        guard Date().timeIntervalSince(lastScrollUpdate) > 0.2 else { return }
+        // Increased debounce threshold from 0.2s to 0.5s for smoother fast scrolling
+        guard Date().timeIntervalSince(lastScrollUpdate) > 0.5 else { return }
         lastScrollUpdate = Date()
 
         let calendar = Calendar.current
@@ -483,7 +529,8 @@ struct ScrollableSleepChart: View {
 
     // MARK: - Time Calculations
 
-    private func calculateTimeRange() -> ChartTimeRange {
+    /// Compute time range (called once when data changes, result is cached)
+    private func computeTimeRange() -> ChartTimeRange {
         // Get only sessions in the visible date range
         guard let range = visibleDateRange else {
             return defaultTimeRange
@@ -598,7 +645,8 @@ struct ScrollableSleepChart: View {
 
     // MARK: - Helpers
 
-    private func groupedByDate() -> [(date: Date, sessions: [SleepSession])] {
+    /// Compute grouped data (called once when data changes, result is cached)
+    private func computeGroupedByDate() -> [(date: Date, sessions: [SleepSession])] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: viewModel.sleepSessions) { session in
             calendar.startOfDay(for: session.date)

@@ -16,6 +16,7 @@ struct DayViewChart: View {
     @State private var selectedSegment: SleepStageSegment?
     @State private var currentSessionIndex: Int = 0
     @State private var hasInitializedIndex: Bool = false // Track if we've set initial index
+    @State private var lastMetricsUpdate: Date = Date.distantPast // Debounce metrics updates
     var height: CGFloat = 300 // Default height, can be overridden
     var onVisibleRangeChange: ((Date, Date) -> Void)? = nil
     var showAbout: Binding<Bool>? = nil  // Optional binding for about view
@@ -41,6 +42,15 @@ struct DayViewChart: View {
             }
         }
         .onChange(of: currentSessionIndex) { oldValue, newValue in
+            // Debounce metrics updates during fast swiping (0.3s threshold)
+            let now = Date()
+            guard now.timeIntervalSince(lastMetricsUpdate) > 0.3 else {
+                // Still load more data at edges even during fast swipes
+                checkIfNeedToLoadMore(sessionIndex: newValue)
+                return
+            }
+            lastMetricsUpdate = now
+
             // Update metrics when session changes
             if newValue >= 0 && newValue < viewModel.sleepSessions.count {
                 let session = viewModel.sleepSessions[newValue]
