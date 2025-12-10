@@ -421,11 +421,18 @@ class SurveyService {
     // MARK: - Delete Response
 
     func deleteResponse(patientId: UUID, questionNumber: String) async throws {
+        // Convert to Double for NUMERIC column comparison
+        guard let questionNumberDouble = Double(questionNumber) else {
+            throw NSError(domain: "SurveyService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid question number format: \(questionNumber)"
+            ])
+        }
+
         try await client
             .from("patient_survey_responses")
             .delete()
             .eq("patient_id", value: patientId.uuidString)
-            .eq("question_number", value: questionNumber)
+            .eq("question_number", value: questionNumberDouble)
             .execute()
     }
 
@@ -548,11 +555,18 @@ class SurveyService {
     // MARK: - Response History
 
     func fetchResponseHistory(patientId: UUID, questionNumber: String) async throws -> [SurveyResponseHistory] {
+        // Convert to Double for NUMERIC column comparison
+        guard let questionNumberDouble = Double(questionNumber) else {
+            throw NSError(domain: "SurveyService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid question number format: \(questionNumber)"
+            ])
+        }
+
         let history: [SurveyResponseHistory] = try await client
             .from("patient_survey_response_history")
             .select()
             .eq("patient_id", value: patientId.uuidString)
-            .eq("question_number", value: questionNumber)
+            .eq("question_number", value: questionNumberDouble)
             .order("changed_at", ascending: false)
             .execute()
             .value

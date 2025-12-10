@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftUI
+import Supabase
 
 /// Represents a discovered type aggregation for a nutrient
 struct TypeAggregation: Identifiable {
@@ -85,7 +86,7 @@ class NutrientTypeViewModel: ObservableObject {
 
             print("🍽️ Discovered \(results.count) type aggregations for \(nutrientType.displayName)")
 
-            // Fetch descriptions from data_entry_fields_reference
+            // Fetch descriptions from sample_category_types_reference
             let descriptions = await fetchTypeDescriptions()
 
             // Sort by display name, but put "Other" last
@@ -133,7 +134,7 @@ class NutrientTypeViewModel: ObservableObject {
         }
     }
 
-    /// Fetches type descriptions from data_entry_fields_reference
+    /// Fetches type descriptions from sample_category_types_reference
     private func fetchTypeDescriptions() async -> [String: String] {
         do {
             struct ReferenceData: Codable {
@@ -150,7 +151,7 @@ class NutrientTypeViewModel: ObservableObject {
             let category = "\(nutrientType.rawValue.lowercased())_types"
 
             let results: [ReferenceData] = try await supabase
-                .from("data_entry_fields_reference")
+                .from("sample_category_types_reference")
                 .select("reference_key, description")
                 .eq("reference_category", value: category)
                 .execute()
@@ -185,9 +186,9 @@ class NutrientTypeViewModel: ObservableObject {
             }
 
             let results: [MetricScoring] = try await supabase
-                .from("display_metrics")
+                .from("display_views")
                 .select("scoring_explanation")
-                .eq("metric_id", value: typeMetricId)
+                .eq("view_id", value: typeMetricId)
                 .limit(1)
                 .execute()
                 .value
@@ -214,9 +215,9 @@ class NutrientTypeViewModel: ObservableObject {
             }
 
             let results: [TargetRow] = try await supabase
-                .from("display_metric_variety_score_thresholds")
+                .from("display_view_variety_thresholds")
                 .select("period_type, diversity_target")
-                .eq("display_metric_id", value: typeMetricId)
+                .eq("view_id", value: typeMetricId)
                 .execute()
                 .value
 
@@ -259,53 +260,73 @@ class NutrientTypeViewModel: ObservableObject {
     }
 
     /// Loads data for a specific period and date
+    /// Uses AggregationQueryService which queries hourly (for D) or daily (for W/M/6M/Y)
     func loadDataForPeriod(period: TimePeriod, date: Date) async {
         isLoading = true
         typeData.removeAll()
 
         do {
-            let userId = try await supabase.auth.session.user.id
-
-            // Map to aggregated period type (not bar chart granularity)
-            let periodType: String
-            switch period {
-            case .day: periodType = "daily"
-            case .week: periodType = "weekly"
-            case .month: periodType = "monthly"
-            case .sixMonth: periodType = "six_month"
-            case .year: periodType = "yearly"
-            }
             let aggIds = typeAggregations.map { $0.aggId }
+            guard !aggIds.isEmpty else {
+                isLoading = false
+                return
+            }
 
-            // Calculate period start
-            let periodStart = getPeriodStart(for: period, date: date)
-            let iso8601String = periodStart.ISO8601Format()
+            print("🥗 Querying \(nutrientType.displayName) types for period: \(period.rawValue)")
+            print("🥗   Date: \(date)")
 
-            print("🥗 Querying \(nutrientType.displayName) types for period: \(periodType)")
-            print("🥗   Period start (UTC): \(periodStart)")
-            print("🥗   ISO8601 string: \(iso8601String)")
+            // Query patient_quantity_samples with metadata filtering for type breakdown
+            let userId = try await supabase.auth.session.user.id
+            let (startDate, endDate) = PatientSamplesQueryService.shared.getDateRange(for: period, date: date)
 
-            // For Day: use SUM (daily total)
-            // For Week/Month/Year: use AVG (average per day)
-            let calculationType = period == .day ? "SUM" : "AVG"
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate]
+            let startStr = formatter.string(from: startDate)
+            let endStr = formatter.string(from: endDate)
 
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
+            let samples: [NutrientTypeSample] = try await supabase
+                .from("patient_quantity_samples")
+                .select("id, aggregation_date, quantity_value, metadata")
                 .eq("patient_id", value: userId)
-                .in("agg_metric_id", values: aggIds)
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: calculationType)
-                .eq("period_start", value: iso8601String)
+                .eq("quantity_type", value: nutrientType.quantityType)
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("aggregation_date", value: startStr)
+                .lte("aggregation_date", value: endStr)
                 .execute()
                 .value
 
-            print("🥗 Found \(results.count) type results for period")
+            // Group by type from metadata
+            var typeSums: [String: Double] = [:]
+            var dailyByType: [String: [Date: Double]] = [:]
 
-            // Store results
-            for result in results {
-                typeData[result.aggMetricId] = result.value
+            for sample in samples {
+                guard let value = sample.quantityValue,
+                      let aggDate = sample.aggregationDate else { continue }
+
+                // Extract type from metadata (e.g., "protein_type": "lean")
+                let typeValue = sample.metadata?[nutrientType.typeMetadataKey]?.stringValue ?? "other"
+                // Convert to agg format for compatibility with existing display logic
+                let aggId = "AGG_\(nutrientType.rawValue)_TYPE_\(typeValue.uppercased())"
+
+                if period == .day {
+                    typeSums[aggId, default: 0] += value
+                } else {
+                    dailyByType[aggId, default: [:]][aggDate, default: 0] += value
+                }
             }
+
+            if period == .day {
+                typeData = typeSums
+            } else {
+                // Calculate average of daily totals
+                for (aggId, dailyValues) in dailyByType {
+                    guard !dailyValues.isEmpty else { continue }
+                    let total = dailyValues.values.reduce(0, +)
+                    typeData[aggId] = total / Double(dailyValues.count)
+                }
+            }
+
+            print("🥗 Found \(typeData.count) type results for period")
 
             // Update colors based on consumption amounts (highest = darkest)
             updateColorsBasedOnConsumption()
@@ -546,5 +567,31 @@ class NutrientTypeViewModel: ObservableObject {
             utcComponents.timeZone = TimeZone(identifier: "UTC")
             return utcCalendar.date(from: utcComponents)!
         }
+    }
+}
+
+// MARK: - Sample Query Model
+
+private struct NutrientTypeSample: Codable {
+    let id: UUID
+    let aggregationDateString: String?
+    let quantityValue: Double?
+    let metadata: [String: AnyJSON]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case aggregationDateString = "aggregation_date"
+        case quantityValue = "quantity_value"
+        case metadata
+    }
+
+    /// Parse aggregation_date as a local date (noon to avoid DST issues)
+    /// The database DATE represents a calendar day, not a UTC timestamp
+    var aggregationDate: Date? {
+        guard let dateString = aggregationDateString else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.timeZone = TimeZone.current  // Parse as local time, not UTC
+        return formatter.date(from: dateString + " 12:00")  // Noon local to avoid DST edge cases
     }
 }

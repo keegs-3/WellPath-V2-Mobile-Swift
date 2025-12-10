@@ -28,6 +28,16 @@ enum HeightDisplayUnit2: String, CaseIterable, Identifiable {
     case ftIn = "ft_in"
 
     var id: String { rawValue }
+
+    /// Short label for segmented pickers
+    var shortLabel: String {
+        switch self {
+        case .cm: return "cm"
+        case .ftIn: return "ft/in"
+        }
+    }
+
+    /// Full display name for settings/lists
     var displayName: String {
         switch self {
         case .cm: return "Centimeters (cm)"

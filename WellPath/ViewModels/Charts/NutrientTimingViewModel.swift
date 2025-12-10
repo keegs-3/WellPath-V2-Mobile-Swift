@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 /// Defines a nutrient type for timing analysis
 enum NutrientTimingType: String, CaseIterable {
@@ -66,6 +67,43 @@ enum NutrientTimingType: String, CaseIterable {
     var aggIdPrefix: String {
         return "AGG_\(rawValue)_"
     }
+
+    /// The quantity_type in patient_quantity_samples
+    var quantityType: String {
+        switch self {
+        case .protein:
+            return "protein_grams"
+        case .legumes:
+            return "legumes_servings"
+        case .vegetables:
+            return "vegetables_servings"
+        case .wholeGrains:
+            return "whole_grains_servings"
+        case .fruits:
+            return "fruits_servings"
+        }
+    }
+
+    /// The metadata key for type breakdown (e.g., "protein_type")
+    var typeMetadataKey: String {
+        switch self {
+        case .protein:
+            return "protein_type"
+        case .legumes:
+            return "legumes_type"
+        case .vegetables:
+            return "vegetables_type"
+        case .wholeGrains:
+            return "whole_grains_type"
+        case .fruits:
+            return "fruits_type"
+        }
+    }
+
+    /// The metadata key for food timing 
+    var mealMetadataKey: String {
+        return "food_timing"
+    }
 }
 
 @MainActor
@@ -85,78 +123,39 @@ class NutrientTimingViewModel: ObservableObject {
         self.baseColor = baseColor
     }
 
-    /// Discovers meal timing aggregations for this nutrient type
+    /// Defines meal timing types (no longer queries aggregation_metrics)
     func discoverMealAggregations() async {
-        do {
-            struct AggMetric: Codable {
-                let aggId: String
-                let metricName: String
-                let displayName: String
+        // Define standard meal types with display names and metadata values
+        let mealTypes: [(id: String, displayName: String, order: Int)] = [
+            ("breakfast", "Breakfast", 1),
+            ("morning_snack", "Morning Snack", 2),
+            ("lunch", "Lunch", 3),
+            ("afternoon_snack", "Afternoon Snack", 4),
+            ("dinner", "Dinner", 5),
+            ("evening_snack", "Evening Snack", 6),
+            ("other", "Other", 98)
+        ]
 
-                enum CodingKeys: String, CodingKey {
-                    case aggId = "agg_id"
-                    case metricName = "metric_name"
-                    case displayName = "display_name"
-                }
+        print("🍽️ Setting up \(mealTypes.count) meal types for \(nutrientType.displayName)")
+
+        let colorCount = Double(mealTypes.count)
+        mealAggregations = mealTypes.enumerated().map { index, meal in
+            let isOther = meal.id == "other"
+            let progress = colorCount > 1 ? Double(index) / (colorCount - 1) : 0
+            let opacity = 0.55 + (progress * 0.45)
+
+            let color: Color
+            if isOther {
+                color = Color(red: 0.9, green: 0.9, blue: 0.9)
+            } else {
+                color = baseColor.opacity(opacity)
             }
 
-            // Build query based on nutrient type
-            let mealTypes = ["BREAKFAST", "LUNCH", "DINNER", "MORNING_SNACK", "AFTERNOON_SNACK", "EVENING_SNACK", "OTHER"]
-            let aggIds = mealTypes.map { "AGG_\(nutrientType.rawValue)_\($0)_\(nutrientType.unitSuffix)" }
-
-            let results: [AggMetric] = try await supabase
-                .from("aggregation_metrics")
-                .select("agg_id, metric_name, display_name")
-                .in("agg_id", values: aggIds)
-                .execute()
-                .value
-
-            print("🍽️ Discovered \(results.count) meal aggregations for \(nutrientType.displayName)")
-
-            // Sort meals chronologically
-            let mealOrder: [String: Int] = [
-                "Breakfast": 1,
-                "Morning Snack": 2,
-                "Lunch": 3,
-                "Afternoon Snack": 4,
-                "Dinner": 5,
-                "Evening Snack": 6,
-                "Other": 98,
-                "Other Timing": 98
-            ]
-
-            let colorCount = Double(results.count)
-            mealAggregations = results.enumerated().sorted(by: {
-                // Extract meal name by removing nutrient suffix
-                let name1 = cleanMealName($0.element.displayName)
-                let name2 = cleanMealName($1.element.displayName)
-                let order1 = mealOrder[name1] ?? 99
-                let order2 = mealOrder[name2] ?? 99
-                return order1 < order2
-            }).map { index, agg in
-                let isOther = agg.aggId.contains("_OTHER_")
-
-                let progress = colorCount > 1 ? Double(index) / (colorCount - 1) : 0
-                let opacity = 0.55 + (progress * 0.45)
-
-                let cleanName = cleanMealName(agg.displayName)
-                let color: Color
-
-                if isOther {
-                    color = Color(red: 0.9, green: 0.9, blue: 0.9)
-                } else {
-                    color = baseColor.opacity(opacity)
-                }
-
-                return MealAggregation(
-                    aggId: agg.aggId,
-                    displayName: cleanName,
-                    color: color
-                )
-            }
-
-        } catch {
-            print("❌ Error discovering meal aggregations: \(error)")
+            return MealAggregation(
+                aggId: meal.id,  // Now using food_timing metadata value as ID
+                displayName: meal.displayName,
+                color: color
+            )
         }
     }
 
@@ -173,64 +172,105 @@ class NutrientTimingViewModel: ObservableObject {
     }
 
     /// Loads data for a specific period and date
+    /// Queries patient_quantity_samples and groups by meal_type metadata
     func loadDataForPeriod(period: TimePeriod, date: Date) async {
         isLoading = true
         periodData.removeAll()
 
         do {
             let userId = try await supabase.auth.session.user.id
+            let mealIds = mealAggregations.map { $0.aggId }
 
-            // Map to aggregated period type (not bar chart granularity)
-            // Calendar views can query aggregated periods directly
-            let periodType: String
-            switch period {
-            case .day: periodType = "daily"
-            case .week: periodType = "weekly"
-            case .month: periodType = "monthly"
-            case .sixMonth: periodType = "six_month"
-            case .year: periodType = "yearly"
+            // Calculate date range for the period
+            let (startDate, endDate) = getDateRange(for: period, date: date)
+
+            print("🍽️ Querying \(nutrientType.displayName) timing for period: \(period)")
+            print("🍽️   Date range: \(startDate) to \(endDate)")
+
+            // Query patient_quantity_samples for this nutrient type
+            struct TimingSample: Codable {
+                let aggregationDate: String
+                let quantityValue: Double?
+                let metadata: [String: AnyJSON]?
+
+                enum CodingKeys: String, CodingKey {
+                    case aggregationDate = "aggregation_date"
+                    case quantityValue = "quantity_value"
+                    case metadata
+                }
             }
 
-            let aggIds = mealAggregations.map { $0.aggId }
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let startStr = dateFormatter.string(from: startDate)
+            let endStr = dateFormatter.string(from: endDate)
 
-            // Calculate period start for calendar period
-            let periodStart = getPeriodStart(for: period, date: date)
-            let iso8601String = periodStart.ISO8601Format()
-
-            print("🍽️ Querying \(nutrientType.displayName) timing for period: \(periodType)")
-            print("🍽️   Period start (UTC): \(periodStart)")
-            print("🍽️   ISO8601 string: \(iso8601String)")
-
-            // For Day: use SUM (daily total)
-            // For Week/Month/Year: use AVG (average per day) - backend already calculates this
-            let calculationType = period == .day ? "SUM" : "AVG"
-
-            // Fetch data for the specific calendar period
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
+            let samples: [TimingSample] = try await supabase
+                .from("patient_quantity_samples")
+                .select("aggregation_date, quantity_value, metadata")
                 .eq("patient_id", value: userId)
-                .in("agg_metric_id", values: aggIds)
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: calculationType)
-                .eq("period_start", value: iso8601String)
+                .eq("quantity_type", value: nutrientType.quantityType)
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("aggregation_date", value: startStr)
+                .lte("aggregation_date", value: endStr)
                 .execute()
                 .value
 
-            print("🍽️ Fetched \(results.count) data points for \(nutrientType.displayName) timing")
+            print("🍽️ Fetched \(samples.count) samples for \(nutrientType.displayName) timing")
 
-            // Store results directly - backend already computed averages for non-day periods
-            var totalValue: Double = 0
-            for result in results {
-                let val = result.value ?? 0.0
-                periodData[result.aggMetricId] = val
-                totalValue += val
+            // Group samples by food_timing from metadata
+            var mealTotals: [String: [Double]] = [:]
+            for mealId in mealIds {
+                mealTotals[mealId] = []
             }
 
-            // Calculate avg per meal
-            let mealCount = results.filter { ($0.value ?? 0) > 0 }.count
-            periodData["avg_per_meal"] = mealCount > 0 ? totalValue / Double(mealCount) : 0
-            periodData["entries_count"] = Double(results.count)
+            for sample in samples {
+                let value = sample.quantityValue ?? 0.0
+                if value > 0 {
+                    // Get meal_type from metadata
+                    let mealType: String
+                    if let metadata = sample.metadata,
+                       let mealJson = metadata[nutrientType.mealMetadataKey],
+                       let mealStr = mealJson.stringValue {
+                        mealType = mealStr.lowercased()
+                    } else {
+                        mealType = "other"  // Default to "other" if no food_timing
+                    }
+                    mealTotals[mealType, default: []].append(value)
+                }
+            }
+
+            // For Day view: sum values directly
+            // For Week/Month/Year: calculate average per day from samples
+            if period == .day {
+                // Single day - sum values for each meal type
+                var totalValue: Double = 0
+                var mealsWithData = 0
+                for (mealId, values) in mealTotals {
+                    if !values.isEmpty {
+                        let sum = values.reduce(0, +)
+                        periodData[mealId] = sum
+                        totalValue += sum
+                        mealsWithData += 1
+                    }
+                }
+                periodData["avg_per_meal"] = mealsWithData > 0 ? totalValue / Double(mealsWithData) : 0
+                periodData["entries_count"] = Double(samples.count)
+            } else {
+                // Multiple days - calculate average per meal type
+                var totalValue: Double = 0
+                var mealsWithData = 0
+                for (mealId, values) in mealTotals {
+                    if !values.isEmpty {
+                        let average = values.reduce(0, +) / Double(values.count)
+                        periodData[mealId] = average
+                        totalValue += average
+                        mealsWithData += 1
+                    }
+                }
+                periodData["avg_per_meal"] = mealsWithData > 0 ? totalValue / Double(mealsWithData) : 0
+                periodData["entries_count"] = Double(mealsWithData)
+            }
 
         } catch {
             print("❌ Error loading period data: \(error)")
@@ -239,96 +279,120 @@ class NutrientTimingViewModel: ObservableObject {
         isLoading = false
     }
 
-    // MARK: - Period Calculation Helpers
-
-    private func getPeriodStart(for period: TimePeriod, date: Date) -> Date {
+    /// Returns the date range for querying based on the period
+    private func getDateRange(for period: TimePeriod, date: Date) -> (start: Date, end: Date) {
         let calendar = Calendar.current
         var utcCalendar = Calendar.current
         utcCalendar.timeZone = TimeZone(identifier: "UTC")!
 
+        let localComponents = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
+
         switch period {
         case .day:
-            let localComponents = calendar.dateComponents([.year, .month, .day], from: date)
             var utcComponents = DateComponents()
             utcComponents.year = localComponents.year
             utcComponents.month = localComponents.month
             utcComponents.day = localComponents.day
             utcComponents.hour = 0
-            utcComponents.minute = 0
-            utcComponents.second = 0
             utcComponents.timeZone = TimeZone(identifier: "UTC")
-            return utcCalendar.date(from: utcComponents)!
+            let dayStart = utcCalendar.date(from: utcComponents)!
+            return (dayStart, dayStart)
 
         case .week:
-            let localComponents = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
             let weekday = localComponents.weekday!
             let daysFromMonday = (weekday == 1) ? -6 : (2 - weekday)
             let localMonday = calendar.date(byAdding: .day, value: daysFromMonday, to: date)!
-            let mondayComponents = calendar.dateComponents([.year, .month, .day], from: localMonday)
+            let localSunday = calendar.date(byAdding: .day, value: 6, to: localMonday)!
 
-            var utcComponents = DateComponents()
-            utcComponents.year = mondayComponents.year
-            utcComponents.month = mondayComponents.month
-            utcComponents.day = mondayComponents.day
-            utcComponents.hour = 0
-            utcComponents.minute = 0
-            utcComponents.second = 0
-            utcComponents.timeZone = TimeZone(identifier: "UTC")
-            return utcCalendar.date(from: utcComponents)!
+            let mondayComponents = calendar.dateComponents([.year, .month, .day], from: localMonday)
+            let sundayComponents = calendar.dateComponents([.year, .month, .day], from: localSunday)
+
+            var startUtc = DateComponents()
+            startUtc.year = mondayComponents.year
+            startUtc.month = mondayComponents.month
+            startUtc.day = mondayComponents.day
+            startUtc.hour = 0
+            startUtc.timeZone = TimeZone(identifier: "UTC")
+
+            var endUtc = DateComponents()
+            endUtc.year = sundayComponents.year
+            endUtc.month = sundayComponents.month
+            endUtc.day = sundayComponents.day
+            endUtc.hour = 0
+            endUtc.timeZone = TimeZone(identifier: "UTC")
+
+            return (utcCalendar.date(from: startUtc)!, utcCalendar.date(from: endUtc)!)
 
         case .month:
-            let localComponents = calendar.dateComponents([.year, .month], from: date)
-            var utcComponents = DateComponents()
-            utcComponents.year = localComponents.year
-            utcComponents.month = localComponents.month
-            utcComponents.day = 1
-            utcComponents.hour = 0
-            utcComponents.minute = 0
-            utcComponents.second = 0
-            utcComponents.timeZone = TimeZone(identifier: "UTC")
-            return utcCalendar.date(from: utcComponents)!
+            var startUtc = DateComponents()
+            startUtc.year = localComponents.year
+            startUtc.month = localComponents.month
+            startUtc.day = 1
+            startUtc.hour = 0
+            startUtc.timeZone = TimeZone(identifier: "UTC")
+
+            let lastDay = calendar.range(of: .day, in: .month, for: date)!.count
+            var endUtc = DateComponents()
+            endUtc.year = localComponents.year
+            endUtc.month = localComponents.month
+            endUtc.day = lastDay
+            endUtc.hour = 0
+            endUtc.timeZone = TimeZone(identifier: "UTC")
+
+            return (utcCalendar.date(from: startUtc)!, utcCalendar.date(from: endUtc)!)
 
         case .sixMonth:
-            let localComponents = calendar.dateComponents([.year, .month], from: date)
-            let year = localComponents.year!
-            let month = localComponents.month!
-            let startMonth = month <= 6 ? 1 : 7
+            let sixMonthsAgo = calendar.date(byAdding: .month, value: -6, to: date)!
+            let startComponents = calendar.dateComponents([.year, .month, .day], from: sixMonthsAgo)
 
-            var utcComponents = DateComponents()
-            utcComponents.year = year
-            utcComponents.month = startMonth
-            utcComponents.day = 1
-            utcComponents.hour = 0
-            utcComponents.minute = 0
-            utcComponents.second = 0
-            utcComponents.timeZone = TimeZone(identifier: "UTC")
-            return utcCalendar.date(from: utcComponents)!
+            var startUtc = DateComponents()
+            startUtc.year = startComponents.year
+            startUtc.month = startComponents.month
+            startUtc.day = startComponents.day
+            startUtc.hour = 0
+            startUtc.timeZone = TimeZone(identifier: "UTC")
+
+            var endUtc = DateComponents()
+            endUtc.year = localComponents.year
+            endUtc.month = localComponents.month
+            endUtc.day = localComponents.day
+            endUtc.hour = 0
+            endUtc.timeZone = TimeZone(identifier: "UTC")
+
+            return (utcCalendar.date(from: startUtc)!, utcCalendar.date(from: endUtc)!)
 
         case .year:
-            let localComponents = calendar.dateComponents([.year], from: date)
-            var utcComponents = DateComponents()
-            utcComponents.year = localComponents.year
-            utcComponents.month = 1
-            utcComponents.day = 1
-            utcComponents.hour = 0
-            utcComponents.minute = 0
-            utcComponents.second = 0
-            utcComponents.timeZone = TimeZone(identifier: "UTC")
-            return utcCalendar.date(from: utcComponents)!
+            let yearAgo = calendar.date(byAdding: .year, value: -1, to: date)!
+            let startComponents = calendar.dateComponents([.year, .month, .day], from: yearAgo)
+
+            var startUtc = DateComponents()
+            startUtc.year = startComponents.year
+            startUtc.month = startComponents.month
+            startUtc.day = startComponents.day
+            startUtc.hour = 0
+            startUtc.timeZone = TimeZone(identifier: "UTC")
+
+            var endUtc = DateComponents()
+            endUtc.year = localComponents.year
+            endUtc.month = localComponents.month
+            endUtc.day = localComponents.day
+            endUtc.hour = 0
+            endUtc.timeZone = TimeZone(identifier: "UTC")
+
+            return (utcCalendar.date(from: startUtc)!, utcCalendar.date(from: endUtc)!)
         }
     }
 
     /// Loads chart data for stacked bar visualization
+    /// Queries patient_quantity_samples and groups by food_timing metadata
     func loadData(for period: TimePeriod) async {
         isLoading = true
         mealDataCache.removeAll()
 
         do {
-            let userId = try await supabase.auth.session.user.id
-            let periodType = period.databasePeriodType
-            let aggIds = mealAggregations.map { $0.aggId }
+            let mealIds = mealAggregations.map { $0.aggId }
 
-            // Calculate date range
+            // Calculate date range for scrolling chart
             let now = Date()
             let calendar = Calendar.current
             let newestDate = calendar.date(byAdding: .month, value: 1, to: now) ?? now
@@ -347,34 +411,70 @@ class NutrientTimingViewModel: ObservableObject {
                 oldestDate = calendar.date(byAdding: .year, value: -3, to: now) ?? now
             }
 
-            // Fetch data
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
+            // Query patient_quantity_samples
+            struct ChartSample: Codable {
+                let aggregationDate: String
+                let quantityValue: Double?
+                let metadata: [String: AnyJSON]?
+
+                enum CodingKeys: String, CodingKey {
+                    case aggregationDate = "aggregation_date"
+                    case quantityValue = "quantity_value"
+                    case metadata
+                }
+            }
+
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let startStr = dateFormatter.string(from: oldestDate)
+            let endStr = dateFormatter.string(from: newestDate)
+
+            let userId = try await supabase.auth.session.user.id
+            let samples: [ChartSample] = try await supabase
+                .from("patient_quantity_samples")
+                .select("aggregation_date, quantity_value, metadata")
                 .eq("patient_id", value: userId)
-                .in("agg_metric_id", values: aggIds)
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: "SUM")
-                .gte("period_start", value: oldestDate.ISO8601Format())
-                .lte("period_start", value: newestDate.ISO8601Format())
-                .order("period_start", ascending: true)
+                .eq("quantity_type", value: nutrientType.quantityType)
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("aggregation_date", value: startStr)
+                .lte("aggregation_date", value: endStr)
+                .order("aggregation_date", ascending: true)
                 .execute()
                 .value
 
-            print("🍽️ Fetched \(results.count) chart data points for \(nutrientType.displayName)")
+            print("🍽️ Fetched \(samples.count) chart samples for \(nutrientType.displayName)")
 
-            // Group by agg_metric_id
-            for result in results {
-                if mealDataCache[result.aggMetricId] == nil {
-                    mealDataCache[result.aggMetricId] = []
+            // Initialize cache for each meal type
+            for mealId in mealIds {
+                mealDataCache[mealId] = []
+            }
+
+            // Group by meal_type from metadata
+            for sample in samples {
+                let value = sample.quantityValue ?? 0.0
+                if value > 0 {
+                    // Get meal_type from metadata
+                    let mealType: String
+                    if let metadata = sample.metadata,
+                       let mealJson = metadata[nutrientType.mealMetadataKey],
+                       let mealStr = mealJson.stringValue {
+                        mealType = mealStr.lowercased()
+                    } else {
+                        mealType = "other"
+                    }
+
+                    // Parse aggregation_date as local noon to avoid DST/timezone edge cases
+                    let noonFormatter = DateFormatter()
+                    noonFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+                    noonFormatter.timeZone = TimeZone.current
+                    if let date = noonFormatter.date(from: sample.aggregationDate + " 12:00") {
+                        mealDataCache[mealType, default: []].append(ChartDataPoint(
+                            date: date,
+                            value: value,
+                            label: ""
+                        ))
+                    }
                 }
-                let isHourly = periodType == "hourly"
-                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
-                mealDataCache[result.aggMetricId]?.append(ChartDataPoint(
-                    date: localDate,
-                    value: result.value ?? 0.0,
-                    label: ""
-                ))
             }
 
             buildChartData(for: period)

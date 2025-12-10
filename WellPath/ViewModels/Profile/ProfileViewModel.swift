@@ -8,26 +8,17 @@
 import Foundation
 import Supabase
 
+/// Patient basic info from patients table
+/// Note: Characteristics (biological_sex, date_of_birth, height, etc.) are stored in patient_characteristics
 struct PatientDetails: Codable {
     let patientId: UUID
     var firstName: String?
     var lastName: String?
     var email: String?
     var phone: String?
-    let gender: String?
-    var biologicalSex: String?
-    var dateOfBirth: String?
-    var heightCm: Double?
-    let menopausalStatus: String?
-    var isAthlete: Bool?
     var profileImageUrl: String?
     let medicalPracticeId: UUID?
     let assignedClinicianId: UUID?
-
-    // Advanced test flags
-    var hasDexaScan: Bool?
-    var hasTrudiagnosticTest: Bool?
-    var muscleMassRating: Int?
 
     enum CodingKeys: String, CodingKey {
         case patientId = "patient_id"
@@ -35,18 +26,9 @@ struct PatientDetails: Codable {
         case lastName = "last_name"
         case email
         case phone
-        case gender
-        case biologicalSex = "biological_sex"
-        case dateOfBirth = "date_of_birth"
-        case heightCm = "height_cm"
-        case menopausalStatus = "menopausal_status"
-        case isAthlete = "is_athlete"
         case profileImageUrl = "profile_image_url"
         case medicalPracticeId = "medical_practice_id"
         case assignedClinicianId = "assigned_clinician_id"
-        case hasDexaScan = "has_dexa_scan"
-        case hasTrudiagnosticTest = "has_trudiagnostic_test"
-        case muscleMassRating = "muscle_mass_rating"
     }
 }
 

@@ -26,40 +26,7 @@ struct BehaviorsDetailView: View {
 
     var body: some View {
         contentView
-            .background(
-                ZStack {
-                    // Background gradient
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [
-                                behaviorsColor.opacity(0.65),
-                                behaviorsColor.opacity(0.45),
-                                behaviorsColor.opacity(0.25),
-                                behaviorsColor.opacity(0.1),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 900)
-                        Spacer()
-                    }
-
-                    // Large background icon
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "figure.walk")
-                                .font(.system(size: 200))
-                                .foregroundStyle(Color.white.opacity(0.2))
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 50, y: -50)
-                        }
-                        Spacer()
-                    }
-                }
-                .ignoresSafeArea()
-            )
+            .metricScreenBackground(color: behaviorsColor)
             .navigationTitle("Behaviors")
             .navigationBarTitleDisplayMode(.large)
             .task {

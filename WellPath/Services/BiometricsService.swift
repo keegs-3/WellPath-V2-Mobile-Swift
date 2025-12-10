@@ -8,37 +8,188 @@
 import Foundation
 import Supabase
 
+// MARK: - Helper structs for queries
+
+/// Clinical sample row for reading biomarkers from patient_clinical_samples
+private struct ClinicalSampleRow: Codable {
+    let id: UUID
+    let patientId: UUID
+    let clinicalType: String
+    let value: Double?
+    let unit: String?
+    let sampleTime: Date
+    let source: String?
+    let labName: String?
+    let cycleStage: String?
+    let createdAt: String?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case patientId = "patient_id"
+        case clinicalType = "clinical_type"
+        case value
+        case unit
+        case sampleTime = "sample_time"
+        case source
+        case labName = "lab_name"
+        case cycleStage = "cycle_stage"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// Quantity sample row for reading biometrics from patient_quantity_samples
+private struct QuantitySampleRow: Codable {
+    let id: UUID
+    let patientId: UUID
+    let quantityType: String
+    let quantityValue: Double?
+    let quantityUnit: String?
+    let startTime: Date
+    let source: String?
+    let metadata: [String: String]?
+    let createdAt: String?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case patientId = "patient_id"
+        case quantityType = "quantity_type"
+        case quantityValue = "quantity_value"
+        case quantityUnit = "quantity_unit"
+        case startTime = "start_time"
+        case source
+        case metadata
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// Mapping from quantity_type to display_name
+private struct QuantityTypeMapping: Codable {
+    let quantityType: String
+    let displayName: String
+
+    enum CodingKeys: String, CodingKey {
+        case quantityType = "quantity_type"
+        case displayName = "display_name"
+    }
+}
+
+/// Mapping from name_backend to biometric_name
+private struct BiometricNameMapping: Codable {
+    let nameBackend: String
+    let biometricName: String
+
+    enum CodingKeys: String, CodingKey {
+        case nameBackend = "name_backend"
+        case biometricName = "biometric_name"
+    }
+}
+
 @MainActor
 class BiometricsService: ObservableObject {
     private let supabase = SupabaseManager.shared.client
 
     // MARK: - Fetch Biomarker Readings for User
     func fetchBiomarkerReadings(for userId: UUID) async throws -> [BiomarkerReading] {
-        // Use view that casts numeric to double precision for Swift JSON compatibility
-        let response: [BiomarkerReading] = try await supabase
-            .from("patient_biomarker_readings_v")
-            .select()
+        // Query patient_clinical_samples for biomarker data
+        let samples: [ClinicalSampleRow] = try await supabase
+            .from("patient_clinical_samples")
+            .select("id, patient_id, clinical_type, value, unit, sample_time, source, lab_name, cycle_stage, created_at, updated_at")
             .eq("patient_id", value: userId.uuidString)
-            .order("test_date", ascending: false)
+            .order("sample_time", ascending: false)
             .execute()
             .value
 
-        return response
+        // Get display name mappings from sample_clinical_types
+        struct ClinicalTypeMapping: Codable {
+            let clinicalType: String
+            let displayName: String
+
+            enum CodingKeys: String, CodingKey {
+                case clinicalType = "clinical_type"
+                case displayName = "display_name"
+            }
+        }
+
+        let types: [ClinicalTypeMapping] = try await supabase
+            .from("sample_clinical_types")
+            .select("clinical_type, display_name")
+            .execute()
+            .value
+
+        let nameMap = Dictionary(uniqueKeysWithValues: types.map { ($0.clinicalType, $0.displayName) })
+        let dateFormatter = ISO8601DateFormatter()
+
+        return samples.map { sample in
+            BiomarkerReading(
+                id: sample.id,
+                patientId: sample.patientId,
+                biomarkerName: nameMap[sample.clinicalType] ?? sample.clinicalType,
+                value: sample.value ?? 0,
+                unit: sample.unit ?? "",
+                testDate: dateFormatter.string(from: sample.sampleTime),
+                source: sample.source,
+                notes: nil,  // Notes are now in metadata if needed
+                cyclePhase: sample.cycleStage,
+                createdAt: sample.createdAt,
+                updatedAt: sample.updatedAt
+            )
+        }
     }
 
     // MARK: - Fetch Specific Biomarker History
     func fetchBiomarkerHistory(biomarkerName: String, userId: UUID) async throws -> [BiomarkerReading] {
-        // Use view that casts numeric to double precision for Swift JSON compatibility
-        let response: [BiomarkerReading] = try await supabase
-            .from("patient_biomarker_readings_v")
-            .select()
-            .eq("patient_id", value: userId.uuidString)
-            .eq("biomarker_name", value: biomarkerName)
-            .order("test_date", ascending: false)
+        // First get the clinical_type for this biomarker display name
+        struct ClinicalTypeMapping: Codable {
+            let clinicalType: String
+            let displayName: String
+
+            enum CodingKeys: String, CodingKey {
+                case clinicalType = "clinical_type"
+                case displayName = "display_name"
+            }
+        }
+
+        let types: [ClinicalTypeMapping] = try await supabase
+            .from("sample_clinical_types")
+            .select("clinical_type, display_name")
+            .eq("display_name", value: biomarkerName)
             .execute()
             .value
 
-        return response
+        guard let clinicalType = types.first?.clinicalType else {
+            return []
+        }
+
+        let samples: [ClinicalSampleRow] = try await supabase
+            .from("patient_clinical_samples")
+            .select("id, patient_id, clinical_type, value, unit, sample_time, source, lab_name, cycle_stage, created_at, updated_at")
+            .eq("patient_id", value: userId.uuidString)
+            .eq("clinical_type", value: clinicalType)
+            .order("sample_time", ascending: false)
+            .execute()
+            .value
+
+        let dateFormatter = ISO8601DateFormatter()
+
+        return samples.map { sample in
+            BiomarkerReading(
+                id: sample.id,
+                patientId: sample.patientId,
+                biomarkerName: biomarkerName,
+                value: sample.value ?? 0,
+                unit: sample.unit ?? "",
+                testDate: dateFormatter.string(from: sample.sampleTime),
+                source: sample.source,
+                notes: nil,  // Notes now in metadata if needed
+                cyclePhase: sample.cycleStage,
+                createdAt: sample.createdAt,
+                updatedAt: sample.updatedAt
+            )
+        }
     }
 
     // MARK: - Fetch Biomarker Range Details
@@ -168,50 +319,51 @@ class BiometricsService: ObservableObject {
             return nil
         }
 
-        // If it has a unit, fetch the display from units_base
-        if let unitId = biomarker.units {
-            let unitResponse: [[String: String]] = try await supabase
-                .from("units_base")
-                .select("ui_display")
-                .eq("unit_id", value: unitId)
-                .limit(1)
-                .execute()
-                .value
-
-            if let unitDisplay = unitResponse.first?["ui_display"] {
-                // Create a new biomarker with the unit display
-                return BiomarkerBase(
-                    id: biomarker.id,
-                    markerId: biomarker.markerId,
-                    biomarkerName: biomarker.biomarkerName,
-                    category: biomarker.category,
-                    units: biomarker.units,
-                    unitDisplay: unitDisplay,
-                    format: biomarker.format,
-                    isActive: biomarker.isActive,
-                    aboutWhy: biomarker.aboutWhy,
-                    aboutOptimalTarget: biomarker.aboutOptimalTarget,
-                    aboutQuickTips: biomarker.aboutQuickTips,
-                    education: biomarker.education
-                )
-            }
-        }
-
         return biomarker
     }
 
     // MARK: - Fetch Biometric Readings for User
     func fetchBiometricReadings(for userId: UUID) async throws -> [BiometricReading] {
-        // Use view that casts numeric to double precision for Swift JSON compatibility
-        let response: [BiometricReading] = try await supabase
-            .from("patient_biometric_readings_v")
-            .select()
-            .eq("patient_id", value: userId.uuidString)
-            .order("recorded_at", ascending: false)
+        // Get biometric name mappings from biometrics_base
+        let biometricTypes: [BiometricNameMapping] = try await supabase
+            .from("biometrics_base")
+            .select("name_backend, biometric_name")
+            .eq("is_active", value: true)
             .execute()
             .value
 
-        return response
+        let nameBackendSet = Set(biometricTypes.map { $0.nameBackend })
+        let nameMap = Dictionary(uniqueKeysWithValues: biometricTypes.map { ($0.nameBackend, $0.biometricName) })
+
+        // Query patient_quantity_samples for biometric data
+        let samples: [QuantitySampleRow] = try await supabase
+            .from("patient_quantity_samples")
+            .select("id, patient_id, quantity_type, quantity_value, quantity_unit, start_time, source, metadata, created_at, updated_at")
+            .eq("patient_id", value: userId.uuidString)
+            .eq("is_primary", value: true)  // Only use primary samples for analysis
+            .order("start_time", ascending: false)
+            .execute()
+            .value
+
+        let dateFormatter = ISO8601DateFormatter()
+
+        // Filter to only biometric types (those in biometrics_base) and transform
+        return samples
+            .filter { nameBackendSet.contains($0.quantityType) }
+            .map { sample in
+                BiometricReading(
+                    id: sample.id,
+                    patientId: sample.patientId,
+                    biometricName: nameMap[sample.quantityType] ?? sample.quantityType,
+                    value: sample.quantityValue ?? 0,
+                    unit: sample.quantityUnit ?? "",
+                    recordedAt: dateFormatter.string(from: sample.startTime),
+                    source: sample.source,
+                    notes: sample.metadata?["notes"],
+                    createdAt: sample.createdAt,
+                    updatedAt: sample.updatedAt
+                )
+            }
     }
 
     // MARK: - Fetch Biometrics Base Info with Unit Display

@@ -310,6 +310,31 @@ struct MealTimingStackedChart: View {
 
 // MARK: - ViewModel
 
+/// Raw protein sample from patient_quantity_samples
+private struct MealProteinSampleRow: Codable {
+    let quantityValue: Double?
+    let startTime: Date
+    let aggregationDateString: String?
+    let metadata: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case quantityValue = "quantity_value"
+        case startTime = "start_time"
+        case aggregationDateString = "aggregation_date"
+        case metadata
+    }
+
+    /// Parse aggregation_date as a local date (noon to avoid DST issues)
+    /// The database DATE represents a calendar day, not a UTC timestamp
+    var aggregationDate: Date? {
+        guard let dateString = aggregationDateString else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.timeZone = TimeZone.current  // Parse as local time, not UTC
+        return formatter.date(from: dateString + " 12:00")  // Noon local to avoid DST edge cases
+    }
+}
+
 @MainActor
 class MealTimingViewModel: ObservableObject {
     @Published var mealAggregations: [MealAggregation] = []
@@ -321,96 +346,76 @@ class MealTimingViewModel: ObservableObject {
     let supabase = SupabaseManager.shared.client // Internal access for extensions
     private let baseColor: Color
 
+    // Fixed list of meal types from metadata
+    private let mealTypeKeys = [
+        "breakfast",
+        "morning_snack",
+        "lunch",
+        "afternoon_snack",
+        "dinner",
+        "evening_snack",
+        "other",
+        "unassigned"
+    ]
+
+    private let mealDisplayNames: [String: String] = [
+        "breakfast": "Breakfast",
+        "morning_snack": "Morning Snack",
+        "lunch": "Lunch",
+        "afternoon_snack": "Afternoon Snack",
+        "dinner": "Dinner",
+        "evening_snack": "Evening Snack",
+        "other": "Other",
+        "unassigned": "Unassigned"
+    ]
+
     init(baseColor: Color) {
         self.baseColor = baseColor
     }
 
     func discoverMealAggregations() async {
-        do {
-            struct AggMetric: Codable {
-                let aggId: String
-                let metricName: String
-                let displayName: String
+        // Build meal aggregations from fixed list instead of querying database
+        let colorCount = Double(mealTypeKeys.count)
 
-                enum CodingKeys: String, CodingKey {
-                    case aggId = "agg_id"
-                    case metricName = "metric_name"
-                    case displayName = "display_name"
-                }
+        mealAggregations = mealTypeKeys.enumerated().map { index, mealKey in
+            let isOther = mealKey == "other"
+            let isUnassigned = mealKey == "unassigned"
+
+            let progress = colorCount > 1 ? Double(index) / (colorCount - 1) : 0
+            let opacity = 0.55 + (progress * 0.45)
+
+            let displayName = mealDisplayNames[mealKey] ?? mealKey.capitalized.replacingOccurrences(of: "_", with: " ")
+            let color: Color
+
+            if isOther {
+                color = Color(red: 0.9, green: 0.9, blue: 0.9)
+            } else if isUnassigned {
+                color = Color(red: 0.85, green: 0.85, blue: 0.85)
+            } else {
+                color = baseColor.opacity(opacity)
             }
 
-            let results: [AggMetric] = try await supabase
-                .from("aggregation_metrics")
-                .select("agg_id, metric_name, display_name")
-                .or("metric_name.like.%protein%breakfast%,metric_name.like.%protein%lunch%,metric_name.like.%protein%dinner%,metric_name.like.%protein%snack%,agg_id.eq.AGG_PROTEIN_OTHER_GRAMS,agg_id.eq.AGG_PROTEIN_UNASSIGNED_GRAMS")
-                .execute()
-                .value
-
-            print("🍽️ Discovered \(results.count) meal aggregations")
-
-            // Sort meals chronologically
-            let mealOrder: [String: Int] = [
-                "Breakfast Protein": 1,
-                "Morning Snack Protein": 2,
-                "Lunch Protein": 3,
-                "Afternoon Snack Protein": 4,
-                "Dinner Protein": 5,
-                "Evening Snack Protein": 6,
-                "Other": 98,
-                "Unassigned": 99
-            ]
-
-            let colorCount = Double(results.count)
-            mealAggregations = results.enumerated().sorted(by: {
-                let order1 = mealOrder[$0.element.displayName] ?? 99
-                let order2 = mealOrder[$1.element.displayName] ?? 99
-                return order1 < order2
-            }).map { index, agg in
-                // Check if this is other or unassigned category
-                let isOther = agg.aggId == "AGG_PROTEIN_OTHER_GRAMS"
-                let isUnassigned = agg.aggId == "AGG_PROTEIN_UNASSIGNED_GRAMS"
-
-                let progress = colorCount > 1 ? Double(index) / (colorCount - 1) : 0
-                let opacity = 0.55 + (progress * 0.45)
-
-                let cleanName: String
-                let color: Color
-
-                if isOther {
-                    cleanName = "Other"
-                    color = Color(red: 0.9, green: 0.9, blue: 0.9)  // Very light grey for other
-                } else if isUnassigned {
-                    cleanName = "Unassigned"
-                    color = Color(red: 0.85, green: 0.85, blue: 0.85)  // Light grey for unassigned
-                } else {
-                    cleanName = agg.displayName.replacingOccurrences(of: " Protein", with: "")
-                    color = baseColor.opacity(opacity)
-                }
-
-                return MealAggregation(
-                    aggId: agg.aggId,
-                    displayName: cleanName,
-                    color: color
-                )
-            }
-
-        } catch {
-            print("❌ Error discovering meal aggregations: \(error)")
+            return MealAggregation(
+                aggId: mealKey,  // Use meal_type key as ID
+                displayName: displayName,
+                color: color
+            )
         }
+
+        print("🍽️ Configured \(mealAggregations.count) meal types")
     }
 
+    /// Load chart data from patient_quantity_samples with meal_type metadata
     func loadData(for period: TimePeriod) async {
         isLoading = true
         mealDataCache.removeAll()
 
         do {
             let userId = try await supabase.auth.session.user.id
-            let periodType = period.databasePeriodType
-            let aggIds = mealAggregations.map { $0.aggId }
-
-            // Calculate date range for query - small initial ranges for performance
-            let now = Date()
             let calendar = Calendar.current
+
+            // Calculate date range for query
+            let now = Date()
             let newestDate = calendar.date(byAdding: .month, value: 1, to: now) ?? now
 
             let oldestDate: Date
@@ -427,36 +432,51 @@ class MealTimingViewModel: ObservableObject {
                 oldestDate = calendar.date(byAdding: .year, value: -3, to: now) ?? now
             }
 
-            // Fetch meal data with date range filters
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
+            // Fetch all protein samples with metadata
+            let results: [MealProteinSampleRow] = try await supabase
+                .from("patient_quantity_samples")
+                .select("quantity_value, start_time, aggregation_date, metadata")
                 .eq("patient_id", value: userId)
-                .in("agg_metric_id", values: aggIds)
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: "SUM")
-                .gte("period_start", value: oldestDate.ISO8601Format())
-                .lte("period_start", value: newestDate.ISO8601Format())
-                .order("period_start", ascending: true)
+                .eq("quantity_type", value: "protein_grams")
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("start_time", value: oldestDate.ISO8601Format())
+                .lte("start_time", value: newestDate.ISO8601Format())
+                .order("start_time", ascending: true)
                 .execute()
                 .value
 
-            print("🍽️ Fetched \(results.count) meal data points for range \(oldestDate) to \(newestDate)")
+            print("🍽️ Fetched \(results.count) protein samples for range \(oldestDate) to \(newestDate)")
 
-            // Group by agg_metric_id
-            for result in results {
-                if mealDataCache[result.aggMetricId] == nil {
-                    mealDataCache[result.aggMetricId] = []
+            // Group by meal_type from metadata
+            for sample in results {
+                guard let value = sample.quantityValue, value > 0 else { continue }
+
+                // Get meal_type from metadata (default to "unassigned")
+                let mealType = sample.metadata?["meal_type"] ?? "unassigned"
+
+                // For day view, use hour granularity; otherwise use aggregation_date or start of day
+                let groupDate: Date
+                if period == .day {
+                    let components = calendar.dateComponents([.year, .month, .day, .hour], from: sample.startTime)
+                    groupDate = calendar.date(from: components) ?? sample.startTime
+                } else {
+                    groupDate = sample.aggregationDate ?? calendar.startOfDay(for: sample.startTime)
                 }
-                // Convert UTC period_start to local date for timeline matching
-                // For hourly data, use standard UTC→local conversion; for daily+, extract UTC date as local
-                let isHourly = periodType == "hourly"
-                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
-                mealDataCache[result.aggMetricId]?.append(ChartDataPoint(
-                    date: localDate,
-                    value: result.value ?? 0.0,
-                    label: ""
-                ))
+
+                if mealDataCache[mealType] == nil {
+                    mealDataCache[mealType] = []
+                }
+
+                // Find existing point for this date or create new one
+                if let existingIndex = mealDataCache[mealType]?.firstIndex(where: {
+                    calendar.isDate($0.date, equalTo: groupDate, toGranularity: period == .day ? .hour : .day)
+                }) {
+                    let existing = mealDataCache[mealType]![existingIndex]
+                    let newPoint = ChartDataPoint(date: existing.date, value: existing.value + value, label: existing.label)
+                    mealDataCache[mealType]?[existingIndex] = newPoint
+                } else {
+                    mealDataCache[mealType]?.append(ChartDataPoint(date: groupDate, value: value, label: ""))
+                }
             }
 
             // Build stacked chart data
@@ -470,14 +490,13 @@ class MealTimingViewModel: ObservableObject {
     }
 
     private func buildChartData(for period: TimePeriod) {
-        // EXACT InfiniteScrollChartManager pattern: generate complete timeline
         let now = Date()
         let calendar = Calendar.current
 
         // Extend into future by 1 month
         let newestDate = calendar.date(byAdding: .month, value: 1, to: now) ?? now
 
-        // Calculate oldest date based on period - start with small ranges for performance
+        // Calculate oldest date based on period
         let oldestDate: Date
         switch period {
         case .day:
@@ -542,8 +561,8 @@ class MealTimingViewModel: ObservableObject {
         }
     }
 
-    func getAverageFor(_ aggId: String, period: TimePeriod, scrollPosition: Date) -> Double {
-        guard let points = mealDataCache[aggId] else { return 0 }
+    func getAverageFor(_ mealKey: String, period: TimePeriod, scrollPosition: Date) -> Double {
+        guard let points = mealDataCache[mealKey] else { return 0 }
 
         let visibleDuration = getVisibleDomainTimeInterval(for: period)
         guard let endDate = Calendar.current.date(byAdding: .second, value: Int(visibleDuration), to: scrollPosition) else {
@@ -563,14 +582,13 @@ class MealTimingViewModel: ObservableObject {
             return sum
         case .week, .month, .sixMonth, .year:
             // Other views: Calculate daily AVERAGE including nulls
-            // Divide by expected number of data points in visible range
             let expectedCount = period.numberOfBars
             return sum / Double(expectedCount)
         }
     }
 
-    func getPercentageFor(_ aggId: String, period: TimePeriod, scrollPosition: Date) -> Double {
-        let mealAverage = getAverageFor(aggId, period: period, scrollPosition: scrollPosition)
+    func getPercentageFor(_ mealKey: String, period: TimePeriod, scrollPosition: Date) -> Double {
+        let mealAverage = getAverageFor(mealKey, period: period, scrollPosition: scrollPosition)
 
         // Calculate total across all meals
         let totalAverage = mealAggregations.reduce(0.0) { sum, meal in

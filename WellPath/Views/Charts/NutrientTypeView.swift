@@ -220,8 +220,8 @@ struct NutrientTypeView: View {
                 }
             }
             .padding(.bottom, 16)
+            .background(Color(uiColor: .systemGroupedBackground))
         }
-        // Background provided by parent via metricScreenBackground modifier
         .sheet(isPresented: $showScoringExplanation) {
             varietyScoreExplanationModal
         }

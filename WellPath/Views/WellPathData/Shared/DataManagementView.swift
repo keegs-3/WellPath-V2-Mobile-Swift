@@ -295,9 +295,9 @@ class DataManagementViewModel: ObservableObject {
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string: \(dateString)")
             }
 
-            // Query patient_samples for the specified quantity types
+            // Query patient_quantity_samples for the specified quantity types
             let query = supabase
-                .from("patient_samples")
+                .from("patient_quantity_samples")
                 .select()
                 .eq("patient_id", value: patientId.uuidString)
                 .in("quantity_type", values: quantityTypes)
@@ -345,7 +345,7 @@ class DataManagementViewModel: ObservableObject {
                 return
             }
 
-            // Delete each entry from patient_samples
+            // Delete each entry from patient_quantity_samples
             for entry in entries {
                 // Verify this entry belongs to the current user
                 guard entry.patientId == patientId else {
@@ -353,9 +353,9 @@ class DataManagementViewModel: ObservableObject {
                     continue
                 }
 
-                // Delete from patient_samples
+                // Delete from patient_quantity_samples
                 try await supabase
-                    .from("patient_samples")
+                    .from("patient_quantity_samples")
                     .delete()
                     .eq("id", value: entry.id.uuidString)
                     .eq("patient_id", value: patientId.uuidString)
@@ -375,11 +375,10 @@ class DataManagementViewModel: ObservableObject {
 
 // MARK: - Models
 
-/// Raw sample from patient_samples table
+/// Raw sample from patient_quantity_samples table
 struct RawDataSample: Codable {
     let id: UUID
     let patientId: UUID
-    let sampleType: String
     let startTime: Date
     let endTime: Date
     let quantityValue: Double?
@@ -391,7 +390,6 @@ struct RawDataSample: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case patientId = "patient_id"
-        case sampleType = "sample_type"
         case startTime = "start_time"
         case endTime = "end_time"
         case quantityValue = "quantity_value"

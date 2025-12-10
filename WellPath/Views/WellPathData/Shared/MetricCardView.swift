@@ -15,12 +15,18 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
     let fullScreenContent: FullScreenContent
     let metricId: String?
     let pillar: String?
+    let cardId: String?      // For favorites: links to display_view_cards
+    let sectionId: String?   // For favorites: links to display_category_sections
+    let itemType: FavoriteItemType  // For favorites: metric, biomarker, biometric
 
     init(
         title: String,
         color: Color,
         metricId: String? = nil,
         pillar: String? = nil,
+        cardId: String? = nil,
+        sectionId: String? = nil,
+        itemType: FavoriteItemType = .metric,
         @ViewBuilder content: () -> Content,
         @ViewBuilder fullScreen: () -> FullScreenContent
     ) {
@@ -28,6 +34,9 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
         self.color = color
         self.metricId = metricId
         self.pillar = pillar
+        self.cardId = cardId
+        self.sectionId = sectionId
+        self.itemType = itemType
         self.content = content()
         self.fullScreenContent = fullScreen()
     }
@@ -48,11 +57,14 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
 
                     // Favorite star (if metricId provided)
                     if let metricId = metricId {
-                        MetricFavoriteStar(
-                            metricId: metricId,
+                        FavoriteButton(
+                            itemType: itemType,
+                            itemId: metricId,
                             displayName: title,
                             pillar: pillar ?? "",
-                            color: color
+                            cardId: cardId,
+                            sectionId: sectionId,
+                            size: .compact
                         )
                     }
 
@@ -76,44 +88,6 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
     }
 }
 
-// MARK: - Metric Favorite Star (inline, small)
-
-struct MetricFavoriteStar: View {
-    let metricId: String
-    let displayName: String
-    let pillar: String
-    let color: Color
-
-    @ObservedObject private var favoritesService = FavoritesService.shared
-    @State private var isAnimating = false
-
-    private var isFavorite: Bool {
-        favoritesService.isFavorite(type: .metric, id: metricId)
-    }
-
-    var body: some View {
-        Button {
-            isAnimating = true
-            Task {
-                await favoritesService.toggleFavorite(
-                    type: .metric,
-                    id: metricId,
-                    displayName: displayName,
-                    pillar: pillar
-                )
-                isAnimating = false
-            }
-        } label: {
-            Image(systemName: isFavorite ? "star.fill" : "star")
-                .font(.system(size: 14))
-                .foregroundColor(isFavorite ? .yellow : .secondary.opacity(0.5))
-                .scaleEffect(isAnimating ? 1.3 : 1.0)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isAnimating)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
 // Convenience initializer for cards without full-screen expansion (rare case)
 extension MetricCardView where FullScreenContent == EmptyView {
     init(
@@ -121,12 +95,18 @@ extension MetricCardView where FullScreenContent == EmptyView {
         color: Color,
         metricId: String? = nil,
         pillar: String? = nil,
+        cardId: String? = nil,
+        sectionId: String? = nil,
+        itemType: FavoriteItemType = .metric,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.color = color
         self.metricId = metricId
         self.pillar = pillar
+        self.cardId = cardId
+        self.sectionId = sectionId
+        self.itemType = itemType
         self.content = content()
         self.fullScreenContent = EmptyView()
     }
@@ -134,10 +114,10 @@ extension MetricCardView where FullScreenContent == EmptyView {
 
 // MARK: - Metric Screen Background ViewModifier
 
-/// Adds the standard gradient background with watermark icon for metric detail screens
+/// Adds the standard gradient background with topographic pattern for metric detail screens
+/// The pattern covers the full screen and fades out gradually (no abrupt cutoff)
 struct MetricScreenBackground: ViewModifier {
     let color: Color
-    let icon: String
 
     func body(content: Content) -> some View {
         content
@@ -157,17 +137,10 @@ struct MetricScreenBackground: ViewModifier {
                         Spacer()
                     }
 
-                    // Watermark icon
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: icon)
-                                .font(.system(size: 200))
-                                .foregroundStyle(Color.white.opacity(0.2))
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 50, y: -50)
-                        }
-                        Spacer()
+                    // Topographic pattern overlay - covers full screen, fades naturally
+                    GeometryReader { geo in
+                        TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
+                            .frame(width: geo.size.width, height: geo.size.height)
                     }
                 }
                 .ignoresSafeArea()
@@ -176,9 +149,9 @@ struct MetricScreenBackground: ViewModifier {
 }
 
 extension View {
-    /// Applies the standard metric screen gradient background with icon watermark
-    func metricScreenBackground(color: Color, icon: String) -> some View {
-        modifier(MetricScreenBackground(color: color, icon: icon))
+    /// Applies the standard metric screen gradient background with topographic pattern
+    func metricScreenBackground(color: Color) -> some View {
+        modifier(MetricScreenBackground(color: color))
     }
 }
 

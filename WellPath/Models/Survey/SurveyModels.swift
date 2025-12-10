@@ -775,7 +775,8 @@ enum PlanExceptionType: String, Codable, CaseIterable {
 /// This is the SINGLE SOURCE OF TRUTH - no separate selectedOptionIds/freeText/rankedOptions
 struct QuestionResponse: Equatable {
     let questionNumber: String
-    var selectedOptionIds: Set<String>  // Using optionId strings (e.g., "RO_8.01-1")
+    var selectedOptionIds: Set<String>  // Using optionId strings (e.g., "RO_8.01-1") or UUIDs
+    var selectedOptionTexts: Set<String>  // Option display texts for cross-question matching
     var freeText: String?
     var rankedOptionIds: [String]?
     var savedToDatabase: Bool
@@ -785,9 +786,10 @@ struct QuestionResponse: Equatable {
         selectedOptionIds.isEmpty && (freeText?.isEmpty ?? true) && (rankedOptionIds?.isEmpty ?? true)
     }
 
-    init(questionNumber: String, selectedOptionIds: Set<String> = [], freeText: String? = nil, rankedOptionIds: [String]? = nil, savedToDatabase: Bool = false, databaseId: UUID? = nil) {
+    init(questionNumber: String, selectedOptionIds: Set<String> = [], selectedOptionTexts: Set<String> = [], freeText: String? = nil, rankedOptionIds: [String]? = nil, savedToDatabase: Bool = false, databaseId: UUID? = nil) {
         self.questionNumber = questionNumber
         self.selectedOptionIds = selectedOptionIds
+        self.selectedOptionTexts = selectedOptionTexts
         self.freeText = freeText
         self.rankedOptionIds = rankedOptionIds
         self.savedToDatabase = savedToDatabase

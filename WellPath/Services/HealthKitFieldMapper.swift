@@ -5,9 +5,7 @@
 //  Maps HealthKit identifiers to WellPath database IDs
 //  Data now goes to patient_samples table using:
 //  - Quantity samples: quantity_type (e.g., "protein_grams", "steps")
-//  - Category samples: category_type + category_value (e.g., "sleep_stage" with 0=Awake, 1=REM, 2=Core, 3=Deep)
-//
-//  Legacy mappings kept for reference lookup during migration
+//  - Category samples: category_type + category_value (e.g., "sleep_period_types" with "awake", "rem", "core", "deep")
 //
 
 import Foundation
@@ -19,11 +17,7 @@ class HealthKitFieldMapper: ObservableObject {
 
     private let supabase = SupabaseManager.shared.client
 
-    // Non-sleep mappings: healthkit_identifier -> field_id (legacy reference)
-    private var fieldMappingCache: [String: String] = [:]
-    private var reverseFieldMappingCache: [String: String] = [:]
-
-    // Sleep period type mappings: healthkit_identifier -> reference UUID (legacy reference)
+    // Sleep period type mappings: healthkit_identifier -> reference UUID
     private var sleepTypeMappingCache: [String: String] = [:]
     private var reverseSleepTypeMappingCache: [String: String] = [:]
 
@@ -37,27 +31,9 @@ class HealthKitFieldMapper: ObservableObject {
 
         print("📥 Loading HealthKit field mappings from backend...")
 
-        // MARK: - Load Non-Sleep Mappings from data_entry_fields
-
-        let fields: [DataEntryFieldMapping] = try await supabase
-            .from("data_entry_fields")
-            .select("field_id, healthkit_identifier")
-            .not("healthkit_identifier", operator: .is, value: "null")
-            .eq("supports_healthkit_sync", value: true)
-            .execute()
-            .value
-
-        for field in fields {
-            fieldMappingCache[field.healthkitIdentifier] = field.fieldId
-            reverseFieldMappingCache[field.fieldId] = field.healthkitIdentifier
-        }
-
-        print("✅ Loaded \(fieldMappingCache.count) non-sleep HealthKit field mappings")
-
-        // MARK: - Load Sleep Type Mappings from data_entry_fields_reference
-
+        // Load Sleep Type Mappings from sample_category_types_reference
         let sleepTypes: [SleepPeriodTypeMapping] = try await supabase
-            .from("data_entry_fields_reference")
+            .from("sample_category_types_reference")
             .select("id, healthkit_identifier, reference_key, display_name")
             .eq("reference_category", value: "sleep_period_types")
             .execute()
@@ -71,45 +47,6 @@ class HealthKitFieldMapper: ObservableObject {
         print("✅ Loaded \(sleepTypeMappingCache.count) sleep period type mappings")
 
         isCacheLoaded = true
-    }
-
-    // MARK: - Non-Sleep Data Mappings (legacy)
-
-    /// Get field_id for a HealthKit identifier (legacy - now use quantity_type in patient_samples)
-    /// Example: "HKQuantityTypeIdentifierStepCount" -> "DEF_STEPS"
-    func getFieldId(for healthKitIdentifier: String) async throws -> String {
-        if !isCacheLoaded {
-            try await loadMappings()
-        }
-
-        guard let fieldId = fieldMappingCache[healthKitIdentifier] else {
-            throw HealthKitFieldMapperError.noMappingFound(healthKitIdentifier)
-        }
-
-        return fieldId
-    }
-
-    /// Get field_id for a HealthKit quantity type
-    func getFieldId(for quantityType: HKQuantityTypeIdentifier) async throws -> String {
-        return try await getFieldId(for: quantityType.rawValue)
-    }
-
-    /// Get field_id for a HealthKit category type (non-sleep only)
-    func getFieldId(for categoryType: HKCategoryTypeIdentifier) async throws -> String {
-        return try await getFieldId(for: categoryType.rawValue)
-    }
-
-    /// Get HealthKit identifier for a field_id (reverse lookup)
-    func getHealthKitIdentifier(for fieldId: String) async throws -> String {
-        if !isCacheLoaded {
-            try await loadMappings()
-        }
-
-        guard let identifier = reverseFieldMappingCache[fieldId] else {
-            throw HealthKitFieldMapperError.noMappingFound(fieldId)
-        }
-
-        return identifier
     }
 
     // MARK: - Sleep Data Mappings (legacy)
@@ -176,8 +113,6 @@ class HealthKitFieldMapper: ObservableObject {
 
     /// Clear cache (useful for debugging or if mappings change)
     func clearCache() {
-        fieldMappingCache.removeAll()
-        reverseFieldMappingCache.removeAll()
         sleepTypeMappingCache.removeAll()
         reverseSleepTypeMappingCache.removeAll()
         isCacheLoaded = false
@@ -185,16 +120,6 @@ class HealthKitFieldMapper: ObservableObject {
 }
 
 // MARK: - Models
-
-struct DataEntryFieldMapping: Codable {
-    let fieldId: String
-    let healthkitIdentifier: String
-
-    enum CodingKeys: String, CodingKey {
-        case fieldId = "field_id"
-        case healthkitIdentifier = "healthkit_identifier"
-    }
-}
 
 struct SleepPeriodTypeMapping: Codable {
     let id: String // UUID

@@ -3,222 +3,227 @@
 //  WellPath
 //
 //  Created on 2025-10-22
+//  Updated 2025-12-01: Removed hardcoded registries - now database-driven via chart_type_id
 //
 
 import SwiftUI
 
-// MARK: - View Registry
-// Central registry for custom metric views - eliminates duplicate navigation logic
-struct MetricViewRegistry {
-    typealias ViewFactory = (String, Color) -> AnyView
+// MARK: - Database-Driven Navigation
+// All routing now handled by:
+// - CategoryCardsListView → shows categories for a section
+// - ViewCardsListView → shows cards for a category
+// - ChartTypeRouter → renders views based on chart_type_id
 
-    private static let registry: [String: ViewFactory] = [
-        // Restorative Sleep
-        "SCREEN_SLEEP": { pillar, color in
-            AnyView(SleepDurationPrimary(pillar: pillar, color: color))
-        },
-        "SCREEN_SLEEP_ANALYSIS": { pillar, color in
-            AnyView(SleepAnalysisScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_SLEEP_CONSISTENCY": { pillar, color in
-            AnyView(SleepConsistencyPrimary(pillar: pillar, color: color))
-        },
+/// Metric detail view that loads by viewId
+struct MetricDetailByIdView: View {
+    let viewId: String
+    let pillar: String
+    let color: Color
+    @StateObject private var viewModel: StandardMetricViewModel
 
-        // Healthful Nutrition
-        "SCREEN_PROTEIN": { pillar, color in
-            AnyView(ProteinScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_LEGUMES": { pillar, color in
-            AnyView(LegumesScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_LEGUMES_PRIMARY": { pillar, color in
-            AnyView(LegumesScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_VEGETABLES": { pillar, color in
-            AnyView(VegetablesScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_VEGETABLES_PRIMARY": { pillar, color in
-            AnyView(VegetablesScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_WHOLE_GRAINS": { pillar, color in
-            AnyView(WholeGrainsScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_WHOLE_GRAINS_PRIMARY": { pillar, color in
-            AnyView(WholeGrainsScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_FRUITS": { pillar, color in
-            AnyView(FruitsScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_FRUITS_PRIMARY": { pillar, color in
-            AnyView(FruitsScreen(pillar: pillar, color: color))
-        },
-
-        // Movement + Exercise
-        "SCREEN_STEPS": { pillar, color in
-            AnyView(StepsScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_STRENGTH": { pillar, color in
-            AnyView(StrengthTrainingScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_STRENGTH_TRAINING": { pillar, color in
-            AnyView(StrengthTrainingScreen(pillar: pillar, color: color))
-        },
-
-        // Core Care
-        "SCREEN_BIOMETRICS": { pillar, color in
-            AnyView(BiometricsScreen(pillar: pillar, color: color))
-        },
-
-        // Bio3 - Biometrics Categories
-        "SCREEN_BIOMETRICS_BODY_COMP": { pillar, color in
-            AnyView(BiometricCategoryScreen(category: .bodyComposition, pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMETRICS_CARDIO": { pillar, color in
-            AnyView(BiometricCategoryScreen(category: .cardiovascular, pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMETRICS_STRENGTH": { pillar, color in
-            AnyView(BiometricCategoryScreen(category: .strength, pillar: pillar, color: color))
-        },
-
-        // Bio3 - Biomarkers Categories
-        "SCREEN_BIOMARKERS": { pillar, color in
-            AnyView(BiomarkersScreen(pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMARKERS_CARDIO": { pillar, color in
-            AnyView(BiomarkerCategoryScreen(category: .cardiovascular, pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMARKERS_METABOLISM": { pillar, color in
-            AnyView(BiomarkerCategoryScreen(category: .metabolism, pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMARKERS_INFLAMMATION": { pillar, color in
-            AnyView(BiomarkerCategoryScreen(category: .inflammation, pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMARKERS_HORMONES": { pillar, color in
-            AnyView(BiomarkerCategoryScreen(category: .hormones, pillar: pillar, color: color))
-        },
-        "SCREEN_BIOMARKERS_IMMUNE": { pillar, color in
-            AnyView(BiomarkerCategoryScreen(category: .immune, pillar: pillar, color: color))
-        },
-
-        // Bio3 - Biological Age
-        "SCREEN_BIOLOGICAL_AGE": { pillar, color in
-            AnyView(BiologicalAgeScreen(pillar: pillar, color: color))
-        }
-    ]
-
-    /// Get custom view for screen, or nil if should use fallback MetricDetailView
-    static func getView(for screen: DisplayScreen, pillar: String, color: Color) -> AnyView? {
-        return registry[screen.screenId]?(pillar, color)
+    init(viewId: String, pillar: String, color: Color) {
+        self.viewId = viewId
+        self.pillar = pillar
+        self.color = color
+        _viewModel = StateObject(wrappedValue: StandardMetricViewModel(metricId: viewId))
     }
 
-    /// Get custom view for screen by ID directly
-    static func getView(forScreenId screenId: String, pillar: String, color: Color) -> AnyView? {
-        return registry[screenId]?(pillar, color)
+    var body: some View {
+        Group {
+            if viewModel.isLoading {
+                ProgressView("Loading...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let metric = viewModel.displayMetric {
+                ParentMetricBarChart(metric: metric, color: color, showAbout: .constant(false))
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "chart.bar.xaxis")
+                        .font(.largeTitle)
+                        .foregroundColor(.secondary)
+                    Text("No data available")
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task {
+            await viewModel.loadPrimaryScreen()
+        }
+    }
+}
+
+// MARK: - Mini Card (Generic, Database-Driven)
+
+/// Generic mini card that displays today's value and weekly average
+struct GenericMiniCard: View {
+    let viewId: String
+    let color: Color
+    @StateObject private var viewModel: StandardMetricViewModel
+
+    init(viewId: String, color: Color) {
+        self.viewId = viewId
+        self.color = color
+        _viewModel = StateObject(wrappedValue: StandardMetricViewModel(metricId: viewId))
+    }
+
+    var body: some View {
+        Group {
+            if viewModel.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Spacer()
+                }
+                .frame(height: 50)
+            } else if viewModel.todayValue != nil || viewModel.weeklyAverageValue != nil {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Today")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text(viewModel.todayValue.map { String(format: "%.1f", $0) } ?? "--")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            Text(viewModel.displayUnit)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Weekly Avg")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text(viewModel.weeklyAverageValue.map { String(format: "%.1f", $0) } ?? "--")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(color)
+                            Text(viewModel.displayUnit)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Text("Tap to view")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .frame(height: 50)
+            }
+        }
+        .task {
+            await viewModel.loadPrimaryScreen()
+        }
     }
 }
 
 struct TrackedMetricsListView: View {
     @StateObject private var viewModel = TrackedMetricsViewModel()
     @StateObject private var favoritesService = FavoritesService.shared
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+    @EnvironmentObject private var searchState: WellPathDataSearchState
     @State private var showingFavorites = true  // Default to favorites
-    @State private var searchText = ""
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Main content
-            VStack(spacing: 0) {
-                if viewModel.isLoading {
-                    ProgressView("Loading...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = viewModel.error {
-                    errorView(error)
-                } else if showingFavorites {
-                    favoritesView
-                } else {
-                    browseView
+        mainContent
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if searchState.isSearchActive {
+                    WellPathDataSearchBar(
+                        searchState: searchState,
+                        isFocused: $isSearchFocused,
+                        placeholder: "Search"
+                    )
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Bottom search bar (when in browse/search mode)
-            if !showingFavorites {
-                bottomSearchBar
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .background(backgroundView)
-        .navigationTitle("Data")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            // Star button on LEFT - show favorites
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    withAnimation {
-                        showingFavorites = true
-                        searchText = ""
+            .background(backgroundView)
+            .navigationTitle(showingFavorites ? "Favorites" : "All WellPath Data")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                // Star button on LEFT - show favorites
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        withAnimation {
+                            showingFavorites = true
+                            searchState.deactivateSearch()
+                        }
+                    } label: {
+                        Image(systemName: showingFavorites ? "star.fill" : "star")
+                            .foregroundColor(showingFavorites ? .yellow : .primary)
                     }
-                } label: {
-                    Image(systemName: showingFavorites ? "star.fill" : "star")
-                        .foregroundColor(showingFavorites ? .yellow : .primary)
                 }
-            }
 
-            // Search button on RIGHT - show browse/search view
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    withAnimation {
-                        showingFavorites = false
-                        isSearchFocused = true
+                // Search button on RIGHT - opens search
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        withAnimation {
+                            showingFavorites = false
+                            searchState.activateSearch()
+                        }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.primary)
                     }
-                } label: {
-                    Image(systemName: !showingFavorites ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                        .foregroundColor(!showingFavorites ? .accentColor : .primary)
                 }
             }
-        }
-        .task {
-            await viewModel.loadMetricsData()
-            await favoritesService.loadFavorites()
-        }
+            .task {
+                await viewModel.loadMetricsData()
+                await favoritesService.loadFavorites()
+            }
     }
 
-    // MARK: - Floating Search Bar
+    // MARK: - Main Content
 
-    private var bottomSearchBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.secondary)
-
-            TextField("Search metrics", text: $searchText)
-                .font(.subheadline)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
-                .submitLabel(.search)
-
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.secondary)
-                }
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            if viewModel.isLoading {
+                ProgressView("Loading...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.error {
+                errorView(error)
+            } else if showingFavorites {
+                favoritesView
+            } else {
+                browseView
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-        )
-        .padding(.horizontal, 50)
-        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Favorites View (grouped by pillar)
+
+    /// Maps pillar names to section IDs for database lookup
+    private func sectionIdForPillar(_ pillar: String) -> String? {
+        switch pillar {
+        case "Biomarker": return "NAV_BIOMARKERS"
+        case "Biometrics": return "NAV_BIOMETRICS"
+        default: return nil
+        }
+    }
+
+    /// Gets color for a pillar/section - tries section first, then pillar
+    private func colorForPillar(_ pillar: String) -> Color {
+        if let sectionId = sectionIdForPillar(pillar) {
+            return displayConfig.categorySectionColor(for: sectionId)
+        }
+        return displayConfig.pillarColor(for: pillar)
+    }
+
+    /// Gets icon for a pillar/section - tries section first, then pillar
+    private func iconForPillar(_ pillar: String) -> String {
+        if let sectionId = sectionIdForPillar(pillar) {
+            return displayConfig.categorySectionIcon(for: sectionId)
+        }
+        return displayConfig.pillarIcon(for: pillar)
+    }
 
     private var favoritesView: some View {
         ScrollView {
@@ -226,13 +231,18 @@ struct TrackedMetricsListView: View {
                 if favoritesService.favorites.isEmpty {
                     emptyFavoritesPrompt
                 } else {
-                    // Group favorites by pillar
+                    // Group favorites by section (sectionId from database)
                     ForEach(favoritesByPillar, id: \.pillar) { group in
+                        // Use sectionId from the group if available, otherwise derive from pillar
+                        let groupSectionId = group.sectionId ?? sectionIdForPillar(group.pillar)
+                        let groupColor = groupSectionId.map { displayConfig.categorySectionColor(for: $0) } ?? colorForPillar(group.pillar)
+                        let groupIcon = groupSectionId.map { displayConfig.categorySectionIcon(for: $0) } ?? iconForPillar(group.pillar)
+
                         VStack(alignment: .leading, spacing: 8) {
-                            // Pillar header
+                            // Pillar header - uses database colors/icons
                             HStack(spacing: 8) {
-                                Image(systemName: MetricsUIConfig.getPillarIcon(for: group.pillar))
-                                    .foregroundColor(MetricsUIConfig.getPillarColor(for: group.pillar))
+                                Image(systemName: groupIcon)
+                                    .foregroundColor(groupColor)
                                 Text(group.pillar)
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
@@ -240,22 +250,61 @@ struct TrackedMetricsListView: View {
                             }
                             .padding(.leading, 4)
 
-                            // Favorites in this pillar
-                            VStack(spacing: 0) {
-                                ForEach(Array(group.favorites.enumerated()), id: \.element.id) { index, favorite in
-                                    NavigationLink(destination: favoriteDestination(for: favorite)) {
-                                        FavoriteRow(favorite: favorite)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
+                            // Separate card-based favorites from others
+                            // Includes: metric, biometric, biomarker, and screen types that have cardId
+                            let cardFavorites = group.favorites.filter {
+                                $0.itemType == "metric" ||
+                                $0.itemType == "biometric" ||
+                                $0.itemType == "biomarker" ||
+                                ($0.itemType == "screen" && $0.cardId != nil)
+                            }
+                            let otherFavorites = group.favorites.filter {
+                                !($0.itemType == "metric" ||
+                                  $0.itemType == "biometric" ||
+                                  $0.itemType == "biomarker" ||
+                                  ($0.itemType == "screen" && $0.cardId != nil))
+                            }
 
-                                    if index < group.favorites.count - 1 {
-                                        Divider()
-                                            .padding(.horizontal, 16)
+                            // Card-based favorites - use CardRegistry for consistent cards
+                            if !cardFavorites.isEmpty {
+                                VStack(spacing: 12) {
+                                    ForEach(cardFavorites) { favorite in
+                                        // Use sectionId from favorite if available, otherwise derive from pillar
+                                        let sectionId = favorite.sectionId ?? groupSectionId
+                                        let cardColor = sectionId.map { displayConfig.categorySectionColor(for: $0) } ?? groupColor
+
+                                        // For screen types, use cardId for routing; otherwise use itemId
+                                        let cardLookupId = (favorite.itemType == "screen" ? favorite.cardId : nil) ?? favorite.itemId
+
+                                        CardRegistry.card(
+                                            for: cardLookupId,
+                                            color: cardColor,
+                                            pillar: favorite.pillar ?? "Core Care",
+                                            displayName: favorite.displayName,
+                                            sectionId: sectionId
+                                        )
                                     }
                                 }
                             }
-                            .background(Color(uiColor: .secondarySystemGroupedBackground))
-                            .cornerRadius(12)
+
+                            // Other favorites (screens, etc.) as simple rows
+                            if !otherFavorites.isEmpty {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(otherFavorites.enumerated()), id: \.element.id) { index, favorite in
+                                        NavigationLink(destination: favoriteDestination(for: favorite)) {
+                                            FavoriteRow(favorite: favorite)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+
+                                        if index < otherFavorites.count - 1 {
+                                            Divider()
+                                                .padding(.horizontal, 16)
+                                        }
+                                    }
+                                }
+                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .cornerRadius(12)
+                            }
                         }
                     }
                 }
@@ -300,101 +349,97 @@ struct TrackedMetricsListView: View {
         .padding(.vertical, 60)
     }
 
-    // MARK: - Browse View (Compact list style with search filtering)
+    // MARK: - Browse View (Database-driven navigation)
 
     private var browseView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // Show search results if searching
-                if !searchText.isEmpty {
+                if !searchState.searchText.isEmpty && searchState.isSearchActive {
                     searchResultsContent
                 } else {
-                    // Pillars Section - compact list
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Pillars")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 4)
-
-                        VStack(spacing: 0) {
-                            ForEach(Array(filteredPillars.enumerated()), id: \.element.id) { index, pillar in
-                                NavigationLink(destination: PillarScreensView(pillar: pillar.name, viewModel: viewModel)) {
-                                    PillarListRow(pillar: pillar)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-
-                                if index < filteredPillars.count - 1 {
-                                    Divider()
-                                        .padding(.horizontal, 12)
-                                }
-                            }
-                        }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(12)
-                    }
-
-                    // Markers & Metrics Section - compact list
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Markers & Metrics")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 4)
-
-                        VStack(spacing: 0) {
-                            NavigationLink(destination: BiomarkersScreen(pillar: "Core Care", color: .purple)) {
-                                PillarListRow(pillar: PillarItem(name: "Biomarkers", icon: "testtube.2", color: .purple, screenCount: 0))
-                            }
-                            .buttonStyle(PlainButtonStyle())
-
-                            Divider()
-                                .padding(.horizontal, 12)
-
-                            NavigationLink(destination: BiometricsScreen(pillar: "Core Care", color: .cyan)) {
-                                PillarListRow(pillar: PillarItem(name: "Biometrics", icon: "waveform.path.ecg", color: .cyan, screenCount: 0))
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(12)
-                    }
-
-                    // Health History Section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Health History")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 4)
-
-                        VStack(spacing: 0) {
-                            NavigationLink(destination: MedicalHistoryListView()) {
-                                PillarListRow(pillar: PillarItem(name: "Medical History", icon: "cross.case.fill", color: .red, screenCount: 0))
-                            }
-                            .buttonStyle(PlainButtonStyle())
-
-                            Divider()
-                                .padding(.horizontal, 12)
-
-                            NavigationLink(destination: PreventiveScreeningsView()) {
-                                PillarListRow(pillar: PillarItem(name: "Preventive Screenings", icon: "stethoscope", color: .teal, screenCount: 0))
-                            }
-                            .buttonStyle(PlainButtonStyle())
-
-                            Divider()
-                                .padding(.horizontal, 12)
-
-                            NavigationLink(destination: TherapeuticsListView()) {
-                                PillarListRow(pillar: PillarItem(name: "Therapeutics", icon: "pills.fill", color: .blue, screenCount: 0))
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(12)
+                    // Database-driven navigation sections
+                    ForEach(displayConfig.sectionHeaders) { header in
+                        sectionView(for: header)
                     }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 60) // Space for floating search bar
+            .padding(.bottom, searchState.isSearchActive ? 80 : 24) // Extra space for search bar
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: - Section View (renders category sections under a header)
+
+    @ViewBuilder
+    private func sectionView(for header: SectionHeaderConfig) -> some View {
+        let sections = displayConfig.categorySections(for: header.headerId)
+
+        VStack(alignment: .leading, spacing: 8) {
+            // Section header
+            Text(header.headerName)
+                .font(.headline)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                    NavigationLink(destination: sectionDestination(for: section)) {
+                        CategorySectionRow(section: section)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+
+                    if index < sections.count - 1 {
+                        Divider()
+                            .padding(.horizontal, 12)
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(12)
+        }
+    }
+
+    // MARK: - Section Destination Router
+
+    @ViewBuilder
+    private func sectionDestination(for section: CategorySectionConfig) -> some View {
+        let color = section.color
+
+        // Route based on section_id - maps to appropriate list/screen views
+        switch section.sectionId {
+        // Health Pillars - show categories with their cards
+        case "NAV_NUTRITION", "NAV_MOVEMENT", "NAV_SLEEP", "NAV_STRESS", "NAV_COGNITION", "NAV_CONNECTION", "NAV_CORE_CARE":
+            CategoryCardsListView(section: section)
+
+        // Markers & Metrics - route to category cards first
+        case "NAV_BIOMARKERS":
+            BiomarkerSectionView()
+        case "NAV_BIOMETRICS":
+            // Show categories (Body Composition, Vitals, Strength) as cards first
+            CategoryCardsListView(section: section)
+        case "NAV_BIO_AGE":
+            BiologicalAgeScreen(pillar: section.sectionName, color: color)
+
+        // Lifestyle Factors - database-driven like other sections
+        case "NAV_SUBSTANCES":
+            CategoryCardsListView(section: section)
+        case "NAV_MENTAL_HEALTH":
+            MentalHealthListView()
+
+        // Health Records
+        case "NAV_THERAPEUTICS":
+            TherapeuticsListView()
+        case "NAV_HEALTH_HISTORY":
+            ConditionsListView()
+        case "NAV_SCREENINGS":
+            ScreeningsListView()
+
+        default:
+            // Fallback - show categories list
+            CategoryCardsListView(section: section)
         }
     }
 
@@ -402,124 +447,171 @@ struct TrackedMetricsListView: View {
 
     @ViewBuilder
     private var searchResultsContent: some View {
-        if allMatchingScreens.isEmpty {
+        if allMatchingCards.isEmpty {
             VStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 48))
                     .foregroundColor(.secondary)
-                Text("No results for \"\(searchText)\"")
+                Text("No results for \"\(searchState.searchText)\"")
                     .font(.headline)
-                Text("Try searching for a different metric")
+                Text("Try searching for a different term")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 80)
         } else {
-            // Group results by pillar
-            ForEach(searchResultsByPillar, id: \.pillar) { result in
-                VStack(alignment: .leading, spacing: 8) {
-                    // Pillar header
-                    HStack(spacing: 8) {
-                        Image(systemName: MetricsUIConfig.getPillarIcon(for: result.pillar))
-                            .foregroundColor(MetricsUIConfig.getPillarColor(for: result.pillar))
-                        Text(result.pillar)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 4)
-
-                    // Matching screens
-                    VStack(spacing: 0) {
-                        ForEach(Array(result.screens.enumerated()), id: \.element.id) { index, screen in
-                            NavigationLink(destination: screenDestination(for: screen, pillar: result.pillar)) {
-                                SearchResultRow(
-                                    screen: screen,
-                                    pillar: result.pillar,
-                                    searchText: searchText
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-
-                            if index < result.screens.count - 1 {
-                                Divider()
-                                    .padding(.horizontal, 16)
-                            }
-                        }
-                    }
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .cornerRadius(12)
+            // Show matching cards as actual card components (flat list, no section groupings)
+            VStack(spacing: 12) {
+                ForEach(allMatchingCards) { card in
+                    let color = cardColor(for: card)
+                    DatabaseDrivenCard(card: card, color: color)
                 }
             }
         }
     }
 
-    // All screens matching search across all pillars
-    private var allMatchingScreens: [DisplayScreen] {
-        guard !searchText.isEmpty else { return [] }
-        return viewModel.allScreens.filter { screen in
-            screen.name.localizedCaseInsensitiveContains(searchText)
+    /// Get the color for a card based on its category/section
+    private func cardColor(for card: ViewCardConfig) -> Color {
+        if let categoryId = card.categoryId,
+           let category = displayConfig.cardCategory(id: categoryId),
+           let sectionId = category.sectionId {
+            return displayConfig.categorySectionColor(for: sectionId)
+        }
+        return .gray
+    }
+
+    // Destination for card search results
+    @ViewBuilder
+    private func cardSearchDestination(for card: ViewCardConfig, color: Color, sectionId: String?) -> some View {
+        if let viewId = card.viewId,
+           let viewConfig = displayConfig.view(id: viewId) {
+            ViewRouter.viewForViewId(viewConfig, color: color, sectionId: sectionId)
+        } else {
+            // Fallback
+            Text("View not found for \(card.cardName)")
+                .foregroundColor(.secondary)
         }
     }
 
-    // Search results grouped by pillar
-    private var searchResultsByPillar: [(pillar: String, screens: [DisplayScreen])] {
-        guard !searchText.isEmpty else { return [] }
+    // All cards matching search (searches viewCards from displayConfig)
+    private var allMatchingCards: [ViewCardConfig] {
+        guard !searchState.searchText.isEmpty else { return [] }
+        return displayConfig.viewCards.filter { card in
+            card.cardName.localizedCaseInsensitiveContains(searchState.searchText) ||
+            (card.description?.localizedCaseInsensitiveContains(searchState.searchText) ?? false)
+        }
+    }
 
-        var results: [(String, [DisplayScreen])] = []
+    // Card search results grouped by category/section
+    private var cardSearchResultsBySection: [(sectionName: String, sectionId: String?, color: Color, cards: [ViewCardConfig])] {
+        guard !searchState.searchText.isEmpty else { return [] }
 
-        for pillar in viewModel.pillars {
-            let screens = viewModel.getScreens(forPillar: pillar)
-            let matchingScreens = screens.filter { screen in
-                screen.name.localizedCaseInsensitiveContains(searchText)
-            }
+        var grouped: [String: (sectionId: String?, color: Color, cards: [ViewCardConfig])] = [:]
 
-            if !matchingScreens.isEmpty {
-                results.append((pillar, matchingScreens))
+        for card in allMatchingCards {
+            // Get the category for this card
+            if let categoryId = card.categoryId,
+               let category = displayConfig.cardCategory(id: categoryId) {
+                let sectionId = category.sectionId
+                let sectionName = sectionId.flatMap { displayConfig.categorySectionName(for: $0) } ?? category.name
+                let color = sectionId.map { displayConfig.categorySectionColor(for: $0) } ?? .gray
+
+                if grouped[sectionName] == nil {
+                    grouped[sectionName] = (sectionId: sectionId, color: color, cards: [])
+                }
+                grouped[sectionName]?.cards.append(card)
+            } else {
+                // Fallback for cards without category
+                let sectionName = "Other"
+                if grouped[sectionName] == nil {
+                    grouped[sectionName] = (sectionId: nil, color: .gray, cards: [])
+                }
+                grouped[sectionName]?.cards.append(card)
             }
         }
 
-        return results
-    }
-
-    // Only show the 7 health pillars (exclude Biometrics, Biomarkers, Biological Age)
-    // Biometrics/Biomarkers are in "Markers & Metrics" section
-    // Biological Age will be on Dashboard
-    private let excludedFromPillars = ["Biometrics", "Biomarkers", "Biological Age"]
-
-    private var filteredPillars: [PillarItem] {
-        viewModel.pillars
-            .filter { !excludedFromPillars.contains($0) }
-            .map { pillar in
-                let screens = viewModel.getScreens(forPillar: pillar)
-                return PillarItem(
-                    name: pillar,
-                    icon: MetricsUIConfig.getPillarIcon(for: pillar),
-                    color: MetricsUIConfig.getPillarColor(for: pillar),
-                    screenCount: screens.count
-                )
-            }
-    }
-
-    // Group favorites by pillar for sectioned display
-    private var favoritesByPillar: [(pillar: String, favorites: [PatientFavorite])] {
-        var grouped: [String: [PatientFavorite]] = [:]
-
-        for favorite in favoritesService.favorites {
-            let pillar = favorite.pillar ?? "Other"
-            if grouped[pillar] == nil {
-                grouped[pillar] = []
-            }
-            grouped[pillar]?.append(favorite)
-        }
-
-        // Sort by pillar name, with "Other" at the end
+        // Convert to array and sort by section name
         return grouped.sorted { lhs, rhs in
             if lhs.key == "Other" { return false }
             if rhs.key == "Other" { return true }
             return lhs.key < rhs.key
-        }.map { (pillar: $0.key, favorites: $0.value) }
+        }.map { (sectionName: $0.key, sectionId: $0.value.sectionId, color: $0.value.color, cards: $0.value.cards) }
+    }
+
+    // Legacy: All metrics matching search (for backwards compatibility)
+    private var allMatchingMetrics: [DisplayMetric] {
+        guard !searchState.searchText.isEmpty else { return [] }
+        return viewModel.allMetrics.filter { metric in
+            metric.metricName.localizedCaseInsensitiveContains(searchState.searchText)
+        }
+    }
+
+    // Legacy: Metric search results grouped by pillar
+    private var metricSearchResultsByPillar: [(pillar: String, metrics: [DisplayMetric])] {
+        guard !searchState.searchText.isEmpty else { return [] }
+
+        var grouped: [String: [DisplayMetric]] = [:]
+
+        for metric in viewModel.allMetrics {
+            if metric.metricName.localizedCaseInsensitiveContains(searchState.searchText) {
+                let pillar = metric.pillar ?? "Other"
+                if grouped[pillar] == nil {
+                    grouped[pillar] = []
+                }
+                grouped[pillar]?.append(metric)
+            }
+        }
+
+        // Convert to array and sort by pillar order
+        return grouped.sorted { lhs, rhs in
+            if lhs.key == "Other" { return false }
+            if rhs.key == "Other" { return true }
+            return lhs.key < rhs.key
+        }.map { (pillar: $0.key, metrics: $0.value) }
+    }
+
+    // Destination for metric search results - database-driven via chart_type_id
+    @ViewBuilder
+    private func metricSearchDestination(for metric: DisplayMetric, pillar: String) -> some View {
+        let color = MetricsUIConfig.getPillarColor(for: pillar)
+
+        // Route to generic metric detail view which loads chart config from database
+        MetricFavoriteDetailView(metricId: metric.metricId, pillar: pillar, color: color)
+    }
+
+    // Group favorites by section for sectioned display
+    // Uses sectionId (database-driven) with pillar as fallback for backwards compatibility
+    private var favoritesByPillar: [(pillar: String, sectionId: String?, favorites: [PatientFavorite])] {
+        var grouped: [String: (sectionId: String?, favorites: [PatientFavorite])] = [:]
+
+        for favorite in favoritesService.favorites {
+            // Prefer sectionId for grouping, fall back to pillar for backwards compatibility
+            let groupKey: String
+            let groupSectionId: String?
+
+            if let sectionId = favorite.sectionId {
+                // Use section name from displayConfig if available
+                groupKey = displayConfig.categorySectionName(for: sectionId) ?? favorite.pillar ?? sectionId
+                groupSectionId = sectionId
+            } else {
+                // Fallback to pillar (legacy favorites without sectionId)
+                groupKey = favorite.pillar ?? "Other"
+                groupSectionId = sectionIdForPillar(groupKey)
+            }
+
+            if grouped[groupKey] == nil {
+                grouped[groupKey] = (sectionId: groupSectionId, favorites: [])
+            }
+            grouped[groupKey]?.favorites.append(favorite)
+        }
+
+        // Sort by group name, with "Other" at the end
+        return grouped.sorted { lhs, rhs in
+            if lhs.key == "Other" { return false }
+            if rhs.key == "Other" { return true }
+            return lhs.key < rhs.key
+        }.map { (pillar: $0.key, sectionId: $0.value.sectionId, favorites: $0.value.favorites) }
     }
 
     // MARK: - Error View
@@ -569,19 +661,12 @@ struct TrackedMetricsListView: View {
                 Spacer()
             }
 
-            VStack {
-                HStack {
-                    Spacer()
-                    Image("white_grey")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 180, height: 180)
-                        .opacity(0.35)
-                        .rotationEffect(.degrees(-15))
-                        .offset(x: 40, y: 20)
-                }
-                Spacer()
+            // Topographic pattern overlay
+            GeometryReader { geo in
+                TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
+                    .frame(width: geo.size.width, height: geo.size.height)
             }
+
         }
         .ignoresSafeArea()
     }
@@ -592,110 +677,86 @@ struct TrackedMetricsListView: View {
     private func screenDestination(for screen: DisplayScreen, pillar: String) -> some View {
         let color = MetricsUIConfig.getPillarColor(for: pillar)
 
-        if let customView = MetricViewRegistry.getView(for: screen, pillar: pillar, color: color) {
-            customView
+        // Database-driven - look up category and show its cards
+        if let category = displayConfig.cardCategory(id: screen.screenId) {
+            ViewCardsListView(category: category, sectionColor: color)
         } else {
-            GenericMetricScreen(screen: screen, pillar: pillar, color: color)
+            // Fallback for unknown screens
+            MetricFavoriteDetailView(metricId: screen.screenId, pillar: pillar, color: color)
         }
     }
 
+    /// Destination for non-metric favorites (screens, biomarkers, biometrics)
+    /// Uses database-driven routing via card_id and section_id when available
     @ViewBuilder
     private func favoriteDestination(for favorite: PatientFavorite) -> some View {
+        // Get color from section_id (database) or fallback to pillar
+        let color: Color = {
+            if let sectionId = favorite.sectionId {
+                return displayConfig.categorySectionColor(for: sectionId)
+            }
+            return MetricsUIConfig.getPillarColor(for: favorite.pillar ?? "Core Care")
+        }()
+
         let pillar = favorite.pillar ?? "Core Care"
-        let color = MetricsUIConfig.getPillarColor(for: pillar)
 
+        // Biomarkers and biometrics always use their dedicated views (not ViewRouter)
+        // because they need special handling with their own viewmodels
         switch favorite.itemType {
-        case "screen":
-            screenFavoriteDestination(itemId: favorite.itemId, pillar: pillar, color: color)
-        case "metric":
-            metricFavoriteDestination(itemId: favorite.itemId, pillar: pillar, color: color)
         case "biomarker":
-            BiomarkerDetailView(name: favorite.itemId, isBiometric: false)
+            // Use displayName (actual biomarker name like "HDL") not itemId (which could be cardId)
+            GenericBiomarkerDetailView(biomarkerName: favorite.displayName ?? favorite.itemId, viewModel: BiomarkerViewModel())
         case "biometric":
-            BiomarkerDetailView(name: favorite.itemId, isBiometric: true)
-        default:
-            Text("Unknown favorite type")
-        }
-    }
-
-    @ViewBuilder
-    private func screenFavoriteDestination(itemId: String, pillar: String, color: Color) -> some View {
-        if let customView = MetricViewRegistry.getView(forScreenId: itemId, pillar: pillar, color: color) {
-            customView
-        } else if let screen = viewModel.allScreens.first(where: { $0.screenId == itemId }) {
-            GenericMetricScreen(screen: screen, pillar: pillar, color: color)
-        } else {
-            Text("Screen not found")
-        }
-    }
-
-    @ViewBuilder
-    private func metricFavoriteDestination(itemId: String, pillar: String, color: Color) -> some View {
-        // Direct mapping for specific metrics with custom views
-        switch itemId {
-        case "DISP_PROTEIN_GRAMS":
-            ProteinAmountFavoriteView(color: color)
-        case "DISP_PROTEIN_TIMING":
-            ProteinTimingView(color: color)
-                .navigationTitle("Protein Timing")
-        case "DISP_PROTEIN_TYPE":
-            ProteinTiersView(color: color)
-                .navigationTitle("Protein Type")
-        case "DISP_PROTEIN_RATIO":
-            ProteinPerBodyWeightView(color: color)
-                .navigationTitle("Protein Ratio")
-        case "DISP_VEGETABLES_SERVINGS":
-            VegetablesScreen(pillar: pillar, color: color)
-        default:
-            // Check screen mapping
-            if let screenId = metricToScreenMapping[itemId],
-               let customView = MetricViewRegistry.getView(forScreenId: screenId, pillar: pillar, color: color) {
-                customView
+            // Biometrics: use ViewRouter like metrics for proper routing with info modal
+            if let viewConfig = displayConfig.view(id: favorite.itemId) {
+                ViewRouter.viewForViewId(viewConfig, color: color, sectionId: favorite.sectionId)
+            } else if let cardId = favorite.cardId, let viewConfig = displayConfig.view(id: cardId) {
+                ViewRouter.viewForViewId(viewConfig, color: color, sectionId: favorite.sectionId)
             } else {
-                MetricFavoriteDetailView(metricId: itemId, pillar: pillar, color: color)
+                // Fallback to legacy view
+                BiometricFavoriteDetailView(biometricName: favorite.displayName ?? favorite.itemId)
             }
+        case "metric":
+            // Metrics: try view_id lookup first (DISP_* ids), then card_id lookup
+            if let cardId = favorite.cardId {
+                // First try direct view lookup (for DISP_* view IDs)
+                if let viewConfig = displayConfig.view(id: cardId) {
+                    ViewRouter.viewForViewId(viewConfig, color: color)
+                }
+                // Then try card lookup (for CARD_* card IDs)
+                else if let card = displayConfig.viewCard(id: cardId),
+                        let viewConfig = displayConfig.viewForCard(card) {
+                    ViewRouter.viewForViewId(viewConfig, color: color)
+                }
+                // Fallback to itemId lookup
+                else if let viewConfig = displayConfig.view(id: favorite.itemId) {
+                    ViewRouter.viewForViewId(viewConfig, color: color)
+                } else {
+                    MetricFavoriteDetailView(metricId: favorite.itemId, pillar: pillar, color: color)
+                }
+            } else if let viewConfig = displayConfig.view(id: favorite.itemId) {
+                ViewRouter.viewForViewId(viewConfig, color: color)
+            } else {
+                MetricFavoriteDetailView(metricId: favorite.itemId, pillar: pillar, color: color)
+            }
+
+        case "screen":
+            // Database-driven - look up category and show its cards
+            if let category = displayConfig.cardCategory(id: favorite.itemId) {
+                ViewCardsListView(category: category, sectionColor: color)
+            } else if let viewConfig = displayConfig.view(id: favorite.itemId) {
+                ViewRouter.viewForViewId(viewConfig, color: color)
+            } else {
+                MetricFavoriteDetailView(metricId: favorite.itemId, pillar: pillar, color: color)
+            }
+
+        default:
+            Text("Unknown favorite type: \(favorite.itemType)")
         }
     }
-
-    // Map display metric IDs to their parent screen IDs (for screens with single metric)
-    private var metricToScreenMapping: [String: String] {
-        [
-            // Sleep metrics → Sleep screens
-            "DISP_SLEEP_DURATION": "SCREEN_SLEEP",
-            "DISP_SLEEP_ANALYSIS": "SCREEN_SLEEP_ANALYSIS",
-            "DISP_SLEEP_STAGES": "SCREEN_SLEEP_ANALYSIS",
-            "DISP_SLEEP_STAGE_AMOUNTS": "SCREEN_SLEEP_ANALYSIS",
-            "DISP_SLEEP_STAGE_PERCENTAGES": "SCREEN_SLEEP_ANALYSIS",
-            "DISP_SLEEP_COMPARISONS": "SCREEN_SLEEP_ANALYSIS",
-            "DISP_SLEEP_CONSISTENCY": "SCREEN_SLEEP_CONSISTENCY",
-            // Steps → Steps screen
-            "DISP_STEPS": "SCREEN_STEPS",
-            // Strength → Strength screen
-            "DISP_STRENGTH_TRAINING": "SCREEN_STRENGTH",
-            // Nutrition screens (servings → their screens)
-            "DISP_LEGUMES": "SCREEN_LEGUMES",
-            "DISP_VEGETABLES": "SCREEN_VEGETABLES",
-            "DISP_WHOLE_GRAINS": "SCREEN_WHOLE_GRAINS",
-            "DISP_FRUITS": "SCREEN_FRUITS"
-        ]
-    }
 }
 
-// MARK: - Wrapper view for Protein Amount favorite (manages its own @StateObject)
-struct ProteinAmountFavoriteView: View {
-    let color: Color
-    @StateObject private var viewModel = ProteinPrimaryViewModel(metricId: "DISP_PROTEIN_GRAMS")
-
-    var body: some View {
-        ProteinAmountFullView(color: color, viewModel: viewModel)
-            .navigationTitle("Protein Amount")
-            .task {
-                await viewModel.loadPrimaryScreen()
-            }
-    }
-}
-
-// MARK: - Metric Favorite Detail View (fallback for unmapped metrics)
+// MARK: - Metric Favorite Detail View
 
 struct MetricFavoriteDetailView: View {
     let metricId: String
@@ -758,15 +819,15 @@ class MetricFavoriteDetailViewModel: ObservableObject {
     func loadMetric(metricId: String) async {
         isLoading = true
         do {
-            let metrics: [DisplayMetric] = try await supabase
-                .from("display_metrics")
+            let views: [DisplayMetric] = try await supabase
+                .from("display_views")
                 .select()
-                .eq("metric_id", value: metricId)
+                .eq("view_id", value: metricId)
                 .limit(1)
                 .execute()
                 .value
 
-            metric = metrics.first
+            metric = views.first
         } catch {
             print("❌ Error loading metric: \(error)")
         }
@@ -774,21 +835,37 @@ class MetricFavoriteDetailViewModel: ObservableObject {
     }
 }
 
-// MARK: - Favorite Row
+// MARK: - Favorite Row (Database-driven colors/icons via sectionId)
 
 struct FavoriteRow: View {
     let favorite: PatientFavorite
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
 
-    var pillarColor: Color {
-        MetricsUIConfig.getPillarColor(for: favorite.pillar ?? "Core Care")
+    /// Get color from database via section_id, fallback to pillar, then hardcoded
+    var sectionColor: Color {
+        // 1. Try section_id from favorite (database-driven)
+        if let sectionId = favorite.sectionId {
+            return displayConfig.categorySectionColor(for: sectionId)
+        }
+        // 2. Fallback to pillar-based lookup
+        if let pillar = favorite.pillar {
+            return displayConfig.pillarColor(for: pillar)
+        }
+        // 3. Final fallback
+        return MetricsUIConfig.getPillarColor(for: favorite.pillar ?? "Core Care")
     }
 
+    /// Get icon from database via section_id, fallback to hardcoded
     var icon: String {
+        // 1. Try section_id from favorite (database-driven)
+        if let sectionId = favorite.sectionId {
+            return displayConfig.categorySectionIcon(for: sectionId)
+        }
+        // 2. Fallback to type-based hardcoded icons
         if favorite.itemType == "screen" {
-            return MetricsUIConfig.getIcon(for: favorite.itemId) ?? "chart.bar.fill"
+            return MetricsUIConfig.getIcon(for: favorite.itemId)
         } else if favorite.itemType == "metric" {
-            // Try to get icon from display name or use chart icon
-            return MetricsUIConfig.getIcon(for: favorite.displayName ?? "") ?? "chart.bar.fill"
+            return MetricsUIConfig.getIcon(for: favorite.displayName ?? "")
         } else if favorite.itemType == "biomarker" {
             return "testtube.2"
         } else if favorite.itemType == "biometric" {
@@ -801,12 +878,12 @@ struct FavoriteRow: View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(pillarColor.opacity(0.2))
+                    .fill(sectionColor.opacity(0.2))
                     .frame(width: 50, height: 50)
 
                 Image(systemName: icon)
                     .font(.title3)
-                    .foregroundColor(pillarColor)
+                    .foregroundColor(sectionColor)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -824,203 +901,16 @@ struct FavoriteRow: View {
             Spacer()
 
             Image(systemName: "chevron.right")
-                .foregroundColor(pillarColor)
+                .foregroundColor(sectionColor)
                 .font(.system(size: 14, weight: .semibold))
         }
         .padding(16)
     }
 }
 
-// Model for pillar items
-struct PillarItem: Identifiable {
-    let id = UUID()
-    let name: String
-    let icon: String
-    let color: Color
-    let screenCount: Int
-}
-
-// Pillar row view for tracked metrics list - compact style
-struct PillarListRow: View {
-    let pillar: PillarItem
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Compact circle icon
-            ZStack {
-                Circle()
-                    .fill(pillar.color.opacity(0.15))
-                    .frame(width: 36, height: 36)
-
-                Image(systemName: pillar.icon)
-                    .foregroundColor(pillar.color)
-                    .font(.system(size: 16))
-            }
-
-            Text(pillar.name)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundColor(pillar.color)
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// View showing display screens for a pillar
-struct PillarScreensView: View {
-    let pillar: String
-    @ObservedObject var viewModel: TrackedMetricsViewModel
-    @State private var searchText = ""
-
-    var filteredScreens: [DisplayScreen] {
-        let screens = viewModel.getScreens(forPillar: pillar)
-
-        if !searchText.isEmpty {
-            return screens.filter { screen in
-                screen.name.localizedCaseInsensitiveContains(searchText)
-            }
-        }
-
-        return screens
-    }
-
-    var body: some View {
-        contentView
-            .background(
-                ZStack {
-                    // Background gradient - vertical from pillar color to white
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [
-                                MetricsUIConfig.getPillarColor(for: pillar).opacity(0.65),
-                                MetricsUIConfig.getPillarColor(for: pillar).opacity(0.45),
-                                MetricsUIConfig.getPillarColor(for: pillar).opacity(0.25),
-                                MetricsUIConfig.getPillarColor(for: pillar).opacity(0.1),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 900)
-
-                        Spacer()
-                    }
-
-                    // Large background icon
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: MetricsUIConfig.getPillarIcon(for: pillar))
-                                .font(.system(size: 200))
-                                .foregroundStyle(Color.white.opacity(0.2))
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 50, y: -50)
-                        }
-                        Spacer()
-                    }
-                }
-                .ignoresSafeArea()
-            )
-            .navigationTitle(pillar)
-            .navigationBarTitleDisplayMode(.large)
-    }
-
-    private var contentView: some View {
-        List {
-            ForEach(filteredScreens) { screen in
-                NavigationLink(destination: screenDestination(for: screen)) {
-                    ScreenRow(
-                        screen: screen,
-                        color: MetricsUIConfig.getPillarColor(for: pillar),
-                        metricCount: viewModel.getMetricCount(forScreen: screen.screenId)
-                    )
-                }
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .searchable(text: $searchText, prompt: "Search screens")
-    }
-
-    // Route to custom views using central registry
-    @ViewBuilder
-    private func screenDestination(for screen: DisplayScreen) -> some View {
-        let color = MetricsUIConfig.getPillarColor(for: pillar)
-
-        if let customView = MetricViewRegistry.getView(for: screen, pillar: pillar, color: color) {
-            customView
-        } else {
-            // Fallback to generic card-based view that fetches metrics from database
-            GenericMetricScreen(screen: screen, pillar: pillar, color: color)
-        }
-    }
-
-    // TODO: Future custom views to add to MetricViewRegistry:
-    // Healthful Nutrition: Hydration, Meal Timing, Nutrition Quality
-    // Movement + Exercise: Cardio, HIIT, Mobility, Daily Activity
-    // Core Care: Biometrics, Screenings, Substances, Skincare
-    // Cognitive Health: Cognitive Training, Light/Circadian
-    // Stress Management: Mindfulness, Meditation
-    // Connection + Purpose: Social Wellness, Purpose
-}
-
-// Screen row view
-struct ScreenRow: View {
-    let screen: DisplayScreen
-    let color: Color
-    let metricCount: Int
-
-    var body: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.2))
-                    .frame(width: 50, height: 50)
-
-                Image(systemName: MetricsUIConfig.getIcon(for: screen.name))
-                    .foregroundColor(color)
-                    .font(.title3)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(screen.name)
-                    .font(.headline)
-
-                if let overview = screen.overview {
-                    Text(overview)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                } else if metricCount > 0 {
-                    Text("\(metricCount) metric\(metricCount == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Spacer()
-
-            if metricCount > 0 {
-                Text("\(metricCount)")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(color)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-// Search result row with highlighted match
-struct SearchResultRow: View {
-    let screen: DisplayScreen
+// Search result row for display metrics with highlighted match
+struct MetricSearchResultRow: View {
+    let metric: DisplayMetric
     let pillar: String
     let searchText: String
 
@@ -1035,18 +925,18 @@ struct SearchResultRow: View {
                     .fill(color.opacity(0.2))
                     .frame(width: 50, height: 50)
 
-                Image(systemName: MetricsUIConfig.getIcon(for: screen.name))
+                Image(systemName: MetricsUIConfig.getIcon(for: metric.metricName))
                     .foregroundColor(color)
                     .font(.title3)
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 // Highlighted name
-                highlightedText(screen.name, highlight: searchText)
+                highlightedText(metric.metricName, highlight: searchText)
                     .font(.headline)
 
-                if let overview = screen.overview {
-                    Text(overview)
+                if let description = metric.description {
+                    Text(description)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -1086,23 +976,600 @@ struct SearchResultRow: View {
     }
 }
 
-// Model for metric items
-struct MetricItem: Identifiable {
-    let id = UUID()
-    let title: String
-    let icon: String
+// Search result row for view cards with highlighted match
+struct CardSearchResultRow: View {
+    let card: ViewCardConfig
     let color: Color
-    let value: String
-    let subtitle: String
-    let destination: AnyView
+    let searchText: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.2))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: MetricsUIConfig.getIcon(for: card.cardName, viewId: card.viewId ?? ""))
+                    .foregroundColor(color)
+                    .font(.title3)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Highlighted name
+                highlightedText(card.cardName, highlight: searchText)
+                    .font(.headline)
+
+                if let description = card.description {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(color)
+                .font(.system(size: 14, weight: .semibold))
+        }
+        .padding(16)
+    }
+
+    // Highlight matching text
+    private func highlightedText(_ text: String, highlight: String) -> Text {
+        guard !highlight.isEmpty else {
+            return Text(text)
+        }
+
+        let lowercaseText = text.lowercased()
+        let lowercaseHighlight = highlight.lowercased()
+
+        guard let range = lowercaseText.range(of: lowercaseHighlight) else {
+            return Text(text)
+        }
+
+        let startIndex = text.index(text.startIndex, offsetBy: lowercaseText.distance(from: lowercaseText.startIndex, to: range.lowerBound))
+        let endIndex = text.index(text.startIndex, offsetBy: lowercaseText.distance(from: lowercaseText.startIndex, to: range.upperBound))
+
+        let before = String(text[..<startIndex])
+        let match = String(text[startIndex..<endIndex])
+        let after = String(text[endIndex...])
+
+        return Text(before) + Text(match).foregroundColor(color).bold() + Text(after)
+    }
 }
 
-struct MetricListRow: View {
-    let title: String
-    let icon: String
+// MARK: - Category Section Row (Database-driven navigation item)
+
+struct CategorySectionRow: View {
+    let section: CategorySectionConfig
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Compact circle icon
+            ZStack {
+                Circle()
+                    .fill(section.color.opacity(0.15))
+                    .frame(width: 36, height: 36)
+
+                Image(systemName: section.icon)
+                    .foregroundColor(section.color)
+                    .font(.system(size: 16))
+            }
+
+            Text(section.sectionName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(section.color)
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Category Cards List View (Shows card categories for a section)
+
+struct CategoryCardsListView: View {
+    let section: CategorySectionConfig
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+    @EnvironmentObject private var searchState: WellPathDataSearchState
+    @FocusState private var isSearchFocused: Bool
+
+    var categories: [CardCategoryConfig] {
+        displayConfig.cardCategories(forSection: section.sectionId)
+    }
+
+    var body: some View {
+        List {
+            ForEach(categories) { category in
+                NavigationLink(destination: categoryDestination(for: category)) {
+                    CategoryCardRow(category: category, sectionColor: section.color)
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if searchState.isSearchActive {
+                WellPathDataSearchBar(
+                    searchState: searchState,
+                    isFocused: $isSearchFocused,
+                    placeholder: "Search \(section.sectionName.lowercased())"
+                )
+            }
+        }
+        .background(
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [
+                            section.color.opacity(0.65),
+                            section.color.opacity(0.45),
+                            section.color.opacity(0.25),
+                            section.color.opacity(0.1),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+                    Spacer()
+                }
+
+                // Topographic pattern overlay
+                GeometryReader { geo in
+                    TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                }
+            }
+            .ignoresSafeArea()
+        )
+        .navigationTitle(section.sectionName)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    withAnimation {
+                        searchState.activateSearch()
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Category Destination Router (Swift-driven custom screens)
+
+    @ViewBuilder
+    private func categoryDestination(for category: CardCategoryConfig) -> some View {
+        let color = displayConfig.cardCategoryColor(for: category.categoryId)
+        let pillar = section.sectionName
+        let cards = displayConfig.viewCards(forCategory: category.categoryId)
+
+        // Route to custom Swift screens for categories that need special layouts
+        switch category.categoryId {
+        // Nutrition categories with custom multi-card layouts
+        case "CAT_PROTEIN":
+            ProteinScreen(pillar: pillar, color: color)
+        case "CAT_VEGETABLES":
+            VegetablesScreen(pillar: pillar, color: color)
+        case "CAT_LEGUMES":
+            LegumesScreen(pillar: pillar, color: color)
+        case "CAT_FRUITS":
+            FruitsScreen(pillar: pillar, color: color)
+        case "CAT_WHOLE_GRAINS":
+            WholeGrainsScreen(pillar: pillar, color: color)
+
+        // Sleep Analysis - show cards for subcategories (Stages, Amounts, Percentages, Comparisons)
+        case "CAT_SLEEP_ANALYSIS":
+            // Route to card list instead of custom screen
+            ViewCardsListView(category: category, sectionColor: section.color)
+
+        // Biometrics categories - show cards for subcategories
+        case "CAT_BIOMETRICS_BODY_COMP", "CAT_BIOMETRICS_CARDIO", "CAT_BIOMETRICS_STRENGTH", "CAT_FITNESS_METRICS":
+            BiometricCategoryScreen(
+                category: BiometricCategory(rawValue: category.categoryId) ?? .bodyComposition,
+                pillar: pillar,
+                color: color
+            )
+
+        // Default - automatic single-card detection
+        default:
+            // If category has exactly 1 card, route directly to the view (skip card list)
+            if cards.count == 1,
+               let singleCard = cards.first,
+               let viewId = singleCard.viewId,
+               let viewConfig = displayConfig.view(id: viewId) {
+                ViewRouter.viewForViewId(viewConfig, color: color, sectionId: section.sectionId)
+            } else {
+                // Multi-card category: show card list
+                ViewCardsListView(category: category, sectionColor: section.color)
+            }
+        }
+    }
+}
+
+// MARK: - View Cards List View (Shows cards for a category - database-driven)
+
+struct ViewCardsListView: View {
+    let category: CardCategoryConfig
+    let sectionColor: Color
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+    @EnvironmentObject private var searchState: WellPathDataSearchState
+    @FocusState private var isSearchFocused: Bool
+
+    var cards: [ViewCardConfig] {
+        displayConfig.viewCards(forCategory: category.categoryId)
+    }
+
+    var color: Color {
+        displayConfig.cardCategoryColor(for: category.categoryId)
+    }
+
+    var icon: String {
+        displayConfig.cardCategoryIcon(for: category.categoryId)
+    }
+
+    // NOTE: Category views should NOT have toolbar buttons (data management, entry, favorite)
+    // These buttons belong on the individual detail VIEWS, not category listings
+    // EXCEPT: Search button is allowed at all levels
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                if cards.isEmpty {
+                    emptyState
+                } else {
+                    ForEach(cards) { card in
+                        DatabaseDrivenCard(card: card, color: color)
+                    }
+                }
+            }
+            .padding()
+            .padding(.bottom, searchState.isSearchActive ? 80 : 24)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if searchState.isSearchActive {
+                WellPathDataSearchBar(
+                    searchState: searchState,
+                    isFocused: $isSearchFocused,
+                    placeholder: "Search \(category.name.lowercased())"
+                )
+            }
+        }
+        .background(
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 900)
+                    Spacer()
+                }
+
+                // Topographic pattern overlay
+                GeometryReader { geo in
+                    TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                }
+            }
+            .ignoresSafeArea()
+        )
+        .navigationTitle(category.name)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    withAnimation {
+                        searchState.activateSearch()
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("No data available")
+                .font(.headline)
+            Text("Start tracking to see your data here")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Database-Driven Card (renders based on chart_type_id)
+
+struct DatabaseDrivenCard: View {
+    let card: ViewCardConfig
     let color: Color
-    let value: String
-    let subtitle: String
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+
+    var viewConfig: ViewConfig? {
+        displayConfig.viewForCard(card)
+    }
+
+    var chartType: String {
+        viewConfig?.chartTypeId ?? "bar_vertical"
+    }
+
+    /// Check if this is a biometric view (uses patient_samples, not aggregations)
+    var isBiometric: Bool {
+        guard let config = viewConfig else { return false }
+        // Biometrics have pillar = "Biometrics" or are in biometric categories
+        // Dependencies now stored in display_views_dependencies junction table
+        if config.pillar == "Biometrics" {
+            return true
+        }
+        // Check category for biometric categories
+        if let categoryId = config.categoryId,
+           categoryId.hasPrefix("CAT_BIOMETRICS") || categoryId == "CAT_FITNESS_METRICS" {
+            return true
+        }
+        return false
+    }
+
+    var body: some View {
+        // Check if CardRegistry has a custom card for this view_id
+        // This ensures category views use the same cards as Favorites
+        if let viewId = card.viewId, CardRegistry.hasCustomCard(for: viewId) {
+            CardRegistry.card(
+                for: viewId,
+                color: color,
+                pillar: viewConfig?.pillar ?? "",
+                displayName: card.cardName
+            )
+        } else {
+            // Fallback to generic database-driven rendering
+            genericCardContent
+        }
+    }
+
+    @ViewBuilder
+    private var genericCardContent: some View {
+        MetricCardView(
+            title: card.cardName,
+            color: color,
+            metricId: card.viewId ?? "",
+            pillar: viewConfig?.pillar ?? ""
+        ) {
+            // Mini card content - biometrics use BiometricMiniCard, others use GenericMiniCard
+            miniCardContent
+        } fullScreen: {
+            // Full screen view based on chart_type_id
+            fullScreenContent
+        }
+    }
+
+    @ViewBuilder
+    private var miniCardContent: some View {
+        // Biometrics use BiometricMiniCard which queries patient_samples
+        if isBiometric, let config = viewConfig {
+            let metric = DisplayMetric(from: config)
+            let icon = config.iconName ?? MetricsUIConfig.getIcon(for: card.cardName, viewId: card.viewId ?? "")
+            BiometricMiniCard(metric: metric, color: color, icon: icon)
+        } else {
+            // Non-biometrics use GenericMiniCard which queries aggregations
+            GenericMiniCard(viewId: card.viewId ?? "", color: color)
+        }
+    }
+
+    @ViewBuilder
+    private var fullScreenContent: some View {
+        if let viewConfig = viewConfig {
+            ViewRouter.viewForViewId(viewConfig, color: color)
+        } else {
+            Text("View not found")
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - View Router (Swift-driven - routes by view_id first, then chart_type_id)
+
+struct ViewRouter {
+    /// Routes to the correct Swift view based on view_id
+    /// Database provides hierarchy/names, Swift defines rendering
+    /// sectionId: optional, used for views that need it for favorites (e.g., single-card categories)
+    @MainActor @ViewBuilder
+    static func viewForViewId(_ viewConfig: ViewConfig, color: Color, sectionId: String? = nil) -> some View {
+        let viewId = viewConfig.viewId
+        let pillar = viewConfig.pillar ?? ""
+
+        // First check view_id for custom Swift implementations
+        switch viewId {
+        // Protein views
+        case "DISP_PROTEIN_GRAMS":
+            ProteinAmountView(color: color)
+        case "DISP_PROTEIN_TIMING":
+            ProteinTimingView(color: color)
+        case "DISP_PROTEIN_TYPE":
+            ProteinTypeView(color: color)
+        case "DISP_PROTEIN_RATIO":
+            ProteinRatioView(color: color)
+
+        // Vegetable views
+        case "DISP_VEGETABLES_SERVINGS":
+            VegetablesServingsView(color: color)
+        case "DISP_VEGETABLES_TYPE":
+            VegetablesTypeView(color: color)
+        case "DISP_VEGETABLES_TIMING":
+            VegetablesTimingView(color: color)
+
+        // Legume views
+        case "DISP_LEGUMES_SERVINGS":
+            LegumesServingsView(color: color)
+        case "DISP_LEGUMES_TYPE":
+            LegumesTypeView(color: color)
+        case "DISP_LEGUMES_TIMING":
+            LegumesTimingView(color: color)
+
+        // Fruit views
+        case "DISP_FRUITS_SERVINGS":
+            FruitsServingsView(color: color)
+        case "DISP_FRUITS_TYPE":
+            FruitsTypeView(color: color)
+        case "DISP_FRUITS_TIMING":
+            FruitsTimingView(color: color)
+
+        // Whole Grain views
+        case "DISP_WHOLE_GRAINS_SERVINGS":
+            WholeGrainsServingsView(color: color)
+        case "DISP_WHOLE_GRAINS_TYPE":
+            WholeGrainsTypeView(color: color)
+        case "DISP_WHOLE_GRAINS_TIMING":
+            WholeGrainsTimingView(color: color)
+
+        // Sleep views - each routes to its own full view (database-driven viewId)
+        case "DISP_SLEEP_STAGES":
+            SleepStagesFullView(color: color, viewId: viewId)
+        case "DISP_SLEEP_AMOUNTS":
+            SleepAmountsFullView(color: color, viewId: viewId)
+        case "DISP_SLEEP_PERCENTAGES":
+            SleepPercentagesFullView(color: color, viewId: viewId)
+        case "DISP_SLEEP_COMPARISONS":
+            SleepComparisonsFullView(color: color, viewId: viewId)
+        case "DISP_SLEEP_DURATION":
+            SleepDurationView(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_SLEEP")
+        case "DISP_SLEEP_CONSISTENCY":
+            SleepConsistencyView(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_SLEEP")
+
+        // Steps view
+        case "DISP_STEPS":
+            StepsScreen(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_MOVEMENT")
+
+        // Alcohol views
+        case "DISP_ALCOHOL_QUANTITY":
+            AlcoholQuantityView(color: color)
+        case "DISP_ALCOHOL_TYPE":
+            AlcoholTypeView(color: color)
+
+        // Tobacco views
+        case "DISP_TOBACCO_STREAK":
+            TobaccoStreakView(color: color)
+        case "DISP_TOBACCO_USAGE":
+            TobaccoUsageView(color: color)
+        case "DISP_TOBACCO_TYPE":
+            TobaccoTypeView(color: color)
+
+        // Nicotine views
+        case "DISP_NICOTINE_QUANTITY":
+            NicotineQuantityView(color: color)
+        case "DISP_NICOTINE_TYPE":
+            NicotineTypeView(color: color)
+
+        // Cannabis views
+        case "DISP_CANNABIS_QUANTITY":
+            CannabisQuantityView(color: color)
+        case "DISP_CANNABIS_TYPE":
+            CannabisTypeView(color: color)
+
+        // Biometric views (use patient_samples, not aggregations)
+        case "DISP_BODYFAT":
+            BodyFatView(color: color)
+        case "DISP_BODYWEIGHT":
+            BodyWeightView(color: color)
+        case "DISP_BMI":
+            BMIView(color: color)
+        case "DISP_VISCERAL_FAT":
+            VisceralFatView(color: color)
+        case "DISP_WAIST_CIRCUMFERENCE":
+            WaistCircumferenceView(color: color)
+        case "DISP_HIP_CIRCUMFERENCE":
+            HipCircumferenceView(color: color)
+        case "DISP_WAIST_HIP":
+            WaistHipRatioView(color: color)
+        case "DISP_ASMI":
+            ASMIView(color: color)
+        case "DISP_BLOOD_PRESSURE", "DISP_SYSTOLIC_BP":
+            BloodPressureView(color: color)
+        case "DISP_HRV":
+            HRVView(color: color)
+        case "DISP_RESTING_HR":
+            RestingHRView(metric: DisplayMetric(from: viewConfig), color: color)
+        case "DISP_VO2_MAX":
+            VO2MaxView(metric: DisplayMetric(from: viewConfig), color: color)
+        case "DISP_GRIP_STRENGTH":
+            GripStrengthView(color: color)
+
+        // Default - for views without explicit routing
+        default:
+            // Check if this is a biomarker (naming convention: DISP_BIOMARKER_*)
+            if viewId.hasPrefix("DISP_BIOMARKER_") {
+                // Biomarkers all share the same structure - use generic view
+                GenericBiomarkerDetailView(biomarkerName: viewId, viewModel: BiomarkerViewModel())
+            } else {
+                // All other views MUST have dedicated Swift implementations
+                // If we reach here, the view needs to be added to ViewRouter
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundColor(.orange)
+                    Text("View Not Implemented")
+                        .font(.headline)
+                    Text("Add dedicated view for: \(viewId)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(uiColor: .systemGroupedBackground))
+            }
+        }
+    }
+}
+
+// MARK: - DisplayMetric Extension for ViewConfig
+
+extension DisplayMetric {
+    init(from viewConfig: ViewConfig) {
+        self.id = viewConfig.viewId
+        self.metricId = viewConfig.viewId
+        self.metricName = viewConfig.viewName
+        self.pillar = viewConfig.pillar
+        self.description = nil
+        self.chartTypeId = viewConfig.chartTypeId
+        self.isActive = true
+        self.aboutContent = viewConfig.aboutContent
+        self.longevityImpact = viewConfig.longevityImpact
+        self.quickTips = viewConfig.quickTips
+    }
+}
+
+// MARK: - Category Card Row
+
+struct CategoryCardRow: View {
+    let category: CardCategoryConfig
+    let sectionColor: Color
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+
+    var icon: String {
+        displayConfig.cardCategoryIcon(for: category.categoryId)
+    }
+
+    var color: Color {
+        displayConfig.cardCategoryColor(for: category.categoryId)
+    }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -1117,20 +1584,22 @@ struct MetricListRow: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(category.name)
                     .font(.headline)
 
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if let overview = category.overview {
+                    Text(overview)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer()
 
-            Text(value)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
+            Image(systemName: "chevron.right")
+                .foregroundColor(color)
+                .font(.system(size: 14, weight: .semibold))
         }
         .padding(.vertical, 4)
     }
@@ -1139,5 +1608,6 @@ struct MetricListRow: View {
 #Preview {
     NavigationStack {
         TrackedMetricsListView()
+            .environmentObject(DisplayConfigurationService.shared)
     }
 }

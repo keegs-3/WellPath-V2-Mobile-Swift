@@ -2,8 +2,8 @@
 //  ParentMetricLineChart.swift
 //  WellPath
 //
-//  Reusable line chart component for metrics like bodyweight, HRV, etc.
-//  Same pattern as ParentMetricBarChart but renders as a line with points
+//  Reusable line chart component for biometric metrics like bodyweight, body fat, HRV, etc.
+//  X-axis behavior matches ParentMetricBarChart: D=24h, W=7d, M=30d, 6M=26w, Y=12m
 //
 
 import SwiftUI
@@ -21,12 +21,29 @@ struct ParentMetricLineChart: View {
     @State private var decimalPlaces: Int = 1
     @StateObject private var scrollManager: LineChartScrollManager
     @State private var scrollPosition: Date
+    @State private var selectedLengthUnit: HeightDisplayUnit2 = .ftIn
+    @State private var selectedWeightUnit: WeightDisplayUnit = .lb
+
+    /// Metrics that support length unit toggle (in/cm)
+    private var supportsLengthToggle: Bool {
+        ["DISP_WAIST_CIRCUMFERENCE", "DISP_HIP_CIRCUMFERENCE"].contains(metric.metricId)
+    }
+
+    /// Metrics that support weight unit toggle (lb/kg)
+    private var supportsWeightToggle: Bool {
+        metric.metricId == "DISP_BODYWEIGHT"
+    }
 
     private var selectedPoint: ChartDataPoint? {
         guard let selectedDate = selectedPointDate else { return nil }
         return scrollManager.chartData.first(where: {
-            Calendar.current.isDate($0.date, equalTo: selectedDate, toGranularity: selectedPeriod.dateGranularity)
+            Calendar.current.isDate($0.date, equalTo: selectedDate, toGranularity: getDateGranularity())
         })
+    }
+
+    /// Get only the data points that have actual values (non-zero)
+    private var dataPointsWithValues: [ChartDataPoint] {
+        scrollManager.chartData.filter { $0.value > 0 }
     }
 
     init(metric: DisplayMetric, color: Color, showAbout: Binding<Bool>? = nil) {
@@ -79,15 +96,46 @@ struct ParentMetricLineChart: View {
                 ) ?? now
             }
 
+            // Unit toggle for length metrics (in/cm) - aligned right
+            if supportsLengthToggle {
+                HStack {
+                    Spacer()
+                    Picker("Unit", selection: $selectedLengthUnit) {
+                        Text("in").tag(HeightDisplayUnit2.ftIn)
+                        Text("cm").tag(HeightDisplayUnit2.cm)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 100)
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+
+            // Unit toggle for weight metrics (lb/kg) - aligned right
+            if supportsWeightToggle {
+                HStack {
+                    Spacer()
+                    Picker("Unit", selection: $selectedWeightUnit) {
+                        Text("lb").tag(WeightDisplayUnit.lb)
+                        Text("kg").tag(WeightDisplayUnit.kg)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 100)
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+
             // Value display with optional info button
             HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
                     if let selected = selectedPoint, selected.value > 0 {
-                        Text(selectedPeriod.barLabel)
+                        // Show selected point's value (converted if length metric)
+                        Text("VALUE")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(formatValue(selected.value))
+                            Text(formatValue(convertValueForDisplay(selected.value)))
                                 .font(.system(size: 48, weight: .semibold))
                             if !displayUnit.isEmpty {
                                 Text(displayUnit)
@@ -95,15 +143,16 @@ struct ParentMetricLineChart: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        Text(formatDate(selected.date))
+                        Text(formatSelectedDate(selected.date))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     } else {
-                        Text(selectedPeriod.aggregateLabel)
+                        // Show LATEST value when nothing selected (biometrics are point-in-time)
+                        Text("LATEST")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(formatValue(calculateAverage()))
+                            Text(formatValue(convertValueForDisplay(getLatestValue())))
                                 .font(.system(size: 48, weight: .semibold))
                             if !displayUnit.isEmpty {
                                 Text(displayUnit)
@@ -144,58 +193,46 @@ struct ParentMetricLineChart: View {
                 }
             }
 
-            // Line chart
+            // Line chart - points only where data exists, lines connect adjacent points
             Chart(scrollManager.chartData) { dataPoint in
                 // Invisible placeholder for all points to establish x-axis domain
                 PointMark(
-                    x: .value("Date", dataPoint.date),
+                    x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
                     y: .value("Value", 0)
                 )
                 .opacity(0)
 
-                // Only show line/area/points for non-zero values
+                // Only show line/points for non-zero values
                 if dataPoint.value > 0 {
-                    // Line
+                    let displayValue = convertValueForDisplay(dataPoint.value)
+
+                    // Line connecting points (smooth interpolation)
                     LineMark(
-                        x: .value("Date", dataPoint.date),
-                        y: .value("Value", dataPoint.value)
+                        x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
+                        y: .value("Value", displayValue)
                     )
                     .foregroundStyle(color)
                     .interpolationMethod(.catmullRom)
-                    .lineStyle(StrokeStyle(lineWidth: 3))
-
-                    // Area under line
-                    AreaMark(
-                        x: .value("Date", dataPoint.date),
-                        y: .value("Value", dataPoint.value)
-                    )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [color.opacity(0.2), color.opacity(0.05)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
 
                     // Point marks
                     if let selectedDate = selectedPointDate,
-                       Calendar.current.isDate(dataPoint.date, equalTo: selectedDate, toGranularity: selectedPeriod.dateGranularity) {
+                       Calendar.current.isDate(dataPoint.date, equalTo: selectedDate, toGranularity: getDateGranularity()) {
                         // Selected point (larger)
                         PointMark(
-                            x: .value("Date", dataPoint.date),
-                            y: .value("Value", dataPoint.value)
+                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
+                            y: .value("Value", displayValue)
                         )
                         .foregroundStyle(color)
                         .symbolSize(150)
                     } else {
                         // Regular point
                         PointMark(
-                            x: .value("Date", dataPoint.date),
-                            y: .value("Value", dataPoint.value)
+                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
+                            y: .value("Value", displayValue)
                         )
                         .foregroundStyle(color)
-                        .symbolSize(50)
+                        .symbolSize(60)
                     }
                 }
             }
@@ -215,7 +252,7 @@ struct ParentMetricLineChart: View {
                                 })
 
                             if let closestDate = closest?.date,
-                               Calendar.current.isDate(selectedPointDate ?? Date.distantPast, equalTo: closestDate, toGranularity: selectedPeriod.dateGranularity) {
+                               Calendar.current.isDate(selectedPointDate ?? Date.distantPast, equalTo: closestDate, toGranularity: getDateGranularity()) {
                                 selectedPointDate = nil
                             } else {
                                 selectedPointDate = closest?.date
@@ -228,7 +265,7 @@ struct ParentMetricLineChart: View {
             }
             .chartXAxis {
                 AxisMarks(values: .stride(by: getAxisLabelStride(), count: getAxisLabelMultiplier())) { value in
-                    if let date = value.as(Date.self) {
+                    if value.as(Date.self) != nil {
                         AxisValueLabel(format: getAxisLabelFormat())
                         AxisGridLine()
                         AxisTick()
@@ -277,11 +314,31 @@ struct ParentMetricLineChart: View {
             .padding(.horizontal)
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .task {
+            // Load user's preferred units
+            await UnitConversionService.shared.loadUserPreferences()
+            if supportsLengthToggle {
+                selectedLengthUnit = UnitConversionService.shared.preferredHeightUnit
+            }
+            if supportsWeightToggle {
+                selectedWeightUnit = UnitConversionService.shared.preferredWeightUnit
+            }
+        }
     }
 
     // MARK: - Computed Properties
 
     private var displayUnit: String {
+        // For length metrics, use the selected toggle unit
+        if supportsLengthToggle {
+            return selectedLengthUnit == .cm ? "cm" : "in"
+        }
+
+        // For weight metrics, use the selected toggle unit
+        if supportsWeightToggle {
+            return selectedWeightUnit.rawValue
+        }
+
         let unit = (actualUnit ?? selectedUnit).lowercased()
         switch unit {
         case "kilogram", "kg":
@@ -290,13 +347,49 @@ struct ParentMetricLineChart: View {
             return "lb"
         case "percent", "percentage", "%":
             return "%"
+        case "centimeter", "cm":
+            return "cm"
+        case "inch", "in":
+            return "in"
         default:
             return selectedUnit
         }
     }
 
+    /// Convert value based on selected unit for length or weight metrics
+    private func convertValueForDisplay(_ value: Double) -> Double {
+        // Handle weight conversion (data stored in canonical kg)
+        if supportsWeightToggle {
+            switch selectedWeightUnit {
+            case .kg:
+                return value  // Already in kg
+            case .lb:
+                return value * 2.2046  // Convert kg to lb
+            }
+        }
+
+        // Handle length conversion
+        guard supportsLengthToggle else { return value }
+
+        // Data is stored in cm, convert if needed
+        let rawUnit = (actualUnit ?? "cm").lowercased()
+        let isSourceCm = rawUnit.contains("cm") || rawUnit.contains("centimeter")
+
+        switch selectedLengthUnit {
+        case .cm:
+            // If source is cm, return as-is; if source is inches, convert to cm
+            return isSourceCm ? value : value * 2.54
+        case .ftIn:
+            // If source is cm, convert to inches; if source is inches, return as-is
+            return isSourceCm ? value / 2.54 : value
+        }
+    }
+
     private var yAxisDomain: ClosedRange<Double> {
-        let values = scrollManager.chartData.map { $0.value }.filter { $0 > 0 }
+        // Convert values for length metrics when calculating domain
+        let values = scrollManager.chartData
+            .map { convertValueForDisplay($0.value) }
+            .filter { $0 > 0 }
         guard !values.isEmpty else { return 0...100 }
 
         let minVal = values.min() ?? 0
@@ -337,11 +430,15 @@ struct ParentMetricLineChart: View {
         }
     }
 
-    private func calculateAverage() -> Double {
+    /// Get the latest (most recent) value in the visible range
+    private func getLatestValue() -> Double {
         let visibleData = getVisibleDataPoints()
-        let nonZeroValues = visibleData.filter { $0.value > 0 }.map { $0.value }
-        guard !nonZeroValues.isEmpty else { return 0 }
-        return nonZeroValues.reduce(0, +) / Double(nonZeroValues.count)
+        // Sort by date descending and get the first non-zero value
+        let latestPoint = visibleData
+            .filter { $0.value > 0 }
+            .sorted { $0.date > $1.date }
+            .first
+        return latestPoint?.value ?? 0
     }
 
     private func getVisibleDataPoints() -> [ChartDataPoint] {
@@ -381,6 +478,22 @@ struct ParentMetricLineChart: View {
         }
     }
 
+    /// Format date for selected point display (includes time for D view)
+    private func formatSelectedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        switch selectedPeriod {
+        case .day:
+            formatter.dateFormat = "MMM d, h:mm a"  // Include time for day view
+        case .week:
+            formatter.dateFormat = "E, MMM d"  // Day of week + date
+        case .month:
+            formatter.dateFormat = "MMM d, yyyy"
+        case .sixMonth, .year:
+            formatter.dateFormat = "MMM d, yyyy"
+        }
+        return formatter.string(from: date)
+    }
+
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         switch selectedPeriod {
@@ -396,31 +509,47 @@ struct ParentMetricLineChart: View {
         return formatter.string(from: date)
     }
 
+    /// Get the calendar granularity for date matching based on period
+    private func getDateGranularity() -> Calendar.Component {
+        switch selectedPeriod {
+        case .day:
+            return .hour
+        case .week, .month:
+            return .day
+        case .sixMonth:
+            return .weekOfYear
+        case .year:
+            return .month
+        }
+    }
+
     private func getVisibleDomainTimeInterval() -> TimeInterval {
         switch selectedPeriod {
         case .day:
-            return TimeInterval(7 * 24 * 60 * 60)  // 7 days
+            return 24 * 3600  // 24 hours in seconds
         case .week:
-            return TimeInterval(8 * 7 * 24 * 60 * 60)  // 8 weeks
+            return 7 * 24 * 3600  // 7 days in seconds
         case .month:
-            return TimeInterval(6 * 30 * 24 * 60 * 60)  // 6 months
+            return 30 * 24 * 3600  // 30 days in seconds
         case .sixMonth:
-            return TimeInterval(180 * 24 * 60 * 60)  // 6 months
+            return 26 * 7 * 24 * 3600  // 26 weeks in seconds
         case .year:
-            return TimeInterval(365 * 24 * 60 * 60)  // 1 year
+            return 365 * 24 * 3600  // 1 year in seconds
         }
     }
+
+    // MARK: - X-Axis Configuration (matches ParentMetricBarChart)
 
     private func getAxisLabelStride() -> Calendar.Component {
         switch selectedPeriod {
         case .day:
-            return .day
+            return .hour
         case .week:
-            return .weekOfYear
+            return .day
         case .month:
-            return .month
+            return .weekOfYear  // Weekly labels for month view
         case .sixMonth:
-            return .month
+            return .month  // Monthly labels for 6-month view
         case .year:
             return .month
         }
@@ -429,30 +558,30 @@ struct ParentMetricLineChart: View {
     private func getAxisLabelMultiplier() -> Int {
         switch selectedPeriod {
         case .day:
-            return 1
+            return 6  // Every 6 hours (12 AM, 6 AM, 12 PM, 6 PM)
         case .week:
-            return 2
+            return 1  // Every day
         case .month:
-            return 1
+            return 1  // Every week
         case .sixMonth:
-            return 2
+            return 1  // Every month
         case .year:
-            return 3
+            return 1  // Every month
         }
     }
 
     private func getAxisLabelFormat() -> Date.FormatStyle {
         switch selectedPeriod {
         case .day:
-            return .dateTime.day().month(.abbreviated)
+            return .dateTime.hour(.defaultDigits(amPM: .abbreviated))
         case .week:
-            return .dateTime.day().month(.abbreviated)
+            return .dateTime.weekday(.narrow)
         case .month:
-            return .dateTime.month(.abbreviated)
+            return .dateTime.day(.defaultDigits)  // Just day number (12, 19, etc.)
         case .sixMonth:
             return .dateTime.month(.abbreviated)
         case .year:
-            return .dateTime.month(.abbreviated).year(.twoDigits)
+            return .dateTime.month(.narrow)  // Single letter (J, F, M, A, M, J, J, A, S, O, N, D)
         }
     }
 }
@@ -571,13 +700,13 @@ class LineChartScrollManager: ObservableObject {
         // Generate empty timeline
         var timeline = generateEmptyTimeline(from: startDate, to: endDate)
 
-        // Fetch data from aggregation_results_cache
+        // Fetch data from patient_quantity_samples
         let dataPoints = await fetchDataPoints(from: startDate, to: endDate)
 
         // Overlay actual data on timeline
         for dataPoint in dataPoints {
             if let index = timeline.firstIndex(where: {
-                Calendar.current.isDate($0.date, equalTo: dataPoint.date, toGranularity: selectedPeriod.dateGranularity)
+                Calendar.current.isDate($0.date, equalTo: dataPoint.date, toGranularity: selectedPeriod.calendarComponent)
             }) {
                 timeline[index] = dataPoint
             }
@@ -609,44 +738,59 @@ class LineChartScrollManager: ObservableObject {
     private func fetchDataPoints(from startDate: Date, to endDate: Date) async -> [ChartDataPoint] {
         do {
             let patientId = try await supabase.auth.session.user.id
-
-            // Look up aggregation metric ID from display_metrics_aggregations
-            let aggId = await lookupAggregationId()
-            guard let aggMetricId = aggId else {
-                print("⚠️ No aggregation ID found for \(metricId)")
-                return []
-            }
-
-            // Also fetch the unit from aggregation_metrics
-            await fetchUnit(for: aggMetricId)
-
-            let periodType = getPeriodType()
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-            struct AggResult: Codable {
-                let value: Double
-                let periodStart: Date
+            // Check if this is a biometric metric that should query patient_samples directly
+            if let quantityType = await BiometricQuantityTypeService.shared.quantityType(for: metricId) {
+                return await fetchBiometricDataPoints(
+                    patientId: patientId,
+                    quantityType: quantityType,
+                    from: startDate,
+                    to: endDate,
+                    formatter: formatter
+                )
+            }
+
+            // Query patient_quantity_samples via the sample_quantity_type from display_views_dependencies
+            let sampleType = await lookupSampleType()
+            guard let quantityType = sampleType else {
+                print("⚠️ No sample_quantity_type found for \(metricId)")
+                return []
+            }
+
+            struct SampleReading: Codable {
+                let quantityValue: Double
+                let quantityUnit: String?
+                let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case value
-                    case periodStart = "period_start"
+                    case quantityValue = "quantity_value"
+                    case quantityUnit = "quantity_unit"
+                    case startTime = "start_time"
                 }
             }
 
-            let results: [AggResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select("value, period_start")
+            let results: [SampleReading] = try await supabase
+                .from("patient_quantity_samples")
+                .select("quantity_value, quantity_unit, start_time")
                 .eq("patient_id", value: patientId)
-                .eq("agg_metric_id", value: aggMetricId)
-                .eq("period_type", value: periodType)
-                .gte("period_start", value: formatter.string(from: startDate))
-                .lte("period_start", value: formatter.string(from: endDate))
-                .order("period_start", ascending: false)
+                .eq("quantity_type", value: quantityType)
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("start_time", value: formatter.string(from: startDate))
+                .lte("start_time", value: formatter.string(from: endDate))
+                .order("start_time", ascending: false)
                 .execute()
                 .value
 
-            return results.map { ChartDataPoint(date: $0.periodStart, value: $0.value, label: "") }
+            // Set the unit from the first result
+            if let first = results.first, let unit = first.quantityUnit {
+                await MainActor.run {
+                    self.actualUnit = unit
+                }
+            }
+
+            return results.map { ChartDataPoint(date: $0.startTime, value: $0.quantityValue, label: "") }
 
         } catch {
             print("❌ Error fetching line chart data: \(error)")
@@ -654,98 +798,85 @@ class LineChartScrollManager: ObservableObject {
         }
     }
 
-    private func lookupAggregationId() async -> String? {
+    /// Fetch biometric data directly from patient_samples table
+    private func fetchBiometricDataPoints(
+        patientId: UUID,
+        quantityType: String,
+        from startDate: Date,
+        to endDate: Date,
+        formatter: ISO8601DateFormatter
+    ) async -> [ChartDataPoint] {
         do {
-            struct AggLookup: Codable {
-                let aggMetricId: String
+            struct SampleReading: Codable {
+                let quantityValue: Double
+                let quantityUnit: String?
+                let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case aggMetricId = "agg_metric_id"
+                    case quantityValue = "quantity_value"
+                    case quantityUnit = "quantity_unit"
+                    case startTime = "start_time"
                 }
             }
 
-            let periodType = getPeriodType()
+            let results: [SampleReading] = try await supabase
+                .from("patient_quantity_samples")
+                .select("quantity_value, quantity_unit, start_time")
+                .eq("patient_id", value: patientId)
+                .eq("quantity_type", value: quantityType)
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("start_time", value: formatter.string(from: startDate))
+                .lte("start_time", value: formatter.string(from: endDate))
+                .order("start_time", ascending: false)
+                .execute()
+                .value
 
-            let results: [AggLookup] = try await supabase
-                .from("display_metrics_aggregations")
-                .select("agg_metric_id")
-                .eq("metric_id", value: metricId)
-                .eq("period_type", value: periodType)
+            // Set the unit from the first result
+            if let first = results.first, let unit = first.quantityUnit {
+                await MainActor.run {
+                    self.actualUnit = BiometricValueLoader.formatUnitForDisplay(unit)
+                }
+            }
+
+            return results.map { ChartDataPoint(date: $0.startTime, value: $0.quantityValue, label: "") }
+
+        } catch {
+            print("❌ Error fetching biometric data from patient_samples: \(error)")
+            return []
+        }
+    }
+
+    private func lookupSampleType() async -> String? {
+        do {
+            struct SampleTypeLookup: Codable {
+                let sampleQuantityType: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case sampleQuantityType = "sample_quantity_type"
+                }
+            }
+
+            let results: [SampleTypeLookup] = try await supabase
+                .from("display_views_dependencies")
+                .select("sample_quantity_type")
+                .eq("view_id", value: metricId)
+                .eq("is_primary", value: true)
                 .limit(1)
                 .execute()
                 .value
 
-            return results.first?.aggMetricId
+            return results.first?.sampleQuantityType
 
         } catch {
-            print("❌ Error looking up aggregation ID: \(error)")
+            print("❌ Error looking up sample type: \(error)")
             return nil
         }
     }
 
-    private func fetchUnit(for aggMetricId: String) async {
-        do {
-            struct UnitResult: Codable {
-                let outputUnit: String?
-
-                enum CodingKeys: String, CodingKey {
-                    case outputUnit = "output_unit"
-                }
-            }
-
-            let results: [UnitResult] = try await supabase
-                .from("aggregation_metrics")
-                .select("output_unit")
-                .eq("agg_id", value: aggMetricId)
-                .limit(1)
-                .execute()
-                .value
-
-            if let unit = results.first?.outputUnit {
-                await MainActor.run {
-                    self.actualUnit = unit
-                }
-            }
-
-        } catch {
-            print("❌ Error fetching unit: \(error)")
-        }
-    }
-
-    private func getPeriodType() -> String {
-        switch selectedPeriod {
-        case .day:
-            return "daily"
-        case .week:
-            return "weekly"
-        case .month:
-            return "monthly"
-        case .sixMonth:
-            return "daily"  // Use daily data for 6M view
-        case .year:
-            return "daily"  // Use daily data for Y view
-        }
-    }
 }
 
-// MARK: - TimePeriod Extension
-
-extension TimePeriod {
-    var dateGranularity: Calendar.Component {
-        switch self {
-        case .day:
-            return .day
-        case .week:
-            return .weekOfYear
-        case .month:
-            return .month
-        case .sixMonth:
-            return .day
-        case .year:
-            return .day
-        }
-    }
-}
+// Note: dateGranularity is implemented as getDateGranularity() within ParentMetricLineChart
+// to match ParentMetricBarChart behavior
 
 #Preview {
     let mockMetric = DisplayMetric(
@@ -753,12 +884,9 @@ extension TimePeriod {
         metricId: "DISP_WEIGHT",
         metricName: "Weight",
         description: "Body weight tracking",
-        screenId: nil,
         pillar: "Core Care",
         chartTypeId: "trend_line",
         isActive: true,
-        createdAt: nil,
-        updatedAt: nil,
         aboutContent: nil,
         longevityImpact: nil,
         quickTips: nil

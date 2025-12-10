@@ -155,10 +155,13 @@ struct PersonalInfoView: View {
             Section {
                 Toggle("Athlete Status", isOn: $viewModel.isAthlete)
             } footer: {
-                Text("Athlete status adjusts healthy ranges for biometric measurements like resting heart rate and body composition.")
+                Text("Athlete status adjusts healthy ranges for biomarkers like creatine kinase.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+
+            // Additional Characteristics Section
+            additionalCharacteristicsSection
 
             // Advanced Testing Section (extracted to reduce body complexity)
             advancedTestingSection
@@ -223,8 +226,8 @@ struct PersonalInfoView: View {
                 Text("Height")
                 Spacer()
                 Picker("Unit", selection: $viewModel.heightUnit) {
-                    ForEach(HeightDisplayUnit.allCases, id: \.self) { unit in
-                        Text(unit.rawValue).tag(unit)
+                    ForEach(HeightDisplayUnit2.allCases, id: \.self) { unit in
+                        Text(unit.shortLabel).tag(unit)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -276,6 +279,55 @@ struct PersonalInfoView: View {
                 }
                 .onChange(of: viewModel.heightInches) { _, _ in
                     viewModel.updateHeightFromFeetInches()
+                }
+            }
+        }
+    }
+
+    // MARK: - Additional Characteristics Section
+
+    @ViewBuilder
+    private var additionalCharacteristicsSection: some View {
+        Section("Additional Information") {
+            // Blood Type
+            Picker("Blood Type", selection: $viewModel.bloodType) {
+                ForEach(BloodType.allCases, id: \.self) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+
+            // Dominant Hand
+            Picker("Dominant Hand", selection: $viewModel.dominantHand) {
+                ForEach(DominantHand.allCases, id: \.self) { hand in
+                    Text(hand.displayName).tag(hand)
+                }
+            }
+
+            // Smoking Status
+            Picker("Smoking Status", selection: $viewModel.smokingStatus) {
+                ForEach(SmokingStatus.allCases, id: \.self) { status in
+                    Text(status.displayName).tag(status)
+                }
+            }
+
+            // Wheelchair Use
+            Toggle("Uses Wheelchair", isOn: $viewModel.wheelchairUse)
+
+            // Menopausal Status - only show for females
+            if viewModel.biologicalSex == .female {
+                Picker("Menopausal Status", selection: $viewModel.menopausalStatus) {
+                    ForEach(MenopausalStatus.allCases.filter { $0 != .notApplicable }, id: \.self) { status in
+                        Text(status.displayName).tag(status)
+                    }
+                }
+
+                // Pregnancy Status - only show for pre-menopausal females
+                if viewModel.menopausalStatus == .preMenopausal {
+                    Picker("Pregnancy Status", selection: $viewModel.pregnancyStatus) {
+                        ForEach(PregnancyStatus.allCases.filter { $0 != .notApplicable }, id: \.self) { status in
+                            Text(status.displayName).tag(status)
+                        }
+                    }
                 }
             }
         }

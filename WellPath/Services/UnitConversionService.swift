@@ -34,6 +34,19 @@ private struct QuantityTypeUnit: Codable {
     }
 }
 
+/// Unit base record for display symbols
+private struct UnitBaseRecord: Codable {
+    let unitId: String
+    let symbol: String?
+    let uiDisplay: String?
+
+    enum CodingKeys: String, CodingKey {
+        case unitId = "unit_id"
+        case symbol
+        case uiDisplay = "ui_display"
+    }
+}
+
 @MainActor
 class UnitConversionService: ObservableObject {
     static let shared = UnitConversionService()
@@ -45,6 +58,9 @@ class UnitConversionService: ObservableObject {
 
     /// Cached canonical units: "quantity_type" -> unit_id
     private var canonicalUnitCache: [String: String] = [:]
+
+    /// Cached unit display symbols: "unit_id" -> symbol (e.g., "kilogram" -> "kg")
+    private var unitSymbolCache: [String: String] = [:]
 
     /// Whether initial load has completed
     private var isLoaded = false

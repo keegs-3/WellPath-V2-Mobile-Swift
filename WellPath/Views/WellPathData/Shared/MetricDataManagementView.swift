@@ -235,6 +235,80 @@ extension MetricDataConfig {
             isDuration: true
         )
     }
+
+    // MARK: - Substances
+
+    static func alcohol(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Alcohol",
+            quantityTypes: ["alcohol_drinks"],
+            color: color,
+            icon: "wineglass",
+            valueFormatter: { value, _ in
+                let drinks = Int(value)
+                return "\(drinks) \(drinks == 1 ? "drink" : "drinks")"
+            },
+            metadataFields: [
+                MetadataFieldConfig("alcohol_type", label: "Type", category: "alcohol_types")
+            ],
+            isDuration: false
+        )
+    }
+
+    static func tobacco(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Tobacco",
+            quantityTypes: ["tobacco_uses", "tobacco_cigarettes", "tobacco_other_uses"],
+            color: color,
+            icon: "smoke",
+            valueFormatter: { value, _ in
+                let uses = Int(value)
+                return "\(uses) \(uses == 1 ? "use" : "uses")"
+            },
+            metadataFields: [
+                MetadataFieldConfig("tobacco_type", label: "Type", category: "tobacco_types")
+            ],
+            isDuration: false
+        )
+    }
+
+    static func nicotine(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Nicotine",
+            quantityTypes: ["nicotine_uses", "nicotine_vape_puffs", "nicotine_other_uses"],
+            color: color,
+            icon: "bolt.circle",
+            valueFormatter: { value, _ in
+                let uses = Int(value)
+                return "\(uses) \(uses == 1 ? "use" : "uses")"
+            },
+            metadataFields: [
+                MetadataFieldConfig("nicotine_type", label: "Type", category: "nicotine_types")
+            ],
+            isDuration: false
+        )
+    }
+
+    static func cannabis(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Cannabis",
+            quantityTypes: [
+                QuantityTypes.cannabisFlower,
+                QuantityTypes.cannabisVape,
+                QuantityTypes.cannabisEdibles,
+                QuantityTypes.cannabisConcentrates,
+                QuantityTypes.cannabisTinctures
+            ],
+            color: color,
+            icon: "leaf.fill",
+            valueFormatter: { value, _ in
+                let uses = Int(value)
+                return "\(uses) \(uses == 1 ? "use" : "uses")"
+            },
+            metadataFields: [],  // Cannabis type is determined by quantity_type, not metadata
+            isDuration: false
+        )
+    }
 }
 
 // MARK: - Main View
@@ -689,9 +763,9 @@ class MetricDataManagementViewModel: ObservableObject {
 
             let decoder = createDateDecoder()
 
-            // Query patient_samples
+            // Query patient_quantity_samples
             let query = supabase
-                .from("patient_samples")
+                .from("patient_quantity_samples")
                 .select()
                 .eq("patient_id", value: patientId.uuidString)
                 .in("quantity_type", values: config.quantityTypes)
@@ -778,7 +852,7 @@ class MetricDataManagementViewModel: ObservableObject {
             }
 
             let query = supabase
-                .from("data_entry_fields_reference")
+                .from("sample_category_types_reference")
                 .select("reference_key, display_name")
                 .in("reference_key", values: keys)
 
@@ -810,7 +884,7 @@ class MetricDataManagementViewModel: ObservableObject {
                 }
 
                 try await supabase
-                    .from("patient_samples")
+                    .from("patient_quantity_samples")
                     .delete()
                     .eq("id", value: entry.id.uuidString)
                     .eq("patient_id", value: patientId.uuidString)
@@ -861,7 +935,6 @@ class MetricDataManagementViewModel: ObservableObject {
 struct RawMetricSample: Codable {
     let id: UUID
     let patientId: UUID
-    let sampleType: String
     let startTime: Date
     let endTime: Date
     let quantityValue: Double?
@@ -874,7 +947,6 @@ struct RawMetricSample: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case patientId = "patient_id"
-        case sampleType = "sample_type"
         case startTime = "start_time"
         case endTime = "end_time"
         case quantityValue = "quantity_value"

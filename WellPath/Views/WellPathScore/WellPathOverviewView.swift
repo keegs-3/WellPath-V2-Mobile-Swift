@@ -11,6 +11,7 @@ struct WellPathOverviewView: View {
     @StateObject private var viewModel = WellPathScoreViewModel()
     @State private var selectedView: ScoreView = .scoreHistory
     @State private var sortOption: PillarSortOption = .order
+    @State private var showingScoreSheet = false
 
     enum ScoreView: String, CaseIterable {
         case scoreHistory = "Score History"
@@ -48,17 +49,21 @@ struct WellPathOverviewView: View {
                         Spacer()
                     }
 
-                    // Large background logo
+                    // Large background logo - tappable for Score Sheet
                     VStack {
                         HStack {
                             Spacer()
-                            Image("white_grey")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 180, height: 180)
-                                .opacity(0.35)
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 40, y: 20)
+                            Button {
+                                showingScoreSheet = true
+                            } label: {
+                                Image("white_grey")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 180, height: 180)
+                                    .opacity(0.35)
+                                    .rotationEffect(.degrees(-15))
+                                    .offset(x: 40, y: 20)
+                            }
                         }
                         Spacer()
                     }
@@ -67,6 +72,9 @@ struct WellPathOverviewView: View {
             )
             .navigationTitle("WellPath Score")
             .navigationBarTitleDisplayMode(.large)
+            .sheet(isPresented: $showingScoreSheet) {
+                WellPathScoreSheet(viewModel: viewModel)
+            }
             .task {
                 await viewModel.loadWellPathScore()
                 await viewModel.loadPillarScores()
@@ -399,41 +407,7 @@ struct PillarDetailView: View {
 
     var body: some View {
         contentView
-            .background(
-                ZStack {
-                    // Background gradient - vertical from pillar color to white
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [
-                                pillarColor.opacity(0.65),
-                                pillarColor.opacity(0.45),
-                                pillarColor.opacity(0.25),
-                                pillarColor.opacity(0.1),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 900)
-
-                        Spacer()
-                    }
-
-                    // Large background icon
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: pillarIcon)
-                                .font(.system(size: 200))
-                                .foregroundStyle(Color.white.opacity(0.2))
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 50, y: -50)
-                        }
-                        Spacer()
-                    }
-                }
-                .ignoresSafeArea()
-            )
+            .metricScreenBackground(color: pillarColor)
             .navigationTitle(pillarScore.pillarName)
             .navigationBarTitleDisplayMode(.large)
             .task {

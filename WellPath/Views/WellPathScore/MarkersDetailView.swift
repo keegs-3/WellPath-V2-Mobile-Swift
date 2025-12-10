@@ -38,40 +38,7 @@ struct MarkersDetailView: View {
 
     var body: some View {
         contentView
-            .background(
-                ZStack {
-                    // Background gradient
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [
-                                markersColor.opacity(0.65),
-                                markersColor.opacity(0.45),
-                                markersColor.opacity(0.25),
-                                markersColor.opacity(0.1),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 900)
-                        Spacer()
-                    }
-
-                    // Large background icon
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "chart.xyaxis.line")
-                                .font(.system(size: 200))
-                                .foregroundStyle(Color.white.opacity(0.2))
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 50, y: -50)
-                        }
-                        Spacer()
-                    }
-                }
-                .ignoresSafeArea()
-            )
+            .metricScreenBackground(color: markersColor)
             .navigationTitle("Markers")
             .navigationBarTitleDisplayMode(.large)
             .task {
@@ -143,9 +110,9 @@ struct MarkersDetailView: View {
                 } else {
                     VStack(spacing: 12) {
                         ForEach(filteredMarkers.filter({ !$0.isBiometric })) { marker in
-                            NavigationLink(destination: BiomarkerDetailView(
-                                name: marker.name,
-                                isBiometric: marker.isBiometric
+                            NavigationLink(destination: GenericBiomarkerDetailView(
+                                biomarkerName: marker.name,
+                                viewModel: BiomarkerViewModel()
                             )) {
                                 MarkerContainerRow(marker: marker)
                             }
@@ -180,9 +147,9 @@ struct MarkersDetailView: View {
                 } else {
                     VStack(spacing: 12) {
                         ForEach(filteredMarkers.filter({ $0.isBiometric })) { marker in
-                            NavigationLink(destination: BiomarkerDetailView(
-                                name: marker.name,
-                                isBiometric: marker.isBiometric
+                            NavigationLink(destination: BiometricRouter(
+                                biometricName: marker.name,
+                                color: markersColor
                             )) {
                                 MarkerContainerRow(marker: marker)
                             }

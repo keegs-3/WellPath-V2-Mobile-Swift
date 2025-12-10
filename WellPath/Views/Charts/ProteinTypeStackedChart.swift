@@ -20,44 +20,45 @@ struct ProteinTypeStackedChart: View {
     @StateObject private var viewModel = ProteinTypeChartViewModel()
 
     // Ordered from best (top of stack) to worst (bottom of stack)
-    private let proteinTypeAggIds = [
-        "AGG_PROTEIN_TYPE_PLANT_BASED",
-        "AGG_PROTEIN_TYPE_FATTY_FISH",
-        "AGG_PROTEIN_TYPE_EGGS",
-        "AGG_PROTEIN_TYPE_LEAN_PROTEIN",
-        "AGG_PROTEIN_TYPE_DAIRY",
-        "AGG_PROTEIN_TYPE_SUPPLEMENT",
-        "AGG_PROTEIN_TYPE_RED_MEAT",
-        "AGG_PROTEIN_TYPE_PROCESSED_MEAT",
-        "AGG_PROTEIN_TYPE_OTHER",
-        "AGG_PROTEIN_TYPE_UNASSIGNED"
+    // These are the protein_type values from patient_quantity_samples metadata
+    private let proteinTypeKeys = [
+        "plant_based",
+        "fatty_fish",
+        "eggs",
+        "lean_protein",
+        "dairy",
+        "supplement",
+        "red_meat",
+        "processed_meat",
+        "other",
+        "unassigned"
     ]
 
     private let typeDisplayNames: [String: String] = [
-        "AGG_PROTEIN_TYPE_DAIRY": "Dairy",
-        "AGG_PROTEIN_TYPE_EGGS": "Eggs",
-        "AGG_PROTEIN_TYPE_FATTY_FISH": "Fatty Fish",
-        "AGG_PROTEIN_TYPE_LEAN_PROTEIN": "Lean Protein",
-        "AGG_PROTEIN_TYPE_PLANT_BASED": "Plant-based",
-        "AGG_PROTEIN_TYPE_PROCESSED_MEAT": "Processed Meat",
-        "AGG_PROTEIN_TYPE_RED_MEAT": "Red Meat",
-        "AGG_PROTEIN_TYPE_SUPPLEMENT": "Supplement",
-        "AGG_PROTEIN_TYPE_OTHER": "Other",
-        "AGG_PROTEIN_TYPE_UNASSIGNED": "Unassigned"
+        "dairy": "Dairy",
+        "eggs": "Eggs",
+        "fatty_fish": "Fatty Fish",
+        "lean_protein": "Lean Protein",
+        "plant_based": "Plant-based",
+        "processed_meat": "Processed Meat",
+        "red_meat": "Red Meat",
+        "supplement": "Supplement",
+        "other": "Other",
+        "unassigned": "Unassigned"
     ]
 
     // Apple Health style vibrant colors
     private let typeColors: [String: Color] = [
-        "AGG_PROTEIN_TYPE_PLANT_BASED": Color(red: 0.2, green: 0.8, blue: 0.3),
-        "AGG_PROTEIN_TYPE_FATTY_FISH": Color(red: 0.3, green: 0.9, blue: 0.5),
-        "AGG_PROTEIN_TYPE_EGGS": Color(red: 0.5, green: 0.95, blue: 0.6),
-        "AGG_PROTEIN_TYPE_LEAN_PROTEIN": Color(red: 0.6, green: 1.0, blue: 0.7),
-        "AGG_PROTEIN_TYPE_DAIRY": Color(red: 0.3, green: 0.6, blue: 0.95),
-        "AGG_PROTEIN_TYPE_SUPPLEMENT": Color(red: 0.5, green: 0.75, blue: 1.0),
-        "AGG_PROTEIN_TYPE_RED_MEAT": Color(red: 1.0, green: 0.8, blue: 0.2),
-        "AGG_PROTEIN_TYPE_PROCESSED_MEAT": Color(red: 1.0, green: 0.3, blue: 0.3),
-        "AGG_PROTEIN_TYPE_OTHER": Color(red: 0.9, green: 0.9, blue: 0.9),
-        "AGG_PROTEIN_TYPE_UNASSIGNED": Color(red: 0.85, green: 0.85, blue: 0.85)
+        "plant_based": Color(red: 0.2, green: 0.8, blue: 0.3),
+        "fatty_fish": Color(red: 0.3, green: 0.9, blue: 0.5),
+        "eggs": Color(red: 0.5, green: 0.95, blue: 0.6),
+        "lean_protein": Color(red: 0.6, green: 1.0, blue: 0.7),
+        "dairy": Color(red: 0.3, green: 0.6, blue: 0.95),
+        "supplement": Color(red: 0.5, green: 0.75, blue: 1.0),
+        "red_meat": Color(red: 1.0, green: 0.8, blue: 0.2),
+        "processed_meat": Color(red: 1.0, green: 0.3, blue: 0.3),
+        "other": Color(red: 0.9, green: 0.9, blue: 0.9),
+        "unassigned": Color(red: 0.85, green: 0.85, blue: 0.85)
     ]
 
     init(color: Color) {
@@ -108,7 +109,7 @@ struct ProteinTypeStackedChart: View {
                     Task {
                         await viewModel.loadData(
                             for: newPeriod,
-                            typeIds: proteinTypeAggIds,
+                            typeKeys: proteinTypeKeys,
                             typeNames: typeDisplayNames,
                             typeColors: typeColors
                         )
@@ -195,9 +196,9 @@ struct ProteinTypeStackedChart: View {
                     .padding(.bottom, 12)
 
                     VStack(spacing: 8) {
-                        ForEach(proteinTypeAggIds, id: \.self) { aggId in
-                            if let typeName = typeDisplayNames[aggId],
-                               let typeColor = typeColors[aggId] {
+                        ForEach(proteinTypeKeys, id: \.self) { typeKey in
+                            if let typeName = typeDisplayNames[typeKey],
+                               let typeColor = typeColors[typeKey] {
                                 Button {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         if selectedType == typeName {
@@ -262,7 +263,7 @@ struct ProteinTypeStackedChart: View {
         .task {
             await viewModel.loadData(
                 for: selectedPeriod,
-                typeIds: proteinTypeAggIds,
+                typeKeys: proteinTypeKeys,
                 typeNames: typeDisplayNames,
                 typeColors: typeColors
             )
@@ -358,6 +359,31 @@ struct ProteinTypeStackedChart: View {
 
 // MARK: - ViewModel
 
+/// Raw protein sample from patient_quantity_samples
+private struct ProteinSampleRow: Codable {
+    let quantityValue: Double?
+    let startTime: Date
+    let aggregationDateString: String?
+    let metadata: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case quantityValue = "quantity_value"
+        case startTime = "start_time"
+        case aggregationDateString = "aggregation_date"
+        case metadata
+    }
+
+    /// Parse aggregation_date as a local date (noon to avoid DST issues)
+    /// The database DATE represents a calendar day, not a UTC timestamp
+    var aggregationDate: Date? {
+        guard let dateString = aggregationDateString else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.timeZone = TimeZone.current  // Parse as local time, not UTC
+        return formatter.date(from: dateString + " 12:00")  // Noon local to avoid DST edge cases
+    }
+}
+
 @MainActor
 class ProteinTypeChartViewModel: ObservableObject {
     @Published var chartData: [ProteinTypeStackedData] = []
@@ -365,14 +391,14 @@ class ProteinTypeChartViewModel: ObservableObject {
 
     private let supabase = SupabaseManager.shared.client
 
-    func loadData(for period: TimePeriod, typeIds: [String], typeNames: [String: String], typeColors: [String: Color]) async {
+    /// Load chart data from patient_quantity_samples with protein_type metadata
+    func loadData(for period: TimePeriod, typeKeys: [String], typeNames: [String: String], typeColors: [String: Color]) async {
         isLoading = true
 
         do {
             let userId = try await supabase.auth.session.user.id
-            let periodType = period.databasePeriodType
 
-            // Calculate date range for query - small initial ranges for performance
+            // Calculate date range for query
             let now = Date()
             let calendar = Calendar.current
             let newestDate = calendar.date(byAdding: .month, value: 1, to: now) ?? now
@@ -391,37 +417,48 @@ class ProteinTypeChartViewModel: ObservableObject {
                 oldestDate = calendar.date(byAdding: .year, value: -3, to: now) ?? now
             }
 
-            // Fetch protein type data with date range filters
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
+            // Fetch all protein samples with metadata
+            let results: [ProteinSampleRow] = try await supabase
+                .from("patient_quantity_samples")
+                .select("quantity_value, start_time, aggregation_date, metadata")
                 .eq("patient_id", value: userId)
-                .in("agg_metric_id", values: typeIds)
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: "SUM")
-                .gte("period_start", value: oldestDate.ISO8601Format())
-                .lte("period_start", value: newestDate.ISO8601Format())
-                .order("period_start", ascending: true)
+                .eq("quantity_type", value: "protein_grams")
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("start_time", value: oldestDate.ISO8601Format())
+                .lte("start_time", value: newestDate.ISO8601Format())
+                .order("start_time", ascending: true)
                 .execute()
                 .value
 
-            print("🥩 Fetched \(results.count) protein type data points for range \(oldestDate) to \(newestDate)")
+            print("🥩 Fetched \(results.count) protein samples for range \(oldestDate) to \(newestDate)")
 
-            // Group by date
+            // Group by date and protein_type from metadata
             var dateMap: [Date: [String: Double]] = [:]
-            for result in results {
-                // Convert UTC period_start to local date for timeline matching
-                let isHourly = periodType == "hourly"
-                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: isHourly)
-                if dateMap[localDate] == nil {
-                    dateMap[localDate] = [:]
+
+            for sample in results {
+                guard let value = sample.quantityValue, value > 0 else { continue }
+
+                // Get protein_type from metadata (default to "unassigned")
+                let proteinType = sample.metadata?["protein_type"] ?? "unassigned"
+
+                // For day view, use hour granularity; otherwise use aggregation_date or start of day
+                let groupDate: Date
+                if period == .day {
+                    let components = calendar.dateComponents([.year, .month, .day, .hour], from: sample.startTime)
+                    groupDate = calendar.date(from: components) ?? sample.startTime
+                } else {
+                    // Use aggregation_date if available, otherwise start of day
+                    groupDate = sample.aggregationDate ?? calendar.startOfDay(for: sample.startTime)
                 }
-                let typeName = typeNames[result.aggMetricId] ?? result.aggMetricId
-                dateMap[localDate]?[typeName] = result.value
+
+                if dateMap[groupDate] == nil {
+                    dateMap[groupDate] = [:]
+                }
+                dateMap[groupDate]?[proteinType, default: 0] += value
             }
 
             // Build timeline with stacked data
-            buildTimeline(for: period, typeIds: typeIds, typeNames: typeNames, typeColors: typeColors, dateMap: dateMap)
+            buildTimeline(for: period, typeKeys: typeKeys, typeNames: typeNames, typeColors: typeColors, dateMap: dateMap)
 
         } catch {
             print("❌ Error loading protein type data: \(error)")
@@ -432,7 +469,7 @@ class ProteinTypeChartViewModel: ObservableObject {
 
     private func buildTimeline(
         for period: TimePeriod,
-        typeIds: [String],
+        typeKeys: [String],
         typeNames: [String: String],
         typeColors: [String: Color],
         dateMap: [Date: [String: Double]]
@@ -443,7 +480,7 @@ class ProteinTypeChartViewModel: ObservableObject {
         // Extend into future by 1 month
         let newestDate = calendar.date(byAdding: .month, value: 1, to: now) ?? now
 
-        // Calculate oldest date based on period - start with small ranges for performance
+        // Calculate oldest date based on period
         let oldestDate: Date
         switch period {
         case .day:
@@ -473,18 +510,18 @@ class ProteinTypeChartViewModel: ObservableObject {
                 barDate = currentDate
             }
 
-            // Overlay actual data if exists
+            // Find matching data for this date
             let matchingDateData = dateMap.first(where: { dateKey, _ in
                 calendar.isDate(dateKey, equalTo: barDate, toGranularity: granularity)
             })
 
             let values = matchingDateData?.value ?? [:]
-            let typeValues = typeIds.compactMap { aggId -> ProteinTypeValue? in
-                let name = typeNames[aggId] ?? aggId
-                let value = values[name] ?? 0
-                let typeColor = typeColors[aggId] ?? Color.gray
+            let typeValues = typeKeys.compactMap { typeKey -> ProteinTypeValue? in
+                let displayName = typeNames[typeKey] ?? typeKey.capitalized.replacingOccurrences(of: "_", with: " ")
+                let value = values[typeKey] ?? 0
+                let typeColor = typeColors[typeKey] ?? Color.gray
 
-                return ProteinTypeValue(name: name, value: value, color: typeColor)
+                return ProteinTypeValue(name: displayName, value: value, color: typeColor)
             }
 
             timeline.append(ProteinTypeStackedData(date: barDate, typeValues: typeValues))
@@ -532,7 +569,6 @@ class ProteinTypeChartViewModel: ObservableObject {
             return sum
         case .week, .month, .sixMonth, .year:
             // Other views: Calculate daily AVERAGE including nulls
-            // Divide by expected number of data points in visible range
             let expectedCount = period.numberOfBars
             return sum / Double(expectedCount)
         }

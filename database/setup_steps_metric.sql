@@ -6,7 +6,7 @@
 -- 1. DATA ENTRY FIELD REFERENCE
 -- ============================================================
 
-INSERT INTO data_entry_fields_reference (
+INSERT INTO sample_category_types_reference (
     field_id, field_name, data_type, unit_id, category, display_order
 ) VALUES (
     'DEF_STEP_COUNT', 'Step Count', 'integer', 'count', 'activity', 1

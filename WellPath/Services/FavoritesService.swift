@@ -19,6 +19,8 @@ struct PatientFavorite: Codable, Identifiable {
     let pillar: String?
     let displayOrder: Int?
     let createdAt: String?
+    let cardId: String?      // Links to display_view_cards for routing
+    let sectionId: String?   // Links to display_category_sections for color/icon
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -29,6 +31,8 @@ struct PatientFavorite: Codable, Identifiable {
         case pillar
         case displayOrder = "display_order"
         case createdAt = "created_at"
+        case cardId = "card_id"
+        case sectionId = "section_id"
     }
 }
 
@@ -38,6 +42,8 @@ struct FavoriteInsert: Codable {
     let itemId: String
     let displayName: String?
     let pillar: String?
+    let cardId: String?
+    let sectionId: String?
 
     enum CodingKeys: String, CodingKey {
         case patientId = "patient_id"
@@ -45,6 +51,8 @@ struct FavoriteInsert: Codable {
         case itemId = "item_id"
         case displayName = "display_name"
         case pillar
+        case cardId = "card_id"
+        case sectionId = "section_id"
     }
 }
 
@@ -107,16 +115,38 @@ class FavoritesService: ObservableObject {
 
     // MARK: - Add Favorite
 
-    func addFavorite(type: FavoriteItemType, id: String, displayName: String?, pillar: String?) async -> Bool {
+    func addFavorite(
+        type: FavoriteItemType,
+        id: String,
+        displayName: String?,
+        pillar: String?,
+        cardId: String? = nil,
+        sectionId: String? = nil
+    ) async -> Bool {
         do {
             let userId = try await supabase.auth.session.user.id
+
+            // Auto-lookup sectionId from database if not provided
+            // Chain: id (view_id) → display_view_cards → display_card_categories → display_category_sections
+            var resolvedSectionId = sectionId
+            var resolvedCardId = cardId
+
+            if resolvedSectionId == nil || resolvedCardId == nil {
+                if let sectionInfo = await DisplayConfigService.shared.sectionInfo(for: id) {
+                    resolvedSectionId = resolvedSectionId ?? sectionInfo.sectionId
+                    resolvedCardId = resolvedCardId ?? sectionInfo.cardId
+                    print("📍 Auto-resolved section for \(id): \(sectionInfo.sectionName) (\(sectionInfo.sectionId))")
+                }
+            }
 
             let insert = FavoriteInsert(
                 patientId: userId,
                 itemType: type.rawValue,
                 itemId: id,
                 displayName: displayName,
-                pillar: pillar
+                pillar: pillar,
+                cardId: resolvedCardId,
+                sectionId: resolvedSectionId
             )
 
             try await supabase
@@ -127,7 +157,7 @@ class FavoritesService: ObservableObject {
             // Refresh favorites
             await loadFavorites()
 
-            print("✅ Added favorite: \(type.rawValue):\(id)")
+            print("✅ Added favorite: \(type.rawValue):\(id) (card: \(resolvedCardId ?? "nil"), section: \(resolvedSectionId ?? "nil"))")
             return true
 
         } catch {
@@ -164,11 +194,26 @@ class FavoritesService: ObservableObject {
 
     // MARK: - Toggle Favorite
 
-    func toggleFavorite(type: FavoriteItemType, id: String, displayName: String?, pillar: String?) async -> Bool {
+    @discardableResult
+    func toggleFavorite(
+        type: FavoriteItemType,
+        id: String,
+        displayName: String?,
+        pillar: String?,
+        cardId: String? = nil,
+        sectionId: String? = nil
+    ) async -> Bool {
         if isFavorite(type: type, id: id) {
             return await removeFavorite(type: type, id: id)
         } else {
-            return await addFavorite(type: type, id: id, displayName: displayName, pillar: pillar)
+            return await addFavorite(
+                type: type,
+                id: id,
+                displayName: displayName,
+                pillar: pillar,
+                cardId: cardId,
+                sectionId: sectionId
+            )
         }
     }
 }

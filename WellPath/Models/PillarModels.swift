@@ -8,148 +8,419 @@
 import Foundation
 import SwiftUI
 
-struct DisplayScreen: Codable, Identifiable {
+// MARK: - Display Categories (Navigation containers, from display_categories table)
+// Simplified structure: categories are just navigation groupings within a pillar
+
+struct DisplayCategory: Codable, Identifiable {
     let id: String
-    let screenId: String
+    let categoryId: String
     let name: String
     let overview: String?
     let pillar: String?
-    let icon: String?
     let displayOrder: Int?
     let isActive: Bool?
-    let screenType: String?
-    let layoutType: String?
-    let defaultTimePeriod: String?
-
-    // New educational content fields (migrated from display_screens_primary)
-    let title: String?
-    let subtitle: String?
-    let description: String?
-    let aboutContent: String?
-    let longevityImpact: String?
-    let quickTips: [String]?
-    let hasGoal: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case screenId = "screen_id"
+        case categoryId = "category_id"
         case name
         case overview
         case pillar
-        case icon
         case displayOrder = "display_order"
         case isActive = "is_active"
-        case screenType = "screen_type"
-        case layoutType = "layout_type"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        categoryId = try container.decode(String.self, forKey: .categoryId)
+        name = try container.decode(String.self, forKey: .name)
+        overview = try container.decodeIfPresent(String.self, forKey: .overview)
+        pillar = try container.decodeIfPresent(String.self, forKey: .pillar)
+        displayOrder = try container.decodeIfPresent(Int.self, forKey: .displayOrder)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
+    }
+
+    init(
+        id: String,
+        categoryId: String,
+        name: String,
+        overview: String? = nil,
+        pillar: String? = nil,
+        displayOrder: Int? = nil,
+        isActive: Bool? = nil
+    ) {
+        self.id = id
+        self.categoryId = categoryId
+        self.name = name
+        self.overview = overview
+        self.pillar = pillar
+        self.displayOrder = displayOrder
+        self.isActive = isActive
+    }
+}
+
+// MARK: - Display Views (Full pages with charts, from display_views table)
+// Views contain educational content and chart configuration
+
+struct DisplayView: Codable, Identifiable, Hashable {
+    let id: String
+    let viewId: String
+    let viewName: String
+    let categoryId: String?
+    let pillar: String?
+    let displayOrder: Int?
+    let isActive: Bool?
+    let chartTypeId: String?
+    let defaultTimePeriod: String?
+    let description: String?
+
+    // Educational content
+    let aboutContent: String?
+    let longevityImpact: String?
+    let quickTips: [String]?
+    let infoSections: [[String: String]]?
+
+    // Goal configuration
+    let hasGoal: Bool?
+    let goalConfig: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case viewId = "view_id"
+        case viewName = "view_name"
+        case categoryId = "category_id"
+        case pillar
+        case displayOrder = "display_order"
+        case isActive = "is_active"
+        case chartTypeId = "chart_type_id"
         case defaultTimePeriod = "default_time_period"
-        case title
-        case subtitle
         case description
         case aboutContent = "about_content"
         case longevityImpact = "longevity_impact"
         case quickTips = "quick_tips"
+        case infoSections = "info_sections"
         case hasGoal = "has_goal"
+        case goalConfig = "goal_config"
     }
 
-    // Custom decoder that handles JSONB arrays gracefully
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        viewId = try container.decode(String.self, forKey: .viewId)
+        viewName = try container.decode(String.self, forKey: .viewName)
+        categoryId = try container.decodeIfPresent(String.self, forKey: .categoryId)
+        pillar = try container.decodeIfPresent(String.self, forKey: .pillar)
+        displayOrder = try container.decodeIfPresent(Int.self, forKey: .displayOrder)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
+        chartTypeId = try container.decodeIfPresent(String.self, forKey: .chartTypeId)
+        defaultTimePeriod = try container.decodeIfPresent(String.self, forKey: .defaultTimePeriod)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        aboutContent = try? container.decodeIfPresent(String.self, forKey: .aboutContent)
+        longevityImpact = try? container.decodeIfPresent(String.self, forKey: .longevityImpact)
+        quickTips = try? container.decodeIfPresent([String].self, forKey: .quickTips)
+        infoSections = try? container.decodeIfPresent([[String: String]].self, forKey: .infoSections)
+        hasGoal = try? container.decodeIfPresent(Bool.self, forKey: .hasGoal)
+        goalConfig = try? container.decodeIfPresent([String: String].self, forKey: .goalConfig)
+    }
 
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: DisplayView, rhs: DisplayView) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    init(
+        id: String,
+        viewId: String,
+        viewName: String,
+        categoryId: String? = nil,
+        pillar: String? = nil,
+        displayOrder: Int? = nil,
+        isActive: Bool? = nil,
+        chartTypeId: String? = nil,
+        defaultTimePeriod: String? = nil,
+        description: String? = nil,
+        aboutContent: String? = nil,
+        longevityImpact: String? = nil,
+        quickTips: [String]? = nil,
+        infoSections: [[String: String]]? = nil,
+        hasGoal: Bool? = nil,
+        goalConfig: [String: String]? = nil
+    ) {
+        self.id = id
+        self.viewId = viewId
+        self.viewName = viewName
+        self.categoryId = categoryId
+        self.pillar = pillar
+        self.displayOrder = displayOrder
+        self.isActive = isActive
+        self.chartTypeId = chartTypeId
+        self.defaultTimePeriod = defaultTimePeriod
+        self.description = description
+        self.aboutContent = aboutContent
+        self.longevityImpact = longevityImpact
+        self.quickTips = quickTips
+        self.infoSections = infoSections
+        self.hasGoal = hasGoal
+        self.goalConfig = goalConfig
+    }
+}
+
+// MARK: - Display Cards (Mini metric cards within views, from display_cards table)
+// Cards are small metric displays that appear on view pages
+
+struct DisplayCard: Codable, Identifiable, Hashable {
+    let id: String
+    let cardId: String
+    let cardName: String
+    let description: String?
+    let parentViewId: String
+    let displayOrder: Int?
+    let cardType: String?
+    let miniChartType: String?
+    let primaryAggregationId: String?
+    let aboutContent: String?
+    let longevityImpact: String?
+    let quickTips: [String]?
+    let canFavorite: Bool?
+    let isActive: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case cardId = "card_id"
+        case cardName = "card_name"
+        case description
+        case parentViewId = "parent_view_id"
+        case displayOrder = "display_order"
+        case cardType = "card_type"
+        case miniChartType = "mini_chart_type"
+        case primaryAggregationId = "primary_aggregation_id"
+        case aboutContent = "about_content"
+        case longevityImpact = "longevity_impact"
+        case quickTips = "quick_tips"
+        case canFavorite = "can_favorite"
+        case isActive = "is_active"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        cardId = try container.decode(String.self, forKey: .cardId)
+        cardName = try container.decode(String.self, forKey: .cardName)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        parentViewId = try container.decode(String.self, forKey: .parentViewId)
+        displayOrder = try container.decodeIfPresent(Int.self, forKey: .displayOrder)
+        cardType = try container.decodeIfPresent(String.self, forKey: .cardType)
+        miniChartType = try container.decodeIfPresent(String.self, forKey: .miniChartType)
+        primaryAggregationId = try container.decodeIfPresent(String.self, forKey: .primaryAggregationId)
+        aboutContent = try? container.decodeIfPresent(String.self, forKey: .aboutContent)
+        longevityImpact = try? container.decodeIfPresent(String.self, forKey: .longevityImpact)
+        quickTips = try? container.decodeIfPresent([String].self, forKey: .quickTips)
+        canFavorite = try container.decodeIfPresent(Bool.self, forKey: .canFavorite)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: DisplayCard, rhs: DisplayCard) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    init(
+        id: String,
+        cardId: String,
+        cardName: String,
+        description: String? = nil,
+        parentViewId: String,
+        displayOrder: Int? = nil,
+        cardType: String? = nil,
+        miniChartType: String? = nil,
+        primaryAggregationId: String? = nil,
+        aboutContent: String? = nil,
+        longevityImpact: String? = nil,
+        quickTips: [String]? = nil,
+        canFavorite: Bool? = nil,
+        isActive: Bool? = nil
+    ) {
+        self.id = id
+        self.cardId = cardId
+        self.cardName = cardName
+        self.description = description
+        self.parentViewId = parentViewId
+        self.displayOrder = displayOrder
+        self.cardType = cardType
+        self.miniChartType = miniChartType
+        self.primaryAggregationId = primaryAggregationId
+        self.aboutContent = aboutContent
+        self.longevityImpact = longevityImpact
+        self.quickTips = quickTips
+        self.canFavorite = canFavorite
+        self.isActive = isActive
+    }
+}
+
+// MARK: - Legacy Models (backward compatibility during migration)
+// These query new tables but expose old property names for existing code
+
+/// DisplayScreen queries display_categories table - used by TrackedMetricsViewModel
+/// Maps: screenId → category_id, name, overview, pillar, displayOrder, isActive
+/// NOTE: Educational fields (title, icon, aboutContent, etc.) always decode as nil
+/// from display_categories since that content now lives in display_views/display_cards
+struct DisplayScreen: Codable, Identifiable {
+    let id: String
+    let screenId: String          // Maps to category_id
+    let name: String
+    let overview: String?
+    let pillar: String?
+    let displayOrder: Int?
+    let isActive: Bool?
+
+    // Legacy fields - not in display_categories, always nil when decoded
+    // Kept for backward compatibility with existing views
+    let icon: String?
+    let title: String?
+    let aboutContent: String?
+    let longevityImpact: String?
+    let quickTips: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case screenId = "category_id"  // Query new column, expose as screenId
+        case name
+        case overview
+        case pillar
+        case displayOrder = "display_order"
+        case isActive = "is_active"
+        // These map to non-existent columns - will decode as nil
+        case icon
+        case title
+        case aboutContent = "about_content"
+        case longevityImpact = "longevity_impact"
+        case quickTips = "quick_tips"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         screenId = try container.decode(String.self, forKey: .screenId)
         name = try container.decode(String.self, forKey: .name)
         overview = try container.decodeIfPresent(String.self, forKey: .overview)
         pillar = try container.decodeIfPresent(String.self, forKey: .pillar)
-        icon = try container.decodeIfPresent(String.self, forKey: .icon)
         displayOrder = try container.decodeIfPresent(Int.self, forKey: .displayOrder)
         isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
-        screenType = try container.decodeIfPresent(String.self, forKey: .screenType)
-        layoutType = try container.decodeIfPresent(String.self, forKey: .layoutType)
-        defaultTimePeriod = try container.decodeIfPresent(String.self, forKey: .defaultTimePeriod)
-
-        // New educational content fields - fail silently if columns don't exist
+        // Legacy fields - try to decode but expect nil
+        icon = try? container.decodeIfPresent(String.self, forKey: .icon)
         title = try? container.decodeIfPresent(String.self, forKey: .title)
-        subtitle = try? container.decodeIfPresent(String.self, forKey: .subtitle)
-        description = try? container.decodeIfPresent(String.self, forKey: .description)
         aboutContent = try? container.decodeIfPresent(String.self, forKey: .aboutContent)
         longevityImpact = try? container.decodeIfPresent(String.self, forKey: .longevityImpact)
         quickTips = try? container.decodeIfPresent([String].self, forKey: .quickTips)
-        hasGoal = try? container.decodeIfPresent(Bool.self, forKey: .hasGoal)
     }
 
-    // Direct initializer for manual construction (e.g., previews)
     init(
         id: String,
         screenId: String,
         name: String,
         overview: String? = nil,
         pillar: String? = nil,
-        icon: String? = nil,
         displayOrder: Int? = nil,
         isActive: Bool? = nil,
-        screenType: String? = nil,
-        layoutType: String? = nil,
-        defaultTimePeriod: String? = nil,
+        icon: String? = nil,
         title: String? = nil,
-        subtitle: String? = nil,
-        description: String? = nil,
         aboutContent: String? = nil,
         longevityImpact: String? = nil,
-        quickTips: [String]? = nil,
-        hasGoal: Bool? = nil
+        quickTips: [String]? = nil
     ) {
         self.id = id
         self.screenId = screenId
         self.name = name
         self.overview = overview
         self.pillar = pillar
-        self.icon = icon
         self.displayOrder = displayOrder
         self.isActive = isActive
-        self.screenType = screenType
-        self.layoutType = layoutType
-        self.defaultTimePeriod = defaultTimePeriod
+        self.icon = icon
         self.title = title
-        self.subtitle = subtitle
-        self.description = description
         self.aboutContent = aboutContent
         self.longevityImpact = longevityImpact
         self.quickTips = quickTips
-        self.hasGoal = hasGoal
     }
 }
 
-struct DisplayMetric: Codable, Identifiable {
-    let id: String              // Supabase row ID
-    let metricId: String        // metric_id (business key)
-    let metricName: String      // metric_name
-    let description: String?    // description
-    let screenId: String?       // screen_id (FK to display_screens)
-    let pillar: String?         // pillar (FK to pillars_base)
-    let chartTypeId: String?    // chart_type_id (FK to chart_types)
-    let isActive: Bool?         // is_active
-    let createdAt: Date?        // created_at
-    let updatedAt: Date?        // updated_at
-
-    // Education content fields
-    let aboutContent: String?       // about_content (education)
-    let longevityImpact: String?    // longevity_impact (health impact)
-    let quickTips: [String]?        // quick_tips (JSONB array)
+/// DisplayMetric queries display_views table - used by TrackedMetricsViewModel for search
+/// Maps: metricId → view_id, metricName → view_name
+struct DisplayMetric: Codable, Identifiable, Hashable {
+    let id: String
+    let metricId: String          // Maps to view_id
+    let metricName: String        // Maps to view_name
+    let description: String?
+    let pillar: String?
+    let chartTypeId: String?
+    let isActive: Bool?
+    let aboutContent: String?
+    let longevityImpact: String?
+    let quickTips: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case metricId = "metric_id"
-        case metricName = "metric_name"
+        case metricId = "view_id"       // Query new column, expose as metricId
+        case metricName = "view_name"   // Query new column, expose as metricName
         case description
-        case screenId = "screen_id"
         case pillar
         case chartTypeId = "chart_type_id"
         case isActive = "is_active"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
         case aboutContent = "about_content"
         case longevityImpact = "longevity_impact"
         case quickTips = "quick_tips"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        metricId = try container.decode(String.self, forKey: .metricId)
+        metricName = try container.decode(String.self, forKey: .metricName)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        pillar = try container.decodeIfPresent(String.self, forKey: .pillar)
+        chartTypeId = try container.decodeIfPresent(String.self, forKey: .chartTypeId)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive)
+        aboutContent = try? container.decodeIfPresent(String.self, forKey: .aboutContent)
+        longevityImpact = try? container.decodeIfPresent(String.self, forKey: .longevityImpact)
+        quickTips = try? container.decodeIfPresent([String].self, forKey: .quickTips)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: DisplayMetric, rhs: DisplayMetric) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    init(
+        id: String,
+        metricId: String,
+        metricName: String,
+        description: String? = nil,
+        pillar: String? = nil,
+        chartTypeId: String? = nil,
+        isActive: Bool? = nil,
+        aboutContent: String? = nil,
+        longevityImpact: String? = nil,
+        quickTips: [String]? = nil
+    ) {
+        self.id = id
+        self.metricId = metricId
+        self.metricName = metricName
+        self.description = description
+        self.pillar = pillar
+        self.chartTypeId = chartTypeId
+        self.isActive = isActive
+        self.aboutContent = aboutContent
+        self.longevityImpact = longevityImpact
+        self.quickTips = quickTips
     }
 }
 

@@ -47,43 +47,7 @@ struct DashboardView: View {
                     }
                     .padding()
             }
-            .background(
-                ZStack {
-                    // Background gradient
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.65),
-                                Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.45),
-                                Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.25),
-                                Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.1),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 900)
-
-                        Spacer()
-                    }
-
-                    // Large background logo
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Image("white_grey")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 180, height: 180)
-                                .opacity(0.35)
-                                .rotationEffect(.degrees(-15))
-                                .offset(x: 40, y: 20)
-                        }
-                        Spacer()
-                    }
-                }
-                .ignoresSafeArea()
-            )
+            .metricScreenBackground(color: Color(red: 0.56, green: 0.82, blue: 0.31))
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {

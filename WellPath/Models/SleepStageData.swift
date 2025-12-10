@@ -18,19 +18,6 @@ enum SleepStage: String, CaseIterable, Codable, Plottable {
     case deep = "Deep"
     case asleepSummary = "Asleep Summary" // Horizontal bar for unified visualization
 
-    var fieldIdPrefix: String {
-        // NOTE: Not currently used, but kept for reference
-        switch self {
-        case .inBed: return "DEF_SLEEP_PERIOD"
-        case .asleep: return "DEF_SLEEP_PERIOD"
-        case .awake: return "DEF_SLEEP_PERIOD"
-        case .rem: return "DEF_SLEEP_PERIOD"
-        case .core: return "DEF_SLEEP_PERIOD"
-        case .deep: return "DEF_SLEEP_PERIOD"
-        case .asleepSummary: return "" // Not a data field, used for rendering only
-        }
-    }
-
     var displayOrder: Int {
         switch self {
         case .asleepSummary: return -1 // Render first (top of chart)
@@ -62,6 +49,7 @@ struct SleepStageSegment: Identifiable, Equatable {
     let startTime: Date
     let endTime: Date
     let userTimezone: String // Timezone where this sleep data was recorded (e.g., "America/Los_Angeles")
+    var aggregationDate: Date? = nil // Database-calculated sleep date (6PM rule: sleep ending after 6PM → next day)
 
     var durationMinutes: Double {
         endTime.timeIntervalSince(startTime) / 60.0

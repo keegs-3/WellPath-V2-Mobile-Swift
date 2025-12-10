@@ -1,0 +1,207 @@
+//
+//  SleepDurationCard.swift
+//  WellPath
+//
+//  Card component for Sleep Duration metric.
+//
+
+import SwiftUI
+
+struct SleepDurationCard: View {
+    let color: Color
+    let pillar: String
+    let sectionId: String
+
+    @StateObject private var viewModel = StandardMetricViewModel(metricId: "DISP_SLEEP_DURATION")
+
+    init(color: Color, pillar: String, sectionId: String = "NAV_SLEEP") {
+        self.color = color
+        self.pillar = pillar
+        self.sectionId = sectionId
+    }
+
+    var body: some View {
+        MetricCardView(
+            title: "Sleep Duration",
+            color: color,
+            metricId: "SCREEN_SLEEP_DURATION",  // Use SCREEN_* for favorites lookup (screen type)
+            pillar: pillar,
+            cardId: "CARD_SLEEP_DURATION",
+            sectionId: sectionId,
+            itemType: .screen  // This is a direct-to-view metric
+        ) {
+            SleepDurationMiniCardContent(viewModel: viewModel, color: color)
+        } fullScreen: {
+            SleepDurationView(pillar: pillar, color: color, sectionId: sectionId)
+        }
+        .task {
+            await viewModel.loadPrimaryScreen()
+        }
+    }
+}
+
+struct SleepDurationMiniCardContent: View {
+    @ObservedObject var viewModel: StandardMetricViewModel
+    let color: Color
+
+    private let calendar = Calendar.current
+
+    // Build 7 calendar days (today and 6 days back) with data where available
+    private var last7CalendarDays: [(date: Date, value: Double?)] {
+        let today = calendar.startOfDay(for: Date())
+        var days: [(date: Date, value: Double?)] = []
+
+        // Create lookup dictionary from chart data (keyed by date components)
+        var dataByDate: [DateComponents: Double] = [:]
+        for point in viewModel.chartData {
+            let components = calendar.dateComponents([.year, .month, .day], from: point.date)
+            dataByDate[components] = point.value
+        }
+
+        // Build 7 days: 6 days ago through today
+        for daysBack in (0...6).reversed() {
+            if let date = calendar.date(byAdding: .day, value: -daysBack, to: today) {
+                let components = calendar.dateComponents([.year, .month, .day], from: date)
+                let value = dataByDate[components]
+                days.append((date: date, value: value))
+            }
+        }
+
+        return days
+    }
+
+    // Find most recent value for display
+    private var mostRecentValue: (date: Date, value: Double)? {
+        viewModel.chartData.sorted { $0.date > $1.date }.first.map { ($0.date, $0.value) }
+    }
+
+    // Max value for bar height normalization
+    private var maxValue: Double {
+        let values = last7CalendarDays.compactMap { $0.value }
+        return values.max() ?? 480 // Default 8 hours in minutes
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if viewModel.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Spacer()
+                }
+                .frame(height: 60)
+            } else if mostRecentValue != nil || !viewModel.chartData.isEmpty {
+                HStack(spacing: 12) {
+                    // Most recent value on left
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(smartDateLabel(for: mostRecentValue?.date))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(formatMinutesToTime(mostRecentValue?.value))
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(color)
+                    }
+
+                    Spacer()
+
+                    // Mini bar chart on right - 7 calendar days
+                    HStack(alignment: .bottom, spacing: 3) {
+                        ForEach(Array(last7CalendarDays.enumerated()), id: \.offset) { index, day in
+                            VStack(spacing: 2) {
+                                if let value = day.value {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(isToday(day.date) ? color : color.opacity(0.4))
+                                        .frame(width: 8, height: barHeight(for: value))
+                                } else {
+                                    // Gap indicator for missing data
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.gray.opacity(0.2))
+                                        .frame(width: 8, height: 4)
+                                }
+                                Text(dayInitial(for: day.date))
+                                    .font(.system(size: 7))
+                                    .foregroundColor(isToday(day.date) ? color : .secondary)
+                            }
+                        }
+                    }
+                    .frame(height: 45)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "bed.double.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(color.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sleep Duration")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("No data yet")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .frame(height: 60)
+            }
+        }
+    }
+
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDateInToday(date)
+    }
+
+    // Smart date label: "Today", "Yesterday", "Dec 5", "Nov 2025"
+    private func smartDateLabel(for date: Date?) -> String {
+        guard let date = date else { return "Last Night" }
+
+        if calendar.isDateInToday(date) {
+            return "Last Night"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .month) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            return formatter.string(from: date)
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .year) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            return formatter.string(from: date)
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM yyyy"
+            return formatter.string(from: date)
+        }
+    }
+
+    // Convert minutes to "Xh Ym" format
+    private func formatMinutesToTime(_ minutes: Double?) -> String {
+        guard let minutes = minutes else { return "--" }
+        let totalMinutes = Int(minutes)
+        let hours = totalMinutes / 60
+        let mins = totalMinutes % 60
+        if hours > 0 && mins > 0 {
+            return "\(hours)h \(mins)m"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(mins)m"
+        }
+    }
+
+    private func barHeight(for value: Double) -> CGFloat {
+        let normalized = min(value / max(maxValue, 1), 1)
+        return 15 + normalized * 25  // 15-40pt range
+    }
+
+    private func dayInitial(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
+        return String(formatter.string(from: date).prefix(1))
+    }
+}
+
+#Preview {
+    SleepDurationCard(color: .indigo, pillar: "Sleep")
+        .padding()
+}

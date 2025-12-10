@@ -2,7 +2,12 @@
 //  HealthKitSyncService.swift
 //  WellPath
 //
-//  Automatically syncs HealthKit data to the unified patient_samples table
+//  Automatically syncs HealthKit data to the specific sample tables:
+//  - patient_quantity_samples: steps, weight, protein, water, etc.
+//  - patient_category_samples: sleep stages, etc.
+//  - patient_correlation_samples: blood pressure, etc.
+//
+//  Note: patient_samples VIEW is READ-ONLY for backwards compatibility
 //
 
 import Foundation
@@ -36,7 +41,9 @@ class HealthKitSyncService: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .dietaryProtein)!,
             HKObjectType.quantityType(forIdentifier: .dietaryWater)!,
             HKObjectType.quantityType(forIdentifier: .bodyMass)!,
-            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
+            HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic)!,
+            HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)!
         ]
 
         for type in typesToObserve {
@@ -90,6 +97,7 @@ class HealthKitSyncService: ObservableObject {
             try await syncWater()
             try await syncWeight()
             try await syncSleep()
+            try await syncBloodPressure()
 
             // Update last sync date
             lastSyncDate = Date()
@@ -121,11 +129,11 @@ class HealthKitSyncService: ObservableObject {
 
         let samples = try await fetchQuantitySamples(type: proteinType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        var patientSamples: [PatientSample] = []
+        var quantitySamples: [QuantitySampleWrite] = []
 
         for sample in samples {
             // Skip if already synced
-            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString, table: "patient_quantity_samples") {
                 continue
             }
 
@@ -139,29 +147,30 @@ class HealthKitSyncService: ObservableObject {
                 FoodMetadataKeys.foodTiming: .string("other")
             ]
 
-            patientSamples.append(PatientSample.quantity(
+            quantitySamples.append(QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.proteinGrams,
                 value: proteinGrams,
                 unit: "gram",
                 timestamp: sample.startDate,
-                metadata: metadata,
                 source: .healthkit,
                 timezone: sampleTimeZone.identifier,
+                metadata: metadata,
                 eventInstanceId: UUID(),
                 healthKitUUID: sample.uuid.uuidString,
-                healthKitSourceName: sample.sourceRevision.source.name
+                healthKitSourceName: sample.sourceRevision.source.name,
+                healthKitBundleId: sample.sourceRevision.source.bundleIdentifier
             ))
         }
 
-        if !patientSamples.isEmpty {
+        if !quantitySamples.isEmpty {
             try await supabase
-                .from("patient_samples")
-                .insert(patientSamples)
+                .from("patient_quantity_samples")
+                .insert(quantitySamples)
                 .execute()
         }
 
-        print("✅ Synced \(patientSamples.count) protein samples")
+        print("✅ Synced \(quantitySamples.count) protein samples")
     }
 
     // MARK: - Steps Sync
@@ -179,17 +188,17 @@ class HealthKitSyncService: ObservableObject {
 
         let samples = try await fetchQuantitySamples(type: stepsType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        var patientSamples: [PatientSample] = []
+        var quantitySamples: [QuantitySampleWrite] = []
 
         for sample in samples {
-            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString, table: "patient_quantity_samples") {
                 continue
             }
 
             let stepCount = sample.quantity.doubleValue(for: .count())
             let sampleTimeZone = getOriginalTimeZone(from: sample)
 
-            patientSamples.append(PatientSample.quantity(
+            quantitySamples.append(QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.steps,
                 value: stepCount,
@@ -200,18 +209,19 @@ class HealthKitSyncService: ObservableObject {
                 timezone: sampleTimeZone.identifier,
                 eventInstanceId: UUID(),
                 healthKitUUID: sample.uuid.uuidString,
-                healthKitSourceName: sample.sourceRevision.source.name
+                healthKitSourceName: sample.sourceRevision.source.name,
+                healthKitBundleId: sample.sourceRevision.source.bundleIdentifier
             ))
         }
 
-        if !patientSamples.isEmpty {
+        if !quantitySamples.isEmpty {
             try await supabase
-                .from("patient_samples")
-                .insert(patientSamples)
+                .from("patient_quantity_samples")
+                .insert(quantitySamples)
                 .execute()
         }
 
-        print("✅ Synced \(patientSamples.count) step samples")
+        print("✅ Synced \(quantitySamples.count) step samples")
     }
 
     // MARK: - Water Sync
@@ -229,10 +239,10 @@ class HealthKitSyncService: ObservableObject {
 
         let samples = try await fetchQuantitySamples(type: waterType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        var patientSamples: [PatientSample] = []
+        var quantitySamples: [QuantitySampleWrite] = []
 
         for sample in samples {
-            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString, table: "patient_quantity_samples") {
                 continue
             }
 
@@ -240,7 +250,7 @@ class HealthKitSyncService: ObservableObject {
             let waterOunces = sample.quantity.doubleValue(for: .fluidOunceUS())
             let sampleTimeZone = getOriginalTimeZone(from: sample)
 
-            patientSamples.append(PatientSample.quantity(
+            quantitySamples.append(QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.hydrationOunces,
                 value: waterOunces,
@@ -250,18 +260,19 @@ class HealthKitSyncService: ObservableObject {
                 timezone: sampleTimeZone.identifier,
                 eventInstanceId: UUID(),
                 healthKitUUID: sample.uuid.uuidString,
-                healthKitSourceName: sample.sourceRevision.source.name
+                healthKitSourceName: sample.sourceRevision.source.name,
+                healthKitBundleId: sample.sourceRevision.source.bundleIdentifier
             ))
         }
 
-        if !patientSamples.isEmpty {
+        if !quantitySamples.isEmpty {
             try await supabase
-                .from("patient_samples")
-                .insert(patientSamples)
+                .from("patient_quantity_samples")
+                .insert(quantitySamples)
                 .execute()
         }
 
-        print("✅ Synced \(patientSamples.count) water samples")
+        print("✅ Synced \(quantitySamples.count) water samples")
     }
 
     // MARK: - Weight Sync
@@ -279,17 +290,17 @@ class HealthKitSyncService: ObservableObject {
 
         let samples = try await fetchQuantitySamples(type: weightType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        var patientSamples: [PatientSample] = []
+        var quantitySamples: [QuantitySampleWrite] = []
 
         for sample in samples {
-            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString, table: "patient_quantity_samples") {
                 continue
             }
 
             let weightKg = sample.quantity.doubleValue(for: .gramUnit(with: .kilo))
             let sampleTimeZone = getOriginalTimeZone(from: sample)
 
-            patientSamples.append(PatientSample.quantity(
+            quantitySamples.append(QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.weight,
                 value: weightKg,
@@ -299,18 +310,19 @@ class HealthKitSyncService: ObservableObject {
                 timezone: sampleTimeZone.identifier,
                 eventInstanceId: UUID(),
                 healthKitUUID: sample.uuid.uuidString,
-                healthKitSourceName: sample.sourceRevision.source.name
+                healthKitSourceName: sample.sourceRevision.source.name,
+                healthKitBundleId: sample.sourceRevision.source.bundleIdentifier
             ))
         }
 
-        if !patientSamples.isEmpty {
+        if !quantitySamples.isEmpty {
             try await supabase
-                .from("patient_samples")
-                .insert(patientSamples)
+                .from("patient_quantity_samples")
+                .insert(quantitySamples)
                 .execute()
         }
 
-        print("✅ Synced \(patientSamples.count) weight samples")
+        print("✅ Synced \(quantitySamples.count) weight samples")
     }
 
     // MARK: - Sleep Sync
@@ -328,12 +340,12 @@ class HealthKitSyncService: ObservableObject {
 
         let samples = try await fetchCategorySamples(type: sleepType, since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60))
 
-        var patientSamples: [PatientSample] = []
+        var categorySamples: [CategorySampleWrite] = []
         let deviceTimezone = TimeZone.current.identifier
 
         for sample in samples {
-            // Skip if already synced
-            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString) {
+            // Skip if already synced by HealthKit UUID
+            if try await isAlreadySynced(healthKitUUID: sample.uuid.uuidString, table: "patient_category_samples") {
                 continue
             }
 
@@ -341,14 +353,25 @@ class HealthKitSyncService: ObservableObject {
             let categoryValue = mapSleepValueToCategory(sleepValue)
 
             // Skip "in bed" periods - we only want actual sleep stages
-            // In bed (6) doesn't map to our 0-3 sleep stage values
+            // In bed returns nil from mapSleepValueToCategory
             if categoryValue == nil {
                 continue
             }
 
-            patientSamples.append(PatientSample.category(
+            // Also check for time-based duplicates (HealthKit sometimes returns same data with different UUIDs)
+            if try await isCategorySampleDuplicate(
                 patientId: userId,
-                categoryType: CategoryTypes.sleepStage,
+                categoryType: CategoryTypes.sleepPeriodTypes,
+                categoryValue: categoryValue!,
+                startTime: sample.startDate,
+                endTime: sample.endDate
+            ) {
+                continue
+            }
+
+            categorySamples.append(CategorySampleWrite.create(
+                patientId: userId,
+                categoryType: CategoryTypes.sleepPeriodTypes,
                 value: categoryValue!,
                 startTime: sample.startDate,
                 endTime: sample.endDate,
@@ -356,19 +379,107 @@ class HealthKitSyncService: ObservableObject {
                 timezone: deviceTimezone,
                 eventInstanceId: UUID(),
                 healthKitUUID: sample.uuid.uuidString,
-                healthKitSourceName: sample.sourceRevision.source.name
+                healthKitSourceName: sample.sourceRevision.source.name,
+                healthKitBundleId: sample.sourceRevision.source.bundleIdentifier
             ))
         }
 
-        if !patientSamples.isEmpty {
+        if !categorySamples.isEmpty {
             try await supabase
-                .from("patient_samples")
-                .insert(patientSamples)
+                .from("patient_category_samples")
+                .insert(categorySamples)
                 .execute()
         }
 
-        print("✅ Synced \(patientSamples.count) sleep stage samples")
+        print("✅ Synced \(categorySamples.count) sleep stage samples")
         print("ℹ️ Sleep sessions and aggregations calculated automatically by database triggers")
+    }
+
+    // MARK: - Blood Pressure Sync
+
+    private func syncBloodPressure() async throws {
+        print("🩺 Syncing blood pressure data...")
+
+        guard let systolicType = HKQuantityType.quantityType(forIdentifier: .bloodPressureSystolic),
+              let diastolicType = HKQuantityType.quantityType(forIdentifier: .bloodPressureDiastolic) else {
+            throw HealthKitSyncError.dataTypeNotAvailable
+        }
+
+        guard let userId = try? await supabase.auth.session.user.id else {
+            throw HealthKitSyncError.notAuthenticated
+        }
+
+        // Blood pressure in HealthKit is stored as a correlation type
+        // We need to fetch the correlation samples to get paired systolic/diastolic readings
+        guard let correlationType = HKCorrelationType.correlationType(forIdentifier: .bloodPressure) else {
+            throw HealthKitSyncError.dataTypeNotAvailable
+        }
+
+        let correlationSamples = try await fetchCorrelationSamples(
+            type: correlationType,
+            since: lastSyncDate ?? Date().addingTimeInterval(-7*24*60*60)
+        )
+
+        var bpSamples: [CorrelationSampleWrite] = []
+        let deviceTimezone = TimeZone.current.identifier
+
+        for correlation in correlationSamples {
+            // Skip if already synced
+            if try await isAlreadySynced(healthKitUUID: correlation.uuid.uuidString, table: "patient_correlation_samples") {
+                continue
+            }
+
+            // Extract systolic and diastolic values from the correlation
+            var systolicValue: Double?
+            var diastolicValue: Double?
+
+            for sample in correlation.objects {
+                if let quantitySample = sample as? HKQuantitySample {
+                    if quantitySample.quantityType == systolicType {
+                        systolicValue = quantitySample.quantity.doubleValue(for: .millimeterOfMercury())
+                    } else if quantitySample.quantityType == diastolicType {
+                        diastolicValue = quantitySample.quantity.doubleValue(for: .millimeterOfMercury())
+                    }
+                }
+            }
+
+            guard let systolic = systolicValue, let diastolic = diastolicValue else {
+                print("⚠️ Skipping incomplete blood pressure reading")
+                continue
+            }
+
+            // Create components JSONB
+            let components: [String: AnyJSON] = [
+                "systolic": .double(systolic),
+                "diastolic": .double(diastolic)
+            ]
+
+            // Add HealthKit tracking metadata
+            let metadata: [String: AnyJSON] = [
+                "healthkit_uuid": .string(correlation.uuid.uuidString),
+                "healthkit_source_name": .string(correlation.sourceRevision.source.name)
+            ]
+
+            bpSamples.append(CorrelationSampleWrite(
+                patientId: userId,
+                correlationType: CorrelationTypes.bloodPressure,
+                components: components,
+                sampleTime: correlation.startDate,
+                source: .healthkit,
+                deviceInfo: nil,
+                metadata: metadata,
+                userTimezone: deviceTimezone
+            ))
+        }
+
+        if !bpSamples.isEmpty {
+            try await supabase
+                .from("patient_correlation_samples")
+                .insert(bpSamples)
+                .execute()
+        }
+
+        print("✅ Synced \(bpSamples.count) blood pressure samples")
     }
 
     // MARK: - HealthKit Queries
@@ -411,15 +522,68 @@ class HealthKitSyncService: ObservableObject {
         }
     }
 
+    private func fetchCorrelationSamples(type: HKCorrelationType, since: Date) async throws -> [HKCorrelation] {
+        let predicate = HKQuery.predicateForSamples(withStart: since, end: Date(), options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let correlationSamples = samples as? [HKCorrelation] ?? []
+                continuation.resume(returning: correlationSamples)
+            }
+
+            healthStore.execute(query)
+        }
+    }
+
     // MARK: - Deduplication
 
     /// Check if a HealthKit sample has already been synced (checks metadata JSONB)
-    private func isAlreadySynced(healthKitUUID: String) async throws -> Bool {
-        // Query patient_samples for matching healthkit_uuid in metadata
-        let response: [PatientSample] = try await supabase
-            .from("patient_samples")
-            .select()
+    /// - Parameters:
+    ///   - healthKitUUID: The HealthKit sample UUID to check
+    ///   - table: The specific table to check (patient_quantity_samples, patient_category_samples, etc.)
+    private func isAlreadySynced(healthKitUUID: String, table: String) async throws -> Bool {
+        // Query the specific table for matching healthkit_uuid in metadata
+        // We only need to check if count > 0, so just select id
+        struct IdOnly: Codable { let id: UUID }
+        let response: [IdOnly] = try await supabase
+            .from(table)
+            .select("id")
             .contains("metadata", value: ["healthkit_uuid": .string(healthKitUUID)])
+            .limit(1)
+            .execute()
+            .value
+
+        return !response.isEmpty
+    }
+
+    /// Check if a category sample already exists by time range and value
+    /// This catches duplicates from HealthKit where the same data has different UUIDs
+    private func isCategorySampleDuplicate(
+        patientId: UUID,
+        categoryType: String,
+        categoryValue: String,
+        startTime: Date,
+        endTime: Date
+    ) async throws -> Bool {
+        struct IdOnly: Codable { let id: UUID }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let response: [IdOnly] = try await supabase
+            .from("patient_category_samples")
+            .select("id")
+            .eq("patient_id", value: patientId)
+            .eq("category_type", value: categoryType)
+            .eq("category_value", value: categoryValue)
+            .eq("start_time", value: formatter.string(from: startTime))
+            .eq("end_time", value: formatter.string(from: endTime))
             .limit(1)
             .execute()
             .value
@@ -441,25 +605,26 @@ class HealthKitSyncService: ObservableObject {
         return TimeZone.current
     }
 
-    /// Map HealthKit sleep value to our category integer (0=Awake, 1=REM, 2=Core, 3=Deep)
-    private func mapSleepValueToCategory(_ value: HKCategoryValueSleepAnalysis?) -> Int? {
+    /// Map HealthKit sleep value to our category string key (awake, rem, core, deep)
+    /// These match the reference_key values in sample_category_types_reference
+    private func mapSleepValueToCategory(_ value: HKCategoryValueSleepAnalysis?) -> String? {
         guard let value = value else { return nil }
 
         switch value {
         case .awake:
-            return SleepStageValues.awake  // 0
+            return "awake"
         case .asleepREM:
-            return SleepStageValues.rem    // 1
+            return "rem"
         case .asleepCore:
-            return SleepStageValues.core   // 2
+            return "core"
         case .asleepDeep:
-            return SleepStageValues.deep   // 3
+            return "deep"
         case .asleepUnspecified:
-            return SleepStageValues.core   // Default to Core/Light
+            return "core"  // Default to Core/Light
         case .inBed:
             return nil  // Skip "in bed" - not a sleep stage
         @unknown default:
-            return SleepStageValues.core
+            return "core"
         }
     }
 

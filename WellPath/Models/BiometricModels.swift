@@ -133,11 +133,8 @@ struct BiometricDetail: Codable, Identifiable {
 // MARK: - Biomarker Base
 struct BiomarkerBase: Codable, Identifiable {
     let id: UUID
-    let markerId: String
     let biomarkerName: String
-    let category: String?
     let units: String?
-    let unitDisplay: String?
     let format: String?
     let isActive: Bool?
     let aboutWhy: String?
@@ -147,11 +144,8 @@ struct BiomarkerBase: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case markerId = "marker_id"
         case biomarkerName = "biomarker_name"
-        case category
         case units
-        case unitDisplay = "unit_display"
         case format
         case isActive = "is_active"
         case aboutWhy = "about_why"
@@ -313,20 +307,6 @@ struct RangeSegment: Identifiable {
 }
 
 // MARK: - View Models for UI
-struct BiomarkerCardData: Identifiable {
-    let id = UUID()
-    let name: String
-    let value: String
-    let numericValue: Double? // Numeric value for range indicator positioning
-    let status: String
-    let rangeName: String
-    let optimalRange: String
-    let trend: String
-    let trendData: [Double]
-    let unit: String
-    let category: String?
-    let rangeSegments: [RangeSegment] // All range segments for visual indicator
-}
 
 struct BiometricCardData: Identifiable {
     let id = UUID()

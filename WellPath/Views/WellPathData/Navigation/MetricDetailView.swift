@@ -198,28 +198,45 @@ enum TimePeriod: String, CaseIterable {
     }
 
     // Map UI period to database period_type
-    // For 6M/Y: Bars use weekly/monthly aggregations
+    // All views query hourly or daily aggregations; 6M/Y aggregate client-side
     var databasePeriodType: String {
         switch self {
         case .day: return "hourly"
         case .week: return "daily"
         case .month: return "daily"
-        case .sixMonth: return "weekly"   // Bars are weekly aggregations
-        case .year: return "monthly"      // Bars are monthly aggregations
+        case .sixMonth: return "daily"   // Query daily, aggregate to weekly client-side
+        case .year: return "daily"       // Query daily, aggregate to monthly client-side
+        }
+    }
+
+    // Whether this period requires client-side aggregation of daily data
+    var requiresClientSideAggregation: Bool {
+        switch self {
+        case .sixMonth, .year: return true
+        default: return false
+        }
+    }
+
+    // Target grouping granularity for client-side aggregation
+    var aggregationGranularity: Calendar.Component? {
+        switch self {
+        case .sixMonth: return .weekOfYear
+        case .year: return .month
+        default: return nil
         }
     }
 
     // Calculation type to use for aggregations
     var calculationType: String {
-        // For D/W/M: Use SUM for aggregations (bars show totals for each period)
-        // For 6M/Y: Use AVG of weekly/monthly aggregations (bars show monthly averages)
+        // All periods query SUM aggregations (daily/hourly totals)
+        // 6M/Y views aggregate daily SUMs into weekly/monthly averages client-side
         switch self {
         case .day:
             return "SUM"  // SUM of hourly entries for the day
         case .week, .month:
             return "SUM"  // SUM for daily aggregations (daily totals)
         case .sixMonth, .year:
-            return "AVG"  // AVG of weekly/monthly aggregations
+            return "SUM"  // SUM for daily data, averaged client-side into weekly/monthly
         }
     }
 
@@ -467,50 +484,72 @@ class InfiniteScrollChartManager: ObservableObject {
             NSLog("[CHART] 👤 User ID: %@", userId.uuidString)
             NSLog("[CHART] Fetching ALL data for metric=%@, period=%@, calc=%@", metricId, periodType, calculationType)
 
-            // First, get the agg_metric_id from the junction table
+            // First, get the sample_quantity_type from the junction table
             struct JunctionResult: Codable {
-                let aggMetricId: String
+                let sampleQuantityType: String?
+                let sampleCategoryType: String?
+                let sampleClinicalType: String?
+                let sampleCorrelationType: String?
                 enum CodingKeys: String, CodingKey {
-                    case aggMetricId = "agg_metric_id"
+                    case sampleQuantityType = "sample_quantity_type"
+                    case sampleCategoryType = "sample_category_type"
+                    case sampleClinicalType = "sample_clinical_type"
+                    case sampleCorrelationType = "sample_correlation_type"
                 }
             }
 
             let junctionResults: [JunctionResult] = try await supabase
-                .from("display_metrics_aggregations")
-                .select("agg_metric_id")
-                .eq("metric_id", value: metricId)
-                .eq("period_type", value: periodType)  // CRITICAL: Filter by period to avoid duplicates
+                .from("display_views_dependencies")
+                .select("sample_quantity_type, sample_category_type, sample_clinical_type, sample_correlation_type")
+                .eq("view_id", value: metricId)
+                .eq("is_primary", value: true)
                 .execute()
                 .value
 
-            // Use first aggregation result
-            guard let aggMetricId = junctionResults.first?.aggMetricId else {
-                NSLog("[CHART] ❌ No agg_metric_id found for metric=%@ period=%@. Found %d junction results. Showing empty bars.", metricId, periodType, junctionResults.count)
+            // Use first result with a sample type
+            guard let junction = junctionResults.first else {
+                NSLog("[CHART] ❌ No dependency found for metric=%@ period=%@. Showing empty bars.", metricId, periodType)
                 return []
             }
 
-            NSLog("[CHART] ✅ Found agg_metric_id: %@", aggMetricId)
+            // Determine which sample type to use
+            let sampleType: String
+            let sampleTable: String
+            if let quantityType = junction.sampleQuantityType {
+                sampleType = quantityType
+                sampleTable = "patient_quantity_samples"
+            } else if let categoryType = junction.sampleCategoryType {
+                sampleType = categoryType
+                sampleTable = "patient_category_samples"
+            } else if let clinicalType = junction.sampleClinicalType {
+                sampleType = clinicalType
+                sampleTable = "patient_clinical_samples"
+            } else if let correlationType = junction.sampleCorrelationType {
+                sampleType = correlationType
+                sampleTable = "patient_correlation_samples"
+            } else {
+                NSLog("[CHART] ❌ No sample type found for metric=%@. Showing empty bars.", metricId)
+                return []
+            }
 
-            // Fetch the output_unit from aggregation_metrics first
-            struct AggMetricBasic: Codable {
-                let outputUnit: String
+            NSLog("[CHART] ✅ Found sample_type: %@ (table: %@)", sampleType, sampleTable)
 
+            // Fetch the canonical_unit from sample_quantity_types
+            struct SampleTypeInfo: Codable {
+                let canonicalUnit: String?
                 enum CodingKeys: String, CodingKey {
-                    case outputUnit = "output_unit"
+                    case canonicalUnit = "canonical_unit"
                 }
             }
 
-            let aggBasic: [AggMetricBasic] = try await supabase
-                .from("aggregation_metrics")
-                .select("output_unit")
-                .eq("agg_id", value: aggMetricId)
+            let typeInfo: [SampleTypeInfo] = try await supabase
+                .from("sample_quantity_types")
+                .select("canonical_unit")
+                .eq("quantity_type", value: sampleType)
                 .execute()
                 .value
 
-            guard let unitId = aggBasic.first?.outputUnit else {
-                NSLog("[CHART] ⚠️ No output_unit found for %@", aggMetricId)
-                return []
-            }
+            let unitId = typeInfo.first?.canonicalUnit ?? "unit"
 
             // Now fetch the unit display info from units_base
             struct UnitsBaseInfo: Codable {
@@ -532,7 +571,7 @@ class InfiniteScrollChartManager: ObservableObject {
 
             let fetchedUnit = unitsInfo.first?.uiDisplay ?? "unit"
             let fetchedDecimalPlaces = unitsInfo.first?.decimalPlaces ?? 0
-            NSLog("[CHART] 📏 Fetched unit from database: '%@' with %d decimal places (metricId: %@, aggMetricId: %@)", fetchedUnit, fetchedDecimalPlaces, metricId, aggMetricId)
+            NSLog("[CHART] 📏 Fetched unit from database: '%@' with %d decimal places (metricId: %@, sampleType: %@)", fetchedUnit, fetchedDecimalPlaces, metricId, sampleType)
 
             // Store actual unit and decimal places from database and update selectedUnit
             self.actualUnit = fetchedUnit
@@ -545,43 +584,124 @@ class InfiniteScrollChartManager: ObservableObject {
                 NSLog("[CHART] 📏 manager.selectedUnit already set to '%@', not updating", self.selectedUnit)
             }
 
-            // Now query aggregation_results_cache - fetch ALL data (no date filters)
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select()
-                .eq("patient_id", value: userId)
-                .eq("agg_metric_id", value: aggMetricId)
-                .eq("period_type", value: periodType)
-                .eq("calculation_type_id", value: calculationType)
-                .order("period_start", ascending: false)
-                .execute()
-                .value
-
-            NSLog("[CHART] 📊 Fetched %d aggregation results from %@", results.count, aggMetricId)
-
+            // Query patient_quantity_samples - for Day view, need hourly granularity
+            // For other views, aggregate by aggregation_date
             let calendar = Calendar.current
             var points: [ChartDataPoint] = []
 
-            for result in results {
-                // Convert UTC period_start to local date for timeline matching
-                // For hourly data, preserve the time component; for daily+, use midnight
-                let preserveTime = (periodType == "hourly")
-                let localDate = result.periodStart.toLocalDateForTimeline(preserveTime: preserveTime)
+            if selectedPeriod == .day {
+                // Day view: query by start_time and group by hour
+                struct HourlySample: Codable {
+                    let startTime: Date
+                    let quantityValue: Double?
+                    let canonicalValue: Double?
 
-                let barDate: Date
-                if selectedPeriod == .year {
-                    var components = calendar.dateComponents([.year, .month], from: localDate)
-                    components.day = 15
-                    barDate = calendar.date(from: components) ?? localDate
-                } else {
-                    barDate = localDate
+                    enum CodingKeys: String, CodingKey {
+                        case startTime = "start_time"
+                        case quantityValue = "quantity_value"
+                        case canonicalValue = "canonical_value"
+                    }
                 }
 
-                points.append(ChartDataPoint(
-                    date: barDate,
-                    value: result.value ?? 0.0,
-                    label: ""
-                ))
+                let samples: [HourlySample] = try await supabase
+                    .from("patient_quantity_samples")
+                    .select("start_time, quantity_value, canonical_value")
+                    .eq("patient_id", value: userId)
+                    .eq("quantity_type", value: sampleType)
+                    .eq("is_primary", value: true)
+                    .order("start_time", ascending: false)
+                    .execute()
+                    .value
+
+                NSLog("[CHART] 📊 Fetched %d samples from patient_quantity_samples for %@ (hourly mode)", samples.count, sampleType)
+
+                // Group by hour (year, month, day, hour)
+                var hourlyTotals: [DateComponents: Double] = [:]
+                for sample in samples {
+                    let value = sample.canonicalValue ?? sample.quantityValue ?? 0.0
+                    let components = calendar.dateComponents([.year, .month, .day, .hour], from: sample.startTime)
+                    hourlyTotals[components, default: 0.0] += value
+                }
+
+                NSLog("[CHART] 📊 Grouped into %d hourly buckets", hourlyTotals.count)
+
+                for (components, total) in hourlyTotals {
+                    guard let date = calendar.date(from: components) else { continue }
+                    points.append(ChartDataPoint(
+                        date: date,
+                        value: total,
+                        label: ""
+                    ))
+                }
+            } else {
+                // Other views: aggregate by aggregation_date (daily)
+                struct QuantitySample: Codable {
+                    let aggregationDate: String
+                    let quantityValue: Double?
+                    let canonicalValue: Double?
+
+                    enum CodingKeys: String, CodingKey {
+                        case aggregationDate = "aggregation_date"
+                        case quantityValue = "quantity_value"
+                        case canonicalValue = "canonical_value"
+                    }
+                }
+
+                let samples: [QuantitySample] = try await supabase
+                    .from("patient_quantity_samples")
+                    .select("aggregation_date, quantity_value, canonical_value")
+                    .eq("patient_id", value: userId)
+                    .eq("quantity_type", value: sampleType)
+                    .eq("is_primary", value: true)  // Only use primary samples for analysis
+                    .order("aggregation_date", ascending: false)
+                    .execute()
+                    .value
+
+                NSLog("[CHART] 📊 Fetched %d samples from patient_quantity_samples for %@ (daily mode)", samples.count, sampleType)
+
+                // Aggregate samples by date (sum values for each day)
+                // Parse aggregation_date as local noon to avoid DST/timezone edge cases
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+                dateFormatter.timeZone = TimeZone.current
+
+                var dailyTotals: [String: Double] = [:]
+                for sample in samples {
+                    let value = sample.canonicalValue ?? sample.quantityValue ?? 0.0
+                    dailyTotals[sample.aggregationDate, default: 0.0] += value
+                }
+
+                for (dateString, total) in dailyTotals {
+                    guard let date = dateFormatter.date(from: dateString + " 12:00") else { continue }
+
+                    let barDate: Date
+                    if selectedPeriod == .year {
+                        var components = calendar.dateComponents([.year, .month], from: date)
+                        components.day = 15
+                        barDate = calendar.date(from: components) ?? date
+                    } else {
+                        barDate = date
+                    }
+
+                    points.append(ChartDataPoint(
+                        date: barDate,
+                        value: total,
+                        label: ""
+                    ))
+                }
+            }
+
+            // Sort by date descending to match previous behavior
+            points.sort { $0.date > $1.date }
+
+            // For 6M/Y views, aggregate daily data into weekly/monthly averages
+            if selectedPeriod.requiresClientSideAggregation,
+               let granularity = selectedPeriod.aggregationGranularity {
+                let aggregatedPoints = aggregateDailyData(points, by: granularity)
+                NSLog("[CHART] 📊 Aggregated %d daily points into %d %@ points",
+                      points.count, aggregatedPoints.count,
+                      granularity == .weekOfYear ? "weekly" : "monthly")
+                return aggregatedPoints
             }
 
             return points
@@ -591,6 +711,69 @@ class InfiniteScrollChartManager: ObservableObject {
             NSLog("[CHART] Error details: %@", String(describing: error))
             return []
         }
+    }
+
+    /// Aggregates daily data points into weekly or monthly averages
+    /// - Parameters:
+    ///   - dailyPoints: Array of daily ChartDataPoints
+    ///   - component: Calendar component to group by (.weekOfYear or .month)
+    /// - Returns: Aggregated ChartDataPoints with averaged values
+    private func aggregateDailyData(_ dailyPoints: [ChartDataPoint], by component: Calendar.Component) -> [ChartDataPoint] {
+        guard !dailyPoints.isEmpty else { return [] }
+
+        let calendar = Calendar.current
+
+        // Group points by their week/month
+        var grouped: [DateComponents: [ChartDataPoint]] = [:]
+
+        for point in dailyPoints {
+            var components: DateComponents
+            if component == .weekOfYear {
+                // Group by year + week of year
+                components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: point.date)
+            } else {
+                // Group by year + month
+                components = calendar.dateComponents([.year, .month], from: point.date)
+            }
+            grouped[components, default: []].append(point)
+        }
+
+        // Calculate average for each group and create representative date
+        var aggregatedPoints: [ChartDataPoint] = []
+
+        for (components, points) in grouped {
+            // Calculate average of non-zero values (exclude empty days)
+            let nonZeroValues = points.filter { $0.value > 0 }.map { $0.value }
+            let averageValue: Double
+            if nonZeroValues.isEmpty {
+                averageValue = 0
+            } else {
+                averageValue = nonZeroValues.reduce(0, +) / Double(nonZeroValues.count)
+            }
+
+            // Create representative date for the bucket
+            let representativeDate: Date
+            if component == .weekOfYear {
+                // Use Monday of the week as the representative date
+                var weekComponents = components
+                weekComponents.weekday = 2 // Monday
+                representativeDate = calendar.date(from: weekComponents) ?? points.first!.date
+            } else {
+                // Use 15th of the month as the representative date
+                var monthComponents = components
+                monthComponents.day = 15
+                representativeDate = calendar.date(from: monthComponents) ?? points.first!.date
+            }
+
+            aggregatedPoints.append(ChartDataPoint(
+                date: representativeDate,
+                value: averageValue,
+                label: ""
+            ))
+        }
+
+        // Sort by date descending (most recent first)
+        return aggregatedPoints.sorted { $0.date > $1.date }
     }
 
     private func generateEmptyDataPoints(from startDate: Date, to endDate: Date) -> [ChartDataPoint] {
@@ -1316,8 +1499,8 @@ struct ParentMetricBarChart: View {
     // MARK: - Helpers
 
     private func getDisplayValue(for rawValue: Double) -> Double {
-        // rawValue comes from aggregation_results_cache
-        // - D period: AVG of hourly entries
+        // rawValue comes from patient_*_samples queries (aggregated by PatientSamplesQueryService or direct queries)
+        // - D period: Total or average as appropriate
         // - W/M periods: SUM of daily aggregations (daily totals)
         // - 6M/Y periods: AVG of weekly/monthly aggregations (rollup aggregation)
         // All values are already correctly calculated - just pass through
@@ -1409,25 +1592,24 @@ struct ParentMetricBarChart: View {
             let supabase = SupabaseManager.shared.client
             let userId = try await supabase.auth.session.user.id
             
-            // Get the agg_metric_id for daily SUM aggregations from the junction table
+            // Get the sample_quantity_type from display_views_dependencies
             struct JunctionResult: Codable {
-                let aggMetricId: String
+                let sampleQuantityType: String?
                 enum CodingKeys: String, CodingKey {
-                    case aggMetricId = "agg_metric_id"
+                    case sampleQuantityType = "sample_quantity_type"
                 }
             }
-            
+
             let junctionResults: [JunctionResult] = try await supabase
-                .from("display_metrics_aggregations")
-                .select("agg_metric_id")
-                .eq("metric_id", value: metric.metricId)
-                .eq("period_type", value: "daily")
-                .eq("calculation_type_id", value: "SUM")
+                .from("display_views_dependencies")
+                .select("sample_quantity_type")
+                .eq("view_id", value: metric.metricId)
+                .eq("is_primary", value: true)
                 .execute()
                 .value
-            
-            guard let aggMetricId = junctionResults.first?.aggMetricId else {
-                NSLog("[CHART] ❌ No daily SUM agg_metric_id found for metric=%@", metric.metricId)
+
+            guard let quantityType = junctionResults.first?.sampleQuantityType else {
+                NSLog("[CHART] ❌ No sample_quantity_type found for metric=%@", metric.metricId)
                 return []
             }
             
@@ -1440,39 +1622,42 @@ struct ParentMetricBarChart: View {
                 return []
             }
             
-            NSLog("[CHART] 📊 Fetching daily SUMs for visible range: %@ to %@", startDate.description, endDate.description)
-            
-            // Fetch daily SUM aggregations within visible date range
-            struct AggregationResult: Codable {
-                let value: Double?
-                let periodStart: Date
+            NSLog("[CHART] 📊 Fetching daily values for visible range: %@ to %@", startDate.description, endDate.description)
+
+            // Fetch patient_quantity_samples within visible date range
+            struct QuantitySample: Codable {
+                let quantityValue: Double
+                let startTime: Date
                 enum CodingKeys: String, CodingKey {
-                    case value
-                    case periodStart = "period_start"
+                    case quantityValue = "quantity_value"
+                    case startTime = "start_time"
                 }
             }
-            
-            let results: [AggregationResult] = try await supabase
-                .from("aggregation_results_cache")
-                .select("value, period_start")
+
+            let samples: [QuantitySample] = try await supabase
+                .from("patient_quantity_samples")
+                .select("quantity_value, start_time")
                 .eq("patient_id", value: userId)
-                .eq("agg_metric_id", value: aggMetricId)
-                .eq("period_type", value: "daily")
-                .eq("calculation_type_id", value: "SUM")
-                .gte("period_start", value: startDate)
-                .lte("period_start", value: endDate)
-                .order("period_start", ascending: true)
+                .eq("quantity_type", value: quantityType)
+                .eq("is_primary", value: true)  // Only use primary samples for analysis
+                .gte("start_time", value: startDate.ISO8601Format())
+                .lte("start_time", value: endDate.ISO8601Format())
+                .order("start_time", ascending: true)
                 .execute()
                 .value
-            
-            // Extract valid daily sum values
-            let dailySums = results.compactMap { result -> Double? in
-                guard let value = result.value, value > 0 else { return nil }
-                return value
+
+            // Group by day and sum values
+            var dailySums: [Date: Double] = [:]
+            for sample in samples {
+                let day = calendar.startOfDay(for: sample.startTime)
+                dailySums[day, default: 0] += sample.quantityValue
             }
-            
-            NSLog("[CHART] ✅ Fetched %d daily SUMs (from %d results) for visible range", dailySums.count, results.count)
-            return dailySums
+
+            // Extract daily sum values
+            let values = dailySums.values.filter { $0 > 0 }
+
+            NSLog("[CHART] ✅ Fetched %d daily sums from %d samples for visible range", values.count, samples.count)
+            return Array(values)
             
         } catch {
             NSLog("[CHART] ❌ Error fetching daily SUMs: %@", error.localizedDescription)
@@ -1549,15 +1734,17 @@ struct ParentMetricBarChart: View {
             return formatter.string(from: date)
 
         case .sixMonth:
-            // Show week range (e.g., "Week of Jan 15 - Jan 21")
+            // Show week range (e.g., "Dec 1 - Dec 7, 2025")
             formatter.dateFormat = "MMM d"
             let weekStart = formatter.string(from: date)
 
             if let weekEnd = calendar.date(byAdding: .day, value: 6, to: date) {
+                formatter.dateFormat = "MMM d, yyyy"
                 let weekEndStr = formatter.string(from: weekEnd)
-                return "Week of \(weekStart) - \(weekEndStr)"
+                return "\(weekStart) - \(weekEndStr)"
             } else {
-                return "Week of \(weekStart)"
+                formatter.dateFormat = "MMM d, yyyy"
+                return formatter.string(from: date)
             }
 
         case .year:
@@ -2022,12 +2209,9 @@ struct ParentDisplayMetricResponse: Codable {
             metricId: parentMetricId,
             metricName: parentName,
             description: parentDescription,
-            screenId: nil,
             pillar: pillar,
             chartTypeId: chartTypeId,
             isActive: true,
-            createdAt: nil,
-            updatedAt: nil,
             aboutContent: nil,
             longevityImpact: nil,
             quickTips: nil
@@ -2068,12 +2252,9 @@ struct ChildDisplayMetricResponse: Codable {
             metricId: childMetricId,
             metricName: childName,
             description: nil,
-            screenId: nil,
             pillar: nil,
             chartTypeId: nil,
             isActive: true,
-            createdAt: nil,
-            updatedAt: nil,
             aboutContent: nil,
             longevityImpact: nil,
             quickTips: nil
@@ -2111,16 +2292,16 @@ class MetricDetailViewModel: ObservableObject {
 
             let metricIds = links.map { $0.metricId }
 
-            // Step 2: Query display_metrics table
+            // Step 2: Query display_views table
             let fetchedMetrics: [DisplayMetric] = try await supabase
-                .from("display_metrics")
+                .from("display_views")
                 .select()
-                .in("metric_id", values: metricIds)
+                .in("view_id", values: metricIds)
                 .eq("is_active", value: true)
                 .execute()
                 .value
 
-            print("📊 Found \(fetchedMetrics.count) display metrics")
+            print("📊 Found \(fetchedMetrics.count) display views")
 
             // Step 3: Sort by the order from junction table
             let sortedMetrics = metricIds.compactMap { metricId in
@@ -2205,12 +2386,8 @@ class MetricDetailViewModel: ObservableObject {
                 name: "Protein",
                 overview: "Track your protein intake",
                 pillar: "Healthful Nutrition",
-                icon: nil,
                 displayOrder: 1,
-                isActive: true,
-                screenType: nil,
-                layoutType: nil,
-                defaultTimePeriod: nil
+                isActive: true
             ),
             pillar: "Healthful Nutrition"
         )
