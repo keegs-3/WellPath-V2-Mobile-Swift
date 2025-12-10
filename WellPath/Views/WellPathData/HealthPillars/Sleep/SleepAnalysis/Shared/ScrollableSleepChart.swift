@@ -173,8 +173,9 @@ struct ScrollableSleepChart: View {
                 barWidthRatio: viewMode.barWidthRatio,
                 minimumDayWidth: minimumDayWidth
             )
-            // Use cached time range to avoid recomputation during scrolling
-            let timeRange = getTimeRange()
+            // Compute time range dynamically based on visible date range
+            // This allows Y-axis to adjust when scrolling (e.g., nap goes out of view)
+            let timeRange = computeTimeRangeForVisibleDays()
 
             chartContent(layout: layout, timeRange: timeRange)
         }
@@ -529,9 +530,9 @@ struct ScrollableSleepChart: View {
 
     // MARK: - Time Calculations
 
-    /// Compute time range (called once when data changes, result is cached)
-    private func computeTimeRange() -> ChartTimeRange {
-        // Get only sessions in the visible date range
+    /// Compute time range dynamically based on currently visible days
+    /// This is called on each render to allow Y-axis to adjust when scrolling
+    private func computeTimeRangeForVisibleDays() -> ChartTimeRange {
         guard let range = visibleDateRange else {
             return defaultTimeRange
         }
@@ -550,19 +551,41 @@ struct ScrollableSleepChart: View {
         var latestEnd: Double?
 
         for session in visibleSessions {
-            let sessionStart = adjustedHour(from: session.sessionStart)
-            let sessionEnd = adjustedHour(from: session.sessionEnd)
+            // Check ALL segments (including naps) not just session start/end
+            // This ensures daytime naps are included in the time range
+            for segment in session.segments {
+                let segmentStart = adjustedHour(from: segment.startTime)
+                let segmentEnd = adjustedHour(from: segment.endTime)
 
-            if let currentStart = earliestStart {
-                earliestStart = min(currentStart, sessionStart)
-            } else {
-                earliestStart = sessionStart
+                if let currentStart = earliestStart {
+                    earliestStart = min(currentStart, segmentStart)
+                } else {
+                    earliestStart = segmentStart
+                }
+
+                if let currentEnd = latestEnd {
+                    latestEnd = max(currentEnd, segmentEnd)
+                } else {
+                    latestEnd = segmentEnd
+                }
             }
 
-            if let currentEnd = latestEnd {
-                latestEnd = max(currentEnd, sessionEnd)
-            } else {
-                latestEnd = sessionEnd
+            // Also check manual entries
+            if let manual = session.manualEntry {
+                let manualStart = adjustedHour(from: manual.bedtime)
+                let manualEnd = adjustedHour(from: manual.waketime)
+
+                if let currentStart = earliestStart {
+                    earliestStart = min(currentStart, manualStart)
+                } else {
+                    earliestStart = manualStart
+                }
+
+                if let currentEnd = latestEnd {
+                    latestEnd = max(currentEnd, manualEnd)
+                } else {
+                    latestEnd = manualEnd
+                }
             }
         }
 
@@ -570,16 +593,28 @@ struct ScrollableSleepChart: View {
             return defaultTimeRange
         }
 
+        // Round to whole hours for cleaner Y-axis labels
         let startBuffer: Double = 1.0
         let endBuffer: Double = 1.0
 
-        let bufferedStart = max(minStart - startBuffer, 0)
-        let bufferedEnd = min(maxEnd + endBuffer, 24)
+        var bufferedStart = floor(max(minStart - startBuffer, 0))
+        var bufferedEnd = ceil(maxEnd + endBuffer)
+
+        // Cap at 24 hours max (6PM to 6PM next day)
+        // If a segment somehow crosses this boundary (extremely rare),
+        // it would be split into 2 days at the database level anyway
+        bufferedEnd = min(bufferedEnd, 24.0)
+
         let totalHours = bufferedEnd - bufferedStart
 
         guard totalHours >= 1 else { return defaultTimeRange }
 
         return (bufferedStart, bufferedEnd, totalHours)
+    }
+
+    /// Legacy cached version (kept for reference but no longer used)
+    private func computeTimeRange() -> ChartTimeRange {
+        return computeTimeRangeForVisibleDays()
     }
 
     private func adjustedHour(from date: Date) -> Double {
@@ -598,20 +633,36 @@ struct ScrollableSleepChart: View {
     }
 
     private func generateHourLabels(timeRange: ChartTimeRange) -> [Double] {
-        var labels: [Double] = []
-        let interval: Double = 3
+        // Calculate interval to get max 6 labels (including start and end)
+        // For 9 hours (10PM-7AM): interval = 2-3 hours → labels at 10, 1, 4, 7
+        // For 20 hours (with nap): interval = 4 hours → more spread out
+        let totalHours = timeRange.totalHours
+        let maxLabels = 6
 
-        labels.append(timeRange.startHour)
-
-        var currentHour = (floor(timeRange.startHour / interval) + 1) * interval
-
-        while currentHour < timeRange.endHour {
-            labels.append(currentHour)
-            currentHour += interval
+        // Calculate ideal interval (round up to nice values: 1, 2, 3, 4, 6)
+        let rawInterval = totalHours / Double(maxLabels - 1)
+        let interval: Double
+        if rawInterval <= 1 {
+            interval = 1
+        } else if rawInterval <= 2 {
+            interval = 2
+        } else if rawInterval <= 3 {
+            interval = 3
+        } else if rawInterval <= 4 {
+            interval = 4
+        } else {
+            interval = 6
         }
 
-        if let last = labels.last, abs(last - timeRange.endHour) > 0.01 {
-            labels.append(timeRange.endHour)
+        var labels: [Double] = []
+
+        // Start at the first whole hour after startHour
+        let firstLabel = ceil(timeRange.startHour)
+        var currentHour = firstLabel
+
+        while currentHour <= timeRange.endHour && labels.count < maxLabels {
+            labels.append(currentHour)
+            currentHour += interval
         }
 
         return labels
