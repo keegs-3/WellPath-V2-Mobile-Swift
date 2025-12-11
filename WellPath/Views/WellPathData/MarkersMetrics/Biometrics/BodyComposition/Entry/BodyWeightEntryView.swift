@@ -13,10 +13,13 @@ struct BodyWeightEntryView: View {
     @State private var selectedDateTime = Date()
     @State private var weightValue: String = ""
     @State private var selectedUnit: WeightUnit = .pounds
+    @State private var patientHeight: Double? // Height in cm from patient_characteristics
     @State private var isSaving = false
+    @State private var isLoadingHeight = true
     @State private var errorMessage: String?
 
     private let supabase = SupabaseManager.shared.client
+    private let color = Color.cyan  // Biometrics color
 
     enum WeightUnit: String, CaseIterable {
         case pounds = "lb"
@@ -127,6 +130,43 @@ struct BodyWeightEntryView: View {
             .padding(.bottom)
             .disabled(isSaving || weightValue.isEmpty)
         }
+        .task {
+            await loadPatientHeight()
+        }
+    }
+
+    private func loadPatientHeight() async {
+        isLoadingHeight = true
+
+        do {
+            let userId = try await supabase.auth.session.user.id
+
+            struct PatientCharacteristic: Codable {
+                let valueNumeric: Double?
+
+                enum CodingKeys: String, CodingKey {
+                    case valueNumeric = "value_numeric"
+                }
+            }
+
+            let results: [PatientCharacteristic] = try await supabase
+                .from("patient_characteristics")
+                .select("value_numeric")
+                .eq("patient_id", value: userId)
+                .eq("characteristic_type_name", value: "height")
+                .limit(1)
+                .execute()
+                .value
+
+            await MainActor.run {
+                patientHeight = results.first?.valueNumeric
+                isLoadingHeight = false
+            }
+
+        } catch {
+            print("Error loading height: \(error)")
+            await MainActor.run { isLoadingHeight = false }
+        }
     }
 
     private func saveWeightEntry() async {
@@ -145,26 +185,50 @@ struct BodyWeightEntryView: View {
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // Convert to canonical unit (pounds)
-            let canonicalValue = selectedUnit.toCanonical(inputValue)
+            // Create shared event instance ID for both entries
+            let eventId = UUID()
 
-            // Create quantity sample - store in original unit (trigger converts to canonical)
-            let sample = QuantitySampleWrite.create(
+            // Convert to kg for BMI calculation
+            let weightInKg = selectedUnit == .kilograms ? inputValue : inputValue * 0.453592
+
+            // 1. Save body weight in user's chosen unit
+            let weightSample = QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.weight,
                 value: inputValue,  // Store original value
-                unit: selectedUnit.rawValue == "lb" ? "pound" : "kilogram",  // Store actual unit
+                unit: selectedUnit.rawValue == "lb" ? "pound" : "kilogram",
                 timestamp: selectedDateTime,
                 source: .wellpathInput,
                 timezone: deviceTimezone,
-                eventInstanceId: UUID()
+                eventInstanceId: eventId
             )
 
-            // Insert into patient_quantity_samples
             try await supabase
                 .from("patient_quantity_samples")
-                .insert(sample)
+                .insert(weightSample)
                 .execute()
+
+            // 2. Calculate and save BMI if we have height
+            if let heightCm = patientHeight, heightCm > 0 {
+                let heightM = heightCm / 100.0
+                let bmiValue = weightInKg / (heightM * heightM)
+
+                let bmiSample = QuantitySampleWrite.create(
+                    patientId: userId,
+                    quantityType: QuantityTypes.bmi,
+                    value: bmiValue,
+                    unit: "kg/m²",
+                    timestamp: selectedDateTime,
+                    source: .wellpathInput,
+                    timezone: deviceTimezone,
+                    eventInstanceId: eventId
+                )
+
+                try await supabase
+                    .from("patient_quantity_samples")
+                    .insert(bmiSample)
+                    .execute()
+            }
 
             await MainActor.run {
                 dismiss()

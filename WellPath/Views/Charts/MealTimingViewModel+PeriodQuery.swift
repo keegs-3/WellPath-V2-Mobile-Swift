@@ -22,6 +22,10 @@ extension MealTimingViewModel {
             // Calculate period start and end
             let (periodStart, periodEnd): (Date, Date) = {
                 switch period {
+                case .hour:
+                    let start = calendar.dateInterval(of: .hour, for: date)?.start ?? date
+                    let end = calendar.date(byAdding: .hour, value: 1, to: start) ?? start
+                    return (start, end)
                 case .day:
                     let start = calendar.startOfDay(for: date)
                     let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start

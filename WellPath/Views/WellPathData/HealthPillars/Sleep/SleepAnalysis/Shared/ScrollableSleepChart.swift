@@ -32,9 +32,10 @@ struct ScrollableSleepChart: View {
         }
 
         var daysToLoad: (back: Int, ahead: Int) {
+            // Load large initial dataset for smooth scrolling (10 years back, 1 year forward)
             switch self {
-            case .week: return (14, 7)
-            case .month: return (60, 30)
+            case .week: return (365 * 10, 365)
+            case .month: return (365 * 10, 365)
             }
         }
     }
@@ -241,6 +242,15 @@ struct ScrollableSleepChart: View {
                     .frame(width: layout.dayWidth, height: chartHeight)
                 }
 
+                // Selection indicator: drawn before bar to render behind it (Apple Health style)
+                if isBarSelected(groupDate: group.date) {
+                    Rectangle()
+                        .fill(Color.secondary)
+                        .frame(width: 2)
+                        .frame(height: chartHeight)
+                        .offset(x: layout.barXOffset + layout.barWidth / 2)
+                }
+
                 Canvas { context, size in
                     drawDayBars(
                         context: context,
@@ -253,19 +263,6 @@ struct ScrollableSleepChart: View {
                     )
                 }
                 .frame(width: layout.dayWidth, height: chartHeight)
-
-                if isBarSelected(groupDate: group.date) {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.5))
-                        .frame(width: 1)
-                        .frame(height: chartHeight)
-                        .offset(x: layout.barXOffset)
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.5))
-                        .frame(width: 1)
-                        .frame(height: chartHeight)
-                        .offset(x: layout.barXOffset + layout.barWidth)
-                }
             }
             .frame(width: layout.dayWidth, height: chartHeight)
             .contentShape(Rectangle())
@@ -697,31 +694,18 @@ struct ScrollableSleepChart: View {
     // MARK: - Helpers
 
     /// Compute grouped data (called once when data changes, result is cached)
+    /// Uses viewModel's dataStartDate/dataEndDate for full scrollable range
     private func computeGroupedByDate() -> [(date: Date, sessions: [SleepSession])] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: viewModel.sleepSessions) { session in
             calendar.startOfDay(for: session.date)
         }
 
-        let sortedDates = grouped.keys.sorted()
         let today = calendar.startOfDay(for: Date())
 
-        let pastBuffer = max(7, viewMode.visibleDays)
-        let futureBuffer = viewMode == .month ? 3 : max(3, viewMode.visibleDays / 2)
-
-        let startDate: Date
-        let endDate: Date
-
-        if let first = sortedDates.first, let last = sortedDates.last {
-            let desiredStart = calendar.date(byAdding: .day, value: -pastBuffer, to: first) ?? first
-            let desiredEndFromData = calendar.date(byAdding: .day, value: futureBuffer, to: last) ?? last
-            let desiredEndFromToday = calendar.date(byAdding: .day, value: futureBuffer, to: today) ?? today
-            startDate = desiredStart
-            endDate = max(desiredEndFromData, desiredEndFromToday)
-        } else {
-            startDate = calendar.date(byAdding: .day, value: -viewMode.visibleDays, to: today) ?? today
-            endDate = calendar.date(byAdding: .day, value: futureBuffer, to: today) ?? today
-        }
+        // Use the full requested date range from viewModel for smooth scrolling
+        let startDate = viewModel.dataStartDate ?? calendar.date(byAdding: .day, value: -viewMode.visibleDays, to: today) ?? today
+        let endDate = viewModel.dataEndDate ?? calendar.date(byAdding: .day, value: 7, to: today) ?? today
 
         var groups: [(date: Date, sessions: [SleepSession])] = []
         var current = startDate
@@ -935,7 +919,38 @@ struct ScrollableSleepChart: View {
 
     private var summaryMetrics: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let selectedBar = viewModel.selectedBar {
+            // Priority 1: Stage + Bar selected - show stage duration
+            if let stage = selectedStage, let selectedBar = viewModel.selectedBar {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(stageName(for: stage).uppercased())
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(formatStageDuration(selectedBar, stage: stage))
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                    }
+
+                    Spacer()
+
+                    // Info button
+                    if let showAboutBinding = showAbout {
+                        Button(action: {
+                            withAnimation {
+                                showAboutBinding.wrappedValue = true
+                            }
+                        }) {
+                            Image(systemName: "info.circle")
+                                .font(.title3)
+                                .foregroundColor(Color(red: 0x6E / 255.0, green: 0x7C / 255.0, blue: 0xFF / 255.0))
+                        }
+                    }
+                }
+                Text(formatSelectedBarDate(selectedBar.sleepDate)).font(.subheadline).foregroundColor(.secondary)
+            }
+            // Priority 2: Just bar selected - show time in bed / time asleep
+            else if let selectedBar = viewModel.selectedBar {
                 HStack(alignment: .top, spacing: 40) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("TIME IN BED").font(.caption).foregroundColor(.secondary)
@@ -962,7 +977,9 @@ struct ScrollableSleepChart: View {
                     }
                 }
                 Text(formatSelectedBarDate(selectedBar.sleepDate)).font(.subheadline).foregroundColor(.secondary)
-            } else {
+            }
+            // Priority 3: No selection - show averages
+            else {
                 HStack(alignment: .top, spacing: 40) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("AVG. TIME IN BED").font(.caption).foregroundColor(.secondary)
@@ -1004,6 +1021,35 @@ struct ScrollableSleepChart: View {
             viewModel.deselectBar()
         }
     }
+
+    private func stageName(for stage: SleepStage) -> String {
+        switch stage {
+        case .awake: return "Awake"
+        case .rem: return "REM"
+        case .core: return "Core"
+        case .deep: return "Deep"
+        default: return stage.rawValue
+        }
+    }
+
+    private func formatStageDuration(_ bar: SleepBar, stage: SleepStage) -> String {
+        let duration: TimeInterval
+        switch stage {
+        case .deep: duration = bar.deepDuration
+        case .core: duration = bar.coreDuration
+        case .rem: duration = bar.remDuration
+        case .awake: duration = bar.awakeDuration
+        default: duration = 0
+        }
+
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
 }
 
 // MARK: - Weekly Sleep Data Manager (similar to InfiniteScrollChartManager)
@@ -1020,16 +1066,15 @@ class WeeklySleepDataManager: ObservableObject {
     
     init() {
         let now = Date()
-        // Follow MetricDetailView pattern: sixMonth uses 52 weeks (1 year) per chunk
-        // Initial load: 52 weeks to match loadChunkSize
-        let startWeek = calendar.date(byAdding: .weekOfYear, value: -52, to: now) ?? now
+        // Load 10 years back for smooth scrolling (no incremental loading needed)
+        let startWeek = calendar.date(byAdding: .year, value: -10, to: now) ?? now
         var startComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: startWeek)
         startComponents.weekday = 2 // Monday
         self.oldestDate = calendar.date(from: startComponents) ?? startWeek
-        
-        // Extend to next week for future scrolling (1 month ahead, but cap at reasonable future)
-        let oneMonthAhead = calendar.date(byAdding: .month, value: 1, to: now) ?? now
-        var endComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: oneMonthAhead)
+
+        // Extend to 1 year ahead for future scrolling
+        let oneYearAhead = calendar.date(byAdding: .year, value: 1, to: now) ?? now
+        var endComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: oneYearAhead)
         endComponents.weekday = 2 // Monday
         guard let futureWeekMonday = calendar.date(from: endComponents) else {
             self.newestDate = now
@@ -1292,6 +1337,10 @@ class WeeklySleepDataManager: ObservableObject {
                 let avgBedtimeMinutes = totalBedtimeMinutes / Double(validDays)
                 let avgWaketimeMinutes = totalWaketimeMinutes / Double(validDays)
 
+                // Calculate average time in bed and time asleep from daily data
+                let avgTimeInBed = dailyData.reduce(0.0) { $0 + $1.timeInBedMinutes } / Double(validDays) * 60 // Convert to seconds
+                let avgTimeAsleep = dailyData.reduce(0.0) { $0 + $1.totalSleepMinutes } / Double(validDays) * 60 // Convert to seconds
+
                 // Convert back to Date objects
                 let avgBedHour: Int
                 let avgBedMin: Int
@@ -1318,8 +1367,8 @@ class WeeklySleepDataManager: ObservableObject {
                     week: WeeklyAverage(
                         weekStartDate: weekStart,
                         weekEndDate: weekEnd,
-                        avgTimeInBed: 0,
-                        avgTimeAsleep: 0,
+                        avgTimeInBed: avgTimeInBed,
+                        avgTimeAsleep: avgTimeAsleep,
                         avgBedtime: avgBedtime,
                         avgWaketime: avgWaketime
                     )

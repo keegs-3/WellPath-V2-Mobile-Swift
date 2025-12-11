@@ -562,6 +562,8 @@ class MeasurementsChartScrollManager: ObservableObject {
             // D: hourly, W/M: daily, 6M: weekly, Y: monthly
             let aggregationGranularity: Calendar.Component = {
                 switch selectedPeriod {
+                case .hour:
+                    return .minute
                 case .day:
                     return .hour
                 case .week, .month:

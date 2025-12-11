@@ -79,6 +79,7 @@ class BiometricsPrimaryViewModel: ObservableObject {
     @Published var waistHipMetric: DisplayMetric?
     @Published var weightMetric: DisplayMetric?
     @Published var bloodPressureMetric: DisplayMetric?
+    @Published var heartRateMetric: DisplayMetric?
     @Published var waistCircumferenceMetric: DisplayMetric?
     @Published var hipCircumferenceMetric: DisplayMetric?
 
@@ -97,6 +98,7 @@ class BiometricsPrimaryViewModel: ObservableObject {
         "DISP_WAIST_HIP",
         "DISP_BODYWEIGHT",
         "DISP_BLOOD_PRESSURE",
+        "DISP_HEART_RATE",
         "DISP_WAIST_CIRCUMFERENCE",
         "DISP_HIP_CIRCUMFERENCE"
     ]
@@ -147,6 +149,8 @@ class BiometricsPrimaryViewModel: ObservableObject {
                     weightMetric = metric
                 case "DISP_BLOOD_PRESSURE":
                     bloodPressureMetric = metric
+                case "DISP_HEART_RATE":
+                    heartRateMetric = metric
                 case "DISP_WAIST_CIRCUMFERENCE":
                     waistCircumferenceMetric = metric
                 case "DISP_HIP_CIRCUMFERENCE":

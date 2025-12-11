@@ -1,19 +1,19 @@
 //
-//  BMIDataManagementView.swift
+//  ASMIDataManagementView.swift
 //  WellPath
 //
-//  Data management view for BMI showing both the calculated value
-//  and its input components (body weight and height)
+//  Data management view for ASMI showing both the calculated value
+//  and its input components (ASMM and height)
 //
 
 import SwiftUI
 import Supabase
 
-struct BMIDataManagementView: View {
+struct ASMIDataManagementView: View {
     let color: Color
 
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var viewModel = BMIDataViewModel()
+    @StateObject private var viewModel = ASMIDataViewModel()
     @State private var expandedDates: Set<Date> = []
     @State private var editMode: EditMode = .inactive
     @State private var selectedEntries: Set<UUID> = []
@@ -22,7 +22,7 @@ struct BMIDataManagementView: View {
     var body: some View {
         NavigationStack {
             contentView
-                .navigationTitle("All BMI Data")
+                .navigationTitle("All ASMI Data")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -58,7 +58,7 @@ struct BMIDataManagementView: View {
                         }
                     }
                 }
-                .alert("Delete BMI Entries?", isPresented: $showingDeleteAlert) {
+                .alert("Delete ASMI Entries?", isPresented: $showingDeleteAlert) {
                     Button("Cancel", role: .cancel) {
                         selectedEntries.removeAll()
                     }
@@ -70,7 +70,7 @@ struct BMIDataManagementView: View {
                         }
                     }
                 } message: {
-                    Text("This will permanently delete \(selectedEntries.count) entry(ies) including both BMI and weight data.")
+                    Text("This will permanently delete \(selectedEntries.count) entry(ies) including both ASMI and ASMM data.")
                 }
                 .task {
                     await viewModel.loadData()
@@ -84,7 +84,7 @@ struct BMIDataManagementView: View {
         if viewModel.isLoading {
             ProgressView().padding()
         } else if viewModel.sortedDates.isEmpty {
-            Text("No BMI data found")
+            Text("No ASMI data found")
                 .foregroundColor(.secondary)
                 .padding()
         } else {
@@ -107,10 +107,10 @@ struct BMIDataManagementView: View {
     }
 
     @ViewBuilder
-    private func entryRow(entry: BMIEntry) -> some View {
+    private func entryRow(entry: ASMIEntry) -> some View {
         if editMode == .inactive {
-            NavigationLink(destination: BMIEntryDetailView(entry: entry, color: color, viewModel: viewModel)) {
-                BMIEntryRow(entry: entry)
+            NavigationLink(destination: ASMIEntryDetailView(entry: entry, color: color, viewModel: viewModel)) {
+                ASMIEntryRow(entry: entry)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if entry.canDelete {
@@ -138,7 +138,7 @@ struct BMIDataManagementView: View {
                             .foregroundColor(selectedEntries.contains(entry.id) ? .blue : .gray)
                             .font(.system(size: 22))
                     }
-                    BMIEntryRow(entry: entry)
+                    ASMIEntryRow(entry: entry)
                 }
             }
             .buttonStyle(.plain)
@@ -177,14 +177,14 @@ struct BMIDataManagementView: View {
 
 // MARK: - Entry Row
 
-private struct BMIEntryRow: View {
-    let entry: BMIEntry
+private struct ASMIEntryRow: View {
+    let entry: ASMIEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Main BMI value
+            // Main ASMI value
             HStack {
-                Text(formatValue(entry.bmiValue))
+                Text(formatValue(entry.asmiValue))
                     .font(.headline)
                 Text("kg/m²")
                     .font(.subheadline)
@@ -197,12 +197,12 @@ private struct BMIEntryRow: View {
 
             // Components breakdown
             HStack(spacing: 16) {
-                // Weight input
+                // ASMM input
                 HStack(spacing: 4) {
-                    Image(systemName: "scalemass")
+                    Image(systemName: "figure.strengthtraining.traditional")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text("\(formatValue(entry.weightValue)) \(entry.weightUnit)")
+                    Text("\(formatValue(entry.asmmValue)) \(entry.asmmUnit)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -259,17 +259,17 @@ private struct BMIEntryRow: View {
 
 // MARK: - Entry Detail View
 
-private struct BMIEntryDetailView: View {
-    let entry: BMIEntry
+private struct ASMIEntryDetailView: View {
+    let entry: ASMIEntry
     let color: Color
-    @ObservedObject var viewModel: BMIDataViewModel
+    @ObservedObject var viewModel: ASMIDataViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteAlert = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Calculated BMI card
+                // Calculated ASMI card
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "function")
@@ -279,14 +279,14 @@ private struct BMIEntryDetailView: View {
                     }
 
                     HStack(alignment: .firstTextBaseline) {
-                        Text(formatValue(entry.bmiValue))
+                        Text(formatValue(entry.asmiValue))
                             .font(.system(size: 36, weight: .bold))
                         Text("kg/m²")
                             .font(.title3)
                             .foregroundColor(.secondary)
                     }
 
-                    Text("BMI = Weight ÷ Height²")
+                    Text("ASMI = ASMM ÷ Height²")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -306,18 +306,18 @@ private struct BMIEntryDetailView: View {
 
                     Divider()
 
-                    // Weight
+                    // ASMM
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Body Weight")
+                            Text("Appendicular Muscle Mass")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                            Text("\(formatValue(entry.weightValue)) \(entry.weightUnit)")
+                            Text("\(formatValue(entry.asmmValue)) \(entry.asmmUnit)")
                                 .font(.title3)
                                 .fontWeight(.medium)
                         }
                         Spacer()
-                        Image(systemName: "scalemass")
+                        Image(systemName: "figure.strengthtraining.traditional")
                             .foregroundColor(.secondary)
                     }
 
@@ -352,10 +352,10 @@ private struct BMIEntryDetailView: View {
                             .font(.headline)
                     }
 
-                    BMIDetailRow(label: "Recorded", value: formatDateTime(entry.recordedAt))
-                    BMIDetailRow(label: "Source", value: formatSource(entry.source))
-                    BMIDetailRow(label: "Added to WellPath", value: formatDateTime(entry.createdAt))
-                    BMIDetailRow(label: "Entry ID", value: entry.id.uuidString)
+                    ASMIDetailRow(label: "Recorded", value: formatDateTime(entry.recordedAt))
+                    ASMIDetailRow(label: "Source", value: formatSource(entry.source))
+                    ASMIDetailRow(label: "Added to WellPath", value: formatDateTime(entry.createdAt))
+                    ASMIDetailRow(label: "Entry ID", value: entry.id.uuidString)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
@@ -391,7 +391,7 @@ private struct BMIEntryDetailView: View {
                 }
             }
         } message: {
-            Text("This will delete both the BMI and weight entries.")
+            Text("This will delete both the ASMI and ASMM entries.")
         }
     }
 
@@ -421,7 +421,7 @@ private struct BMIEntryDetailView: View {
     }
 }
 
-private struct BMIDetailRow: View {
+private struct ASMIDetailRow: View {
     let label: String
     let value: String
 
@@ -438,17 +438,17 @@ private struct BMIDetailRow: View {
 
 // MARK: - Data Model
 
-struct BMIEntry: Identifiable {
-    let id: UUID  // BMI sample ID
-    let bmiValue: Double
-    let weightValue: Double
-    let weightUnit: String
+struct ASMIEntry: Identifiable {
+    let id: UUID  // ASMI sample ID
+    let asmiValue: Double
+    let asmmValue: Double
+    let asmmUnit: String
     let heightCm: Double
     let recordedAt: Date
     let source: String
     let createdAt: Date
     let eventInstanceId: UUID?
-    let weightSampleId: UUID?
+    let asmmSampleId: UUID?
 
     var canDelete: Bool {
         source.lowercased() != "healthkit"
@@ -458,8 +458,8 @@ struct BMIEntry: Identifiable {
 // MARK: - ViewModel
 
 @MainActor
-class BMIDataViewModel: ObservableObject {
-    @Published var entries: [BMIEntry] = []
+class ASMIDataViewModel: ObservableObject {
+    @Published var entries: [ASMIEntry] = []
     @Published var isLoading = false
 
     private let supabase = SupabaseManager.shared.client
@@ -470,7 +470,7 @@ class BMIDataViewModel: ObservableObject {
         return uniqueDates.sorted(by: >)
     }
 
-    var entriesByDate: [Date: [BMIEntry]] {
+    var entriesByDate: [Date: [ASMIEntry]] {
         let calendar = Calendar.current
         return Dictionary(grouping: entries) { calendar.startOfDay(for: $0.recordedAt) }
     }
@@ -500,8 +500,8 @@ class BMIDataViewModel: ObservableObject {
 
             let currentHeight = heightResults.first?.valueNumeric ?? 0
 
-            // Get all BMI samples
-            struct BMISample: Codable {
+            // Get all ASMI samples
+            struct ASMISample: Codable {
                 let id: UUID
                 let quantityValue: Double
                 let startTime: Date
@@ -519,17 +519,17 @@ class BMIDataViewModel: ObservableObject {
                 }
             }
 
-            let bmiSamples: [BMISample] = try await supabase
+            let asmiSamples: [ASMISample] = try await supabase
                 .from("patient_quantity_samples")
                 .select("id, quantity_value, start_time, source, created_at, event_instance_id")
                 .eq("patient_id", value: patientId)
-                .eq("quantity_type", value: "bmi")
+                .eq("quantity_type", value: "asmi")
                 .order("start_time", ascending: false)
                 .execute()
                 .value
 
-            // Get all weight samples to link with BMI
-            struct WeightSample: Codable {
+            // Get all ASMM samples to link with ASMI
+            struct ASMMSample: Codable {
                 let id: UUID
                 let quantityValue: Double
                 let quantityUnit: String?
@@ -543,55 +543,55 @@ class BMIDataViewModel: ObservableObject {
                 }
             }
 
-            let weightSamples: [WeightSample] = try await supabase
+            let asmmSamples: [ASMMSample] = try await supabase
                 .from("patient_quantity_samples")
                 .select("id, quantity_value, quantity_unit, event_instance_id")
                 .eq("patient_id", value: patientId)
-                .eq("quantity_type", value: "bodyweight")
+                .eq("quantity_type", value: "appendicular_skeletal_muscle_mass")
                 .execute()
                 .value
 
             // Create lookup by event_instance_id
-            let weightByEvent = Dictionary(uniqueKeysWithValues:
-                weightSamples.compactMap { sample -> (UUID, WeightSample)? in
+            let asmmByEvent = Dictionary(uniqueKeysWithValues:
+                asmmSamples.compactMap { sample -> (UUID, ASMMSample)? in
                     guard let eventId = sample.eventInstanceId else { return nil }
                     return (eventId, sample)
                 }
             )
 
             // Build entries
-            var loadedEntries: [BMIEntry] = []
+            var loadedEntries: [ASMIEntry] = []
 
-            for bmi in bmiSamples {
-                // Try to find matching weight via event_instance_id
-                var weightValue: Double = 0
-                var weightUnit = "kg"
-                var weightSampleId: UUID?
+            for asmi in asmiSamples {
+                // Try to find matching ASMM via event_instance_id
+                var asmmValue: Double = 0
+                var asmmUnit = "kg"
+                var asmmSampleId: UUID?
 
-                if let eventId = bmi.eventInstanceId, let weight = weightByEvent[eventId] {
-                    weightValue = weight.quantityValue
-                    weightUnit = formatUnit(weight.quantityUnit ?? "kilogram")
-                    weightSampleId = weight.id
+                if let eventId = asmi.eventInstanceId, let asmm = asmmByEvent[eventId] {
+                    asmmValue = asmm.quantityValue
+                    asmmUnit = formatUnit(asmm.quantityUnit ?? "kilogram")
+                    asmmSampleId = asmm.id
                 } else {
-                    // Calculate weight from BMI and height if no linked entry
-                    // BMI = weight / height^2, so weight = BMI * height^2
+                    // Calculate ASMM from ASMI and height if no linked entry
+                    // ASMI = ASMM / height^2, so ASMM = ASMI * height^2
                     if currentHeight > 0 {
                         let heightM = currentHeight / 100.0
-                        weightValue = bmi.quantityValue * (heightM * heightM)
+                        asmmValue = asmi.quantityValue * (heightM * heightM)
                     }
                 }
 
-                let entry = BMIEntry(
-                    id: bmi.id,
-                    bmiValue: bmi.quantityValue,
-                    weightValue: weightValue,
-                    weightUnit: weightUnit,
+                let entry = ASMIEntry(
+                    id: asmi.id,
+                    asmiValue: asmi.quantityValue,
+                    asmmValue: asmmValue,
+                    asmmUnit: asmmUnit,
                     heightCm: currentHeight,
-                    recordedAt: bmi.startTime,
-                    source: bmi.source ?? "unknown",
-                    createdAt: bmi.createdAt,
-                    eventInstanceId: bmi.eventInstanceId,
-                    weightSampleId: weightSampleId
+                    recordedAt: asmi.startTime,
+                    source: asmi.source ?? "unknown",
+                    createdAt: asmi.createdAt,
+                    eventInstanceId: asmi.eventInstanceId,
+                    asmmSampleId: asmmSampleId
                 )
 
                 loadedEntries.append(entry)
@@ -600,7 +600,7 @@ class BMIDataViewModel: ObservableObject {
             entries = loadedEntries
 
         } catch {
-            print("Error loading BMI data: \(error)")
+            print("Error loading ASMI data: \(error)")
         }
 
         isLoading = false
@@ -611,19 +611,19 @@ class BMIDataViewModel: ObservableObject {
 
         for entry in entriesToDelete {
             do {
-                // Delete BMI sample
+                // Delete ASMI sample
                 try await supabase
                     .from("patient_quantity_samples")
                     .delete()
                     .eq("id", value: entry.id)
                     .execute()
 
-                // Also delete linked weight sample if exists
-                if let weightId = entry.weightSampleId {
+                // Also delete linked ASMM sample if exists
+                if let asmmId = entry.asmmSampleId {
                     try await supabase
                         .from("patient_quantity_samples")
                         .delete()
-                        .eq("id", value: weightId)
+                        .eq("id", value: asmmId)
                         .execute()
                 }
             } catch {
@@ -645,5 +645,5 @@ class BMIDataViewModel: ObservableObject {
 }
 
 #Preview {
-    BMIDataManagementView(color: .cyan)
+    ASMIDataManagementView(color: .cyan)
 }

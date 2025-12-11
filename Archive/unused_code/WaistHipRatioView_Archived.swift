@@ -43,7 +43,15 @@ struct WaistHipRatioView: View {
                     Image(systemName: "list.bullet")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                FavoriteButton(
+                    itemType: .biometric,
+                    itemId: metricId,
+                    displayName: metricName,
+                    pillar: "Biometrics",
+                    cardId: metricId,
+                    sectionId: "NAV_BIOMETRICS"
+                )
                 Button { showAddEntry = true } label: {
                     Image(systemName: "plus")
                 }

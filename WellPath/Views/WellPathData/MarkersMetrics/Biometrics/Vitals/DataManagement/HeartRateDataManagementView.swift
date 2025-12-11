@@ -1,68 +1,77 @@
 //
-//  BodyWeightDataManagementView.swift
+//  HeartRateDataManagementView.swift
 //  WellPath
 //
-//  Data management view for Body Weight entries
-//  Lists all entries with edit/delete capabilities
+//  Data management view for Heart Rate entries
+//  Queries patient_series_samples (heart_rate_series) instead of patient_quantity_samples
 //
 
 import SwiftUI
 import Supabase
 
-struct BodyWeightDataManagementView: View {
+struct HeartRateDataManagementView: View {
     let color: Color
 
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var viewModel = BodyWeightDataViewModel()
-    @State private var editMode: EditMode = .inactive
+    @StateObject private var viewModel = HeartRateDataViewModel()
     @State private var expandedDates: Set<Date> = []
-    @State private var showingDateFilter = false
-    @State private var filterStartDate: Date?
-    @State private var filterEndDate: Date?
+    @State private var editMode: EditMode = .inactive
     @State private var selectedEntries: Set<UUID> = []
     @State private var showingDeleteAlert = false
-
-    private let icon = "scalemass"
-
-    var filteredDates: [Date] {
-        var dates = viewModel.sortedDates
-        if let start = filterStartDate {
-            dates = dates.filter { $0 >= Calendar.current.startOfDay(for: start) }
-        }
-        if let end = filterEndDate {
-            dates = dates.filter { $0 <= Calendar.current.startOfDay(for: end) }
-        }
-        return dates
-    }
 
     var body: some View {
         NavigationStack {
             contentView
-                .navigationTitle("All Body Weight Data")
+                .navigationTitle("All Heart Rate Data")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        leadingToolbarButton
-                    }
-
-                    ToolbarItem(placement: .topBarLeading) {
-                        filterButton
+                        if editMode == .active {
+                            Button(selectedEntries.isEmpty ? "Select All" : "Delete (\(selectedEntries.count))") {
+                                if selectedEntries.isEmpty {
+                                    for (_, entries) in viewModel.entriesByDate {
+                                        for entry in entries where entry.canDelete {
+                                            selectedEntries.insert(entry.id)
+                                        }
+                                    }
+                                } else {
+                                    showingDeleteAlert = true
+                                }
+                            }
+                            .foregroundColor(selectedEntries.isEmpty ? .blue : .red)
+                        } else {
+                            Button(action: { dismiss() }) {
+                                Image(systemName: "chevron.left")
+                                    .foregroundColor(.primary)
+                            }
+                        }
                     }
 
                     ToolbarItem(placement: .primaryAction) {
-                        editButton
+                        if !viewModel.sortedDates.isEmpty {
+                            Button(editMode == .active ? "Done" : "Edit") {
+                                withAnimation {
+                                    if editMode == .active {
+                                        selectedEntries.removeAll()
+                                    }
+                                    editMode = editMode == .active ? .inactive : .active
+                                }
+                            }
+                        }
                     }
                 }
-                .sheet(isPresented: $showingDateFilter) {
-                    DateFilterView(startDate: $filterStartDate, endDate: $filterEndDate, color: color)
-                }
-                .alert("Delete Body Weight Entries?", isPresented: $showingDeleteAlert) {
+                .alert("Delete Heart Rate Entries?", isPresented: $showingDeleteAlert) {
                     Button("Cancel", role: .cancel) {
                         selectedEntries.removeAll()
                     }
                     Button("Delete", role: .destructive) {
                         Task {
-                            await deleteSelectedEntries()
+                            let entriesToDelete = viewModel.entriesByDate.values
+                                .flatMap { $0 }
+                                .filter { selectedEntries.contains($0.id) }
+                            await viewModel.deleteEntries(entriesToDelete)
+                            selectedEntries.removeAll()
+                            editMode = .inactive
                         }
                     }
                 } message: {
@@ -70,7 +79,7 @@ struct BodyWeightDataManagementView: View {
                 }
                 .task {
                     await viewModel.loadData()
-                    expandedDates = Set(filteredDates)
+                    expandedDates = Set(viewModel.sortedDates)
                 }
         }
     }
@@ -78,40 +87,39 @@ struct BodyWeightDataManagementView: View {
     @ViewBuilder
     private var contentView: some View {
         if viewModel.isLoading {
-            ProgressView()
-                .padding()
-        } else if filteredDates.isEmpty {
-            Text("No body weight data found")
+            ProgressView().padding()
+        } else if viewModel.sortedDates.isEmpty {
+            Text("No heart rate data found")
                 .foregroundColor(.secondary)
                 .padding()
         } else {
-            dataList
-        }
-    }
-
-    private var dataList: some View {
-        List {
-            ForEach(filteredDates, id: \.self) { date in
-                Section {
-                    if expandedDates.contains(date) {
-                        ForEach(viewModel.entriesByDate[date] ?? []) { entry in
-                            entryRow(entry: entry)
+            List {
+                ForEach(viewModel.sortedDates, id: \.self) { date in
+                    Section {
+                        if expandedDates.contains(date) {
+                            ForEach(viewModel.entriesByDate[date] ?? []) { entry in
+                                entryRow(entry: entry)
+                            }
                         }
+                    } header: {
+                        sectionHeader(for: date)
                     }
-                } header: {
-                    sectionHeader(for: date)
                 }
             }
+            .listStyle(.insetGrouped)
+            .environment(\.editMode, $editMode)
         }
-        .listStyle(.insetGrouped)
-        .environment(\.editMode, $editMode)
     }
 
     @ViewBuilder
-    private func entryRow(entry: BodyWeightEntry) -> some View {
+    private func entryRow(entry: HeartRateEntry) -> some View {
         if editMode == .inactive {
-            NavigationLink(destination: BodyWeightEntryDetailView(entry: entry, viewModel: viewModel, color: color)) {
-                BodyWeightEntryRow(entry: entry, icon: icon)
+            NavigationLink(destination: HeartRateEntryDetailView(
+                entry: entry,
+                color: color,
+                viewModel: viewModel
+            )) {
+                HeartRateEntryRow(entry: entry)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if entry.canDelete {
@@ -139,7 +147,7 @@ struct BodyWeightDataManagementView: View {
                             .foregroundColor(selectedEntries.contains(entry.id) ? .blue : .gray)
                             .font(.system(size: 22))
                     }
-                    BodyWeightEntryRow(entry: entry, icon: icon)
+                    HeartRateEntryRow(entry: entry)
                 }
             }
             .buttonStyle(.plain)
@@ -169,66 +177,6 @@ struct BodyWeightDataManagementView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private var leadingToolbarButton: some View {
-        if editMode == .active {
-            Button(selectedEntries.isEmpty ? "Select All" : "Delete (\(selectedEntries.count))") {
-                if selectedEntries.isEmpty {
-                    for (_, entries) in viewModel.entriesByDate {
-                        for entry in entries where entry.canDelete {
-                            selectedEntries.insert(entry.id)
-                        }
-                    }
-                } else {
-                    showingDeleteAlert = true
-                }
-            }
-            .foregroundColor(selectedEntries.isEmpty ? .blue : .red)
-        } else {
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.left")
-                    .foregroundColor(.primary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var filterButton: some View {
-        if !viewModel.sortedDates.isEmpty && editMode == .inactive {
-            Button(action: { showingDateFilter = true }) {
-                Image(systemName: (filterStartDate != nil || filterEndDate != nil) ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    .foregroundColor(color)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var editButton: some View {
-        if !viewModel.sortedDates.isEmpty {
-            Button(editMode == .active ? "Done" : "Edit") {
-                withAnimation {
-                    if editMode == .active {
-                        selectedEntries.removeAll()
-                    }
-                    editMode = editMode == .active ? .inactive : .active
-                }
-            }
-        }
-    }
-
-    private func deleteSelectedEntries() async {
-        let entriesToDelete = viewModel.entriesByDate.values
-            .flatMap { $0 }
-            .filter { selectedEntries.contains($0.id) }
-
-        await viewModel.deleteEntries(entriesToDelete)
-        selectedEntries.removeAll()
-
-        withAnimation {
-            editMode = .inactive
-        }
-    }
-
     private func formatSectionDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
@@ -238,9 +186,8 @@ struct BodyWeightDataManagementView: View {
 
 // MARK: - Entry Row
 
-struct BodyWeightEntryRow: View {
-    let entry: BodyWeightEntry
-    let icon: String
+struct HeartRateEntryRow: View {
+    let entry: HeartRateEntry
 
     var body: some View {
         HStack(spacing: 12) {
@@ -248,15 +195,15 @@ struct BodyWeightEntryRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(formatValue(entry.value))
+                    Text("\(Int(entry.value))")
                         .font(.subheadline)
                         .foregroundColor(.primary)
-                    Text(entry.unit)
+                    Text("BPM")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
 
-                Text(formatTime(entry.recordedAt))
+                Text(formatTime(entry.timestamp))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -302,14 +249,6 @@ struct BodyWeightEntryRow: View {
         }
     }
 
-    private func formatValue(_ value: Double) -> String {
-        if value >= 100 {
-            return String(format: "%.0f", value)
-        } else {
-            return String(format: "%.1f", value)
-        }
-    }
-
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -319,10 +258,10 @@ struct BodyWeightEntryRow: View {
 
 // MARK: - Entry Detail View
 
-struct BodyWeightEntryDetailView: View {
-    let entry: BodyWeightEntry
-    @ObservedObject var viewModel: BodyWeightDataViewModel
+struct HeartRateEntryDetailView: View {
+    let entry: HeartRateEntry
     let color: Color
+    @ObservedObject var viewModel: HeartRateDataViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteAlert = false
 
@@ -330,14 +269,14 @@ struct BodyWeightEntryDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Body Weight Entry Details")
+                    Text("Heart Rate Details")
                         .font(.headline)
 
-                    DetailRow(label: "Value", value: "\(formatValue(entry.value)) \(entry.unit)")
-                    DetailRow(label: "Date", value: formatDate(entry.recordedAt))
-                    DetailRow(label: "Time", value: formatTime(entry.recordedAt))
+                    DetailRow(label: "Value", value: "\(Int(entry.value)) BPM")
+                    DetailRow(label: "Recorded", value: formatDateTime(entry.timestamp))
                     DetailRow(label: "Source", value: formatSource(entry.source))
-                    DetailRow(label: "Date Added", value: formatDateTime(entry.createdAt))
+                    DetailRow(label: "Added to WellPath", value: formatDateTime(entry.createdAt))
+                    DetailRow(label: "Entry ID", value: entry.id.uuidString)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
@@ -346,17 +285,21 @@ struct BodyWeightEntryDetailView: View {
 
                 if entry.canDelete {
                     Button(action: { showingDeleteAlert = true }) {
-                        Label("Delete Entry", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.red.opacity(0.1))
-                            .foregroundColor(.red)
-                            .cornerRadius(10)
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Entry")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
                     }
                 }
             }
             .padding()
         }
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Entry Details")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete Entry?", isPresented: $showingDeleteAlert) {
@@ -370,26 +313,6 @@ struct BodyWeightEntryDetailView: View {
         } message: {
             Text("This cannot be undone.")
         }
-    }
-
-    private func formatValue(_ value: Double) -> String {
-        if value >= 100 {
-            return String(format: "%.0f", value)
-        } else {
-            return String(format: "%.1f", value)
-        }
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .long
-        return formatter.string(from: date)
-    }
-
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
     }
 
     private func formatDateTime(_ date: Date) -> String {
@@ -411,13 +334,11 @@ struct BodyWeightEntryDetailView: View {
 // MARK: - View Model
 
 @MainActor
-class BodyWeightDataViewModel: ObservableObject {
-    @Published var entriesByDate: [Date: [BodyWeightEntry]] = [:]
+class HeartRateDataViewModel: ObservableObject {
+    @Published var entriesByDate: [Date: [HeartRateEntry]] = [:]
     @Published var isLoading = false
-    @Published var preferredUnit: WeightDisplayUnit = .lb
 
     private let supabase = SupabaseManager.shared.client
-    private let unitService = UnitConversionService.shared
 
     var sortedDates: [Date] {
         entriesByDate.keys.sorted(by: >)
@@ -429,24 +350,17 @@ class BodyWeightDataViewModel: ObservableObject {
         do {
             let patientId = try await supabase.auth.session.user.id
 
-            // Load user's unit preferences
-            await unitService.loadUserPreferences()
-            preferredUnit = unitService.preferredWeightUnit
-
-            // Query patient_quantity_samples for bodyweight
-            struct PatientSampleRow: Codable {
+            struct SeriesSampleRow: Codable {
                 let id: UUID
-                let quantityValue: Double?
-                let quantityUnit: String?
-                let startTime: Date
+                let value: Double
+                let timestamp: Date
                 let source: String
                 let createdAt: Date?
 
                 enum CodingKeys: String, CodingKey {
                     case id
-                    case quantityValue = "quantity_value"
-                    case quantityUnit = "quantity_unit"
-                    case startTime = "start_time"
+                    case value
+                    case timestamp
                     case source
                     case createdAt = "created_at"
                 }
@@ -472,74 +386,55 @@ class BodyWeightDataViewModel: ObservableObject {
             }
 
             let data = try await supabase
-                .from("patient_quantity_samples")
+                .from("patient_series_samples")
                 .select()
                 .eq("patient_id", value: patientId)
-                .eq("quantity_type", value: QuantityTypes.weight)
-                .order("start_time", ascending: false)
+                .eq("series_type", value: "heart_rate_series")
+                .order("timestamp", ascending: false)
                 .execute()
                 .data
 
-            let samples = try decoder.decode([PatientSampleRow].self, from: data)
+            let samples = try decoder.decode([SeriesSampleRow].self, from: data)
 
-            // Create BodyWeightEntry with original entry values (no conversion)
-            // Data Management shows as-entered values, not converted values
-            var entries: [BodyWeightEntry] = []
+            var entries: [HeartRateEntry] = []
             for sample in samples {
-                guard let value = sample.quantityValue else { continue }
-
-                // Use the original entry unit, formatted for display
-                let storedUnit = sample.quantityUnit ?? "kilogram"
-                let displayUnit = formatUnitForDisplay(storedUnit)
-
-                let entry = BodyWeightEntry(
+                let entry = HeartRateEntry(
                     id: sample.id,
-                    value: value,  // Original entry value, not converted
-                    unit: displayUnit,  // Original entry unit, not patient preference
-                    recordedAt: sample.startTime,
+                    value: sample.value,
+                    timestamp: sample.timestamp,
                     source: sample.source,
-                    createdAt: sample.createdAt ?? sample.startTime
+                    createdAt: sample.createdAt ?? sample.timestamp
                 )
                 entries.append(entry)
             }
 
-            // Group by date
             let calendar = Calendar.current
             entriesByDate = Dictionary(grouping: entries) { entry in
-                calendar.startOfDay(for: entry.recordedAt)
+                calendar.startOfDay(for: entry.timestamp)
             }
 
-            print("Loaded \(entries.count) body weight entries (showing original entry values)")
+            print("Loaded \(entries.count) heart rate entries")
 
         } catch {
-            print("Error loading body weight data: \(error)")
+            print("Error loading heart rate data: \(error)")
         }
 
         isLoading = false
     }
 
-    /// Format unit string for display (e.g., "kilogram" -> "kg", "pound" -> "lb")
-    private func formatUnitForDisplay(_ unit: String) -> String {
-        switch unit.lowercased() {
-        case "kilogram", "kg": return "kg"
-        case "pound", "lb", "lbs": return "lb"
-        default: return unit
-        }
-    }
-
-    func deleteEntries(_ entries: [BodyWeightEntry]) async {
+    func deleteEntries(_ entries: [HeartRateEntry]) async {
         do {
             let patientId = try await supabase.auth.session.user.id
 
             for entry in entries {
                 try await supabase
-                    .from("patient_quantity_samples")
+                    .from("patient_series_samples")
                     .delete()
                     .eq("id", value: entry.id)
                     .eq("patient_id", value: patientId)
                     .execute()
 
-                print("Deleted body weight sample: \(entry.id)")
+                print("Deleted heart rate sample: \(entry.id)")
             }
 
             await loadData()
@@ -552,11 +447,10 @@ class BodyWeightDataViewModel: ObservableObject {
 
 // MARK: - Model
 
-struct BodyWeightEntry: Identifiable {
+struct HeartRateEntry: Identifiable {
     let id: UUID
     let value: Double
-    let unit: String
-    let recordedAt: Date
+    let timestamp: Date
     let source: String
     let createdAt: Date
 
@@ -566,5 +460,5 @@ struct BodyWeightEntry: Identifiable {
 }
 
 #Preview {
-    BodyWeightDataManagementView(color: .cyan)
+    HeartRateDataManagementView(color: .red)
 }

@@ -1,5 +1,5 @@
 //
-//  BodyMeasurementsView.swift
+//  WaistHipView.swift
 //  WellPath
 //
 //  Waist-to-Hip Ratio view with two stacked charts
@@ -9,7 +9,7 @@
 
 import SwiftUI
 
-struct BodyMeasurementsView: View {
+struct WaistHipView: View {
     let color: Color
 
     @StateObject private var waistLoader = BiometricValueLoader()
@@ -24,7 +24,7 @@ struct BodyMeasurementsView: View {
     @State private var selectedPointDate: Date?  // Shared selection across both charts
 
     private let metricId = "DISP_WAIST_HIP"
-    private let metricName = "Waist-to-Hip"
+    private let metricName = "Waist-to-Hip Ratio"
 
 
     // Computed waist-to-hip ratio
@@ -295,6 +295,6 @@ struct BodyMeasurementsView: View {
 
 #Preview {
     NavigationStack {
-        BodyMeasurementsView(color: .cyan)
+        WaistHipView(color: .cyan)
     }
 }

@@ -14,11 +14,14 @@ struct BiometricLineChart: View {
     let metric: DisplayMetric
     let color: Color
     var showAbout: Binding<Bool>? = nil
+    /// Optional subtitle shown below the navigation title (e.g., full metric name for acronyms)
+    var subtitle: String? = nil
 
     @State private var selectedPeriod: TimePeriod = .week
     @State private var selectedPointDate: Date?
     @State private var selectedUnit: String = ""
     @State private var actualUnit: String?
+    @State private var unitDisplayLoaded: Bool = false
     @State private var decimalPlaces: Int = 1
     @StateObject private var scrollManager: BiometricLineChartScrollManager
     @State private var scrollPosition: Date
@@ -32,7 +35,7 @@ struct BiometricLineChart: View {
 
     /// Metrics that support weight unit toggle (lb/kg)
     private var supportsWeightToggle: Bool {
-        metric.metricId == "DISP_BODYWEIGHT"
+        ["DISP_BODYWEIGHT", "DISP_GRIP_STRENGTH"].contains(metric.metricId)
     }
 
     private var selectedPoint: ChartDataPoint? {
@@ -47,11 +50,40 @@ struct BiometricLineChart: View {
         scrollManager.chartData.filter { $0.value > 0 }
     }
 
-    init(metric: DisplayMetric, color: Color, showAbout: Binding<Bool>? = nil) {
+    /// Maximum gap between points to draw a connecting line (6 months in seconds)
+    private let maxLineGapSeconds: TimeInterval = 6 * 30 * 24 * 3600
+
+    /// Assign segment IDs to data points - points within 6 months of each other share a segment
+    /// Points in different segments won't be connected by lines
+    private var segmentedDataPoints: [(point: ChartDataPoint, segmentId: Int)] {
+        let sortedPoints = dataPointsWithValues.sorted { $0.date < $1.date }
+        guard !sortedPoints.isEmpty else { return [] }
+
+        var result: [(point: ChartDataPoint, segmentId: Int)] = []
+        var currentSegment = 0
+
+        for (index, point) in sortedPoints.enumerated() {
+            if index > 0 {
+                let previousPoint = sortedPoints[index - 1]
+                let gap = point.date.timeIntervalSince(previousPoint.date)
+                if gap > maxLineGapSeconds {
+                    // Start new segment - gap too large
+                    currentSegment += 1
+                }
+            }
+            result.append((point: point, segmentId: currentSegment))
+        }
+
+        return result
+    }
+
+    init(metric: DisplayMetric, color: Color, showAbout: Binding<Bool>? = nil, subtitle: String? = nil) {
         self.metric = metric
         self.color = color
         self.showAbout = showAbout
+        self.subtitle = subtitle
 
+        // Initialize with today, will be repositioned after data loads
         let now = Date()
         let initialPeriod = TimePeriod.week
         let visibleDuration = initialPeriod.numberOfBars
@@ -72,27 +104,40 @@ struct BiometricLineChart: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Time period picker
-            Picker("Period", selection: $selectedPeriod) {
-                ForEach(TimePeriod.allCases, id: \.self) { period in
-                    Text(period.rawValue).tag(period)
-                }
+            // Subtitle (full name for acronyms like ASMI) - outside ScrollView to appear in gradient
+            if let subtitle = subtitle {
+                Text(subtitle)
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 16)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                // Time period picker
+                Picker("Period", selection: $selectedPeriod) {
+                    ForEach(TimePeriod.allCases, id: \.self) { period in
+                        Text(period.rawValue).tag(period)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, MetricScreenLayout.pickerTopPadding)
             .onChange(of: selectedPeriod) { oldValue, newPeriod in
                 scrollManager.updatePeriod(newPeriod)
                 selectedPointDate = nil
 
-                let now = Date()
-                let visibleDuration = newPeriod.numberOfBars
-                let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-                scrollPosition = Calendar.current.date(
-                    byAdding: newPeriod.calendarComponent,
-                    value: -offsetFromEnd,
-                    to: now
-                ) ?? now
+                // Recalculate scroll position based on actual data
+                scrollPosition = calculateScrollPosition(for: newPeriod)
+            }
+            .onChange(of: scrollManager.chartData.count) { oldCount, newCount in
+                // Reposition to most recent data when data first loads
+                if oldCount == 0 && newCount > 0 {
+                    scrollPosition = calculateScrollPosition(for: selectedPeriod)
+                }
             }
 
             // Unit toggle for length metrics (in/cm) - aligned right
@@ -131,9 +176,12 @@ struct BiometricLineChart: View {
                     if let selected = selectedPoint, selected.value > 0 {
                         // Show selected point's value (converted if length metric)
                         // For 6M/Y views, show AVG since points are weekly/monthly averages
-                        Text(selectedPeriod == .sixMonth || selectedPeriod == .year ? "AVG" : "VALUE")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        // For D/W/M views, no label needed when selecting a specific point
+                        if selectedPeriod == .sixMonth || selectedPeriod == .year {
+                            Text("AVG")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text(formatValue(convertValueForDisplay(selected.value)))
                                 .font(.system(size: 48, weight: .semibold))
@@ -183,7 +231,7 @@ struct BiometricLineChart: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)
-            .padding(.top, 12)
+            .padding(.top, MetricScreenLayout.headerTopPadding)
             .onChange(of: scrollManager.actualUnit) { oldValue, newValue in
                 if let newUnit = newValue {
                     actualUnit = newUnit
@@ -193,50 +241,50 @@ struct BiometricLineChart: View {
                 }
             }
 
-            // Line chart - points only where data exists, lines connect adjacent points
-            // Only render LineMark when there are 2+ data points to avoid rendering artifacts
-            let nonZeroPointCount = dataPointsWithValues.count
-            Chart(scrollManager.chartData) { dataPoint in
+            // Line chart - points only where data exists
+            // Lines only connect points within 6 months of each other (breaks for sparse data)
+            let segmented = segmentedDataPoints
+            let totalPointCount = dataPointsWithValues.count
+            Chart {
                 // Invisible placeholder for all points to establish x-axis domain
-                PointMark(
-                    x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                    y: .value("Value", 0)
-                )
-                .opacity(0)
+                ForEach(scrollManager.chartData) { dataPoint in
+                    PointMark(
+                        x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
+                        y: .value("Value", 0)
+                    )
+                    .opacity(0)
+                }
 
-                // Only show line/points for non-zero values
-                if dataPoint.value > 0 {
+                // Lines connecting points - segmented to break at large gaps
+                ForEach(segmented, id: \.point.id) { item in
+                    let displayValue = convertValueForDisplay(item.point.value)
+                    LineMark(
+                        x: .value("Date", item.point.date, unit: selectedPeriod.calendarComponent),
+                        y: .value("Value", displayValue),
+                        series: .value("Segment", item.segmentId)
+                    )
+                    .foregroundStyle(color)
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                }
+
+                // Stroked circle points (Apple Health style) - always show
+                ForEach(dataPointsWithValues) { dataPoint in
                     let displayValue = convertValueForDisplay(dataPoint.value)
+                    let isSelected = selectedPointDate != nil &&
+                        Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
 
-                    // Line connecting points (only render when 2+ points exist to avoid vertical bar artifacts)
-                    if nonZeroPointCount >= 2 {
-                        LineMark(
-                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            y: .value("Value", displayValue)
-                        )
-                        .foregroundStyle(color)
-                        .interpolationMethod(.catmullRom)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
-                    }
-
-                    // Point marks (always show)
-                    if let selectedDate = selectedPointDate,
-                       Calendar.current.isDate(dataPoint.date, equalTo: selectedDate, toGranularity: getDateGranularity()) {
-                        // Selected point (larger)
-                        PointMark(
-                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            y: .value("Value", displayValue)
-                        )
-                        .foregroundStyle(color)
-                        .symbolSize(150)
-                    } else {
-                        // Regular point (larger when single point for better visibility)
-                        PointMark(
-                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            y: .value("Value", displayValue)
-                        )
-                        .foregroundStyle(color)
-                        .symbolSize(nonZeroPointCount == 1 ? 100 : 60)
+                    PointMark(
+                        x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
+                        y: .value("Value", displayValue)
+                    )
+                    .foregroundStyle(color)
+                    .symbolSize(isSelected ? 200 : 100)
+                    .symbol {
+                        Circle()
+                            .strokeBorder(color, lineWidth: isSelected ? 3 : 2)
+                            .background(Circle().fill(Color(uiColor: .systemBackground)))
+                            .frame(width: isSelected ? 16 : 12, height: isSelected ? 16 : 12)
                     }
                 }
             }
@@ -293,8 +341,8 @@ struct BiometricLineChart: View {
                 plotArea.frame(height: 280)
             }
             .padding(.horizontal)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.top, MetricScreenLayout.chartTopPadding)
+            .padding(.bottom, MetricScreenLayout.chartBottomPadding)
 
             // Loading indicators
             HStack {
@@ -316,9 +364,15 @@ struct BiometricLineChart: View {
             }
             .frame(height: 20)
             .padding(.horizontal)
+            }
+            .padding(.vertical)
+            .background(Color(uiColor: .systemGroupedBackground))
+            }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .task {
+            // Load unit conversions and UI display strings from database
+            await UnitConversionService.shared.loadConversions()
+            unitDisplayLoaded = true  // Trigger re-render after cache loads
             // Load user's preferred units
             await UnitConversionService.shared.loadUserPreferences()
             if supportsLengthToggle {
@@ -333,6 +387,9 @@ struct BiometricLineChart: View {
     // MARK: - Computed Properties
 
     private var displayUnit: String {
+        // Reference state to trigger re-render when unit cache loads
+        _ = unitDisplayLoaded
+
         // For length metrics, use the selected toggle unit
         if supportsLengthToggle {
             return selectedLengthUnit == .cm ? "cm" : "in"
@@ -343,21 +400,9 @@ struct BiometricLineChart: View {
             return selectedWeightUnit.rawValue
         }
 
-        let unit = (actualUnit ?? selectedUnit).lowercased()
-        switch unit {
-        case "kilogram", "kg":
-            return "kg"
-        case "pound", "lb", "lbs":
-            return "lb"
-        case "percent", "percentage", "%":
-            return "%"
-        case "centimeter", "cm":
-            return "cm"
-        case "inch", "in":
-            return "in"
-        default:
-            return selectedUnit
-        }
+        // Look up UI display from UnitConversionService (loads from units_base table)
+        let unit = actualUnit ?? selectedUnit
+        return UnitConversionService.shared.getUIDisplay(for: unit)
     }
 
     /// Convert value based on selected unit for length or weight metrics
@@ -423,6 +468,21 @@ struct BiometricLineChart: View {
 
     // MARK: - Helper Functions
 
+    /// Calculate scroll position to show most recent data on the right side (Apple Health style)
+    private func calculateScrollPosition(for period: TimePeriod) -> Date {
+        // Get the most recent data point date, default to now if no data
+        let mostRecentDataDate = dataPointsWithValues.first?.date ?? Date()
+
+        // Use 90% offset so most recent data appears near (but not at) the right edge
+        let visibleDuration = period.numberOfBars
+        let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+        return Calendar.current.date(
+            byAdding: period.calendarComponent,
+            value: -offsetFromEnd,
+            to: mostRecentDataDate
+        ) ?? mostRecentDataDate
+    }
+
     private func handleChartScrolling(position: Date) {
         guard !scrollManager.chartData.isEmpty else { return }
 
@@ -471,10 +531,28 @@ struct BiometricLineChart: View {
         let visibleDuration = selectedPeriod.numberOfBars
         let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration - 1, to: scrollPosition) ?? scrollPosition
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = selectedPeriod == .year ? "MMM yyyy" : "MMM d"
+        // Check if start and end are in same year
+        let sameYear = calendar.component(.year, from: scrollPosition) == calendar.component(.year, from: endDate)
 
-        return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
+        let formatter = DateFormatter()
+
+        switch selectedPeriod {
+        case .year:
+            formatter.dateFormat = "MMM yyyy"
+            return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
+        default:
+            // Always show year for context
+            if sameYear {
+                let startFormatter = DateFormatter()
+                startFormatter.dateFormat = "MMM d"
+                let endFormatter = DateFormatter()
+                endFormatter.dateFormat = "MMM d, yyyy"
+                return "\(startFormatter.string(from: scrollPosition)) - \(endFormatter.string(from: endDate))"
+            } else {
+                formatter.dateFormat = "MMM d, yyyy"
+                return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
+            }
+        }
     }
 
     private func formatValue(_ value: Double) -> String {
@@ -494,22 +572,19 @@ struct BiometricLineChart: View {
     }
 
     /// Format date for selected point display
-    /// - D view: includes time (e.g., "Dec 3, 1:00 PM")
-    /// - W/M view: specific date (e.g., "Tue, Dec 3")
+    /// - D view: includes time (e.g., "Dec 3, 2025, 1:00 PM")
+    /// - W/M view: specific date (e.g., "Dec 3, 2025")
     /// - 6M view: week range (e.g., "Dec 1 - Dec 7, 2025")
-    /// - Y view: month name (e.g., "December, 2025")
+    /// - Y view: month name (e.g., "Dec 2025")
     private func formatSelectedDate(_ date: Date) -> String {
         let calendar = Calendar.current
         let formatter = DateFormatter()
 
         switch selectedPeriod {
         case .day:
-            formatter.dateFormat = "MMM d, h:mm a"  // Include time for day view
+            formatter.dateFormat = "MMM d, yyyy, h:mm a"
             return formatter.string(from: date)
-        case .week:
-            formatter.dateFormat = "E, MMM d"  // Day of week + date
-            return formatter.string(from: date)
-        case .month:
+        case .week, .month:
             formatter.dateFormat = "MMM d, yyyy"
             return formatter.string(from: date)
         case .sixMonth:
@@ -522,12 +597,10 @@ struct BiometricLineChart: View {
             startFormatter.dateFormat = "MMM d"
             let endFormatter = DateFormatter()
             endFormatter.dateFormat = "MMM d, yyyy"
-            // End date is exclusive, so subtract one day to get the actual last day of the week
             let lastDay = calendar.date(byAdding: .day, value: -1, to: weekInterval.end) ?? weekInterval.end
             return "\(startFormatter.string(from: weekInterval.start)) - \(endFormatter.string(from: lastDay))"
         case .year:
-            // Show month name and year
-            formatter.dateFormat = "MMMM, yyyy"
+            formatter.dateFormat = "MMM yyyy"
             return formatter.string(from: date)
         }
     }
@@ -787,21 +860,22 @@ class BiometricLineChartScrollManager: ObservableObject {
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
             struct SampleResult: Codable {
-                let quantityValue: Double
-                let quantityUnit: String?
+                let canonicalValue: Double
+                let canonicalUnit: String?
                 let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case quantityValue = "quantity_value"
-                    case quantityUnit = "quantity_unit"
+                    case canonicalValue = "canonical_value"
+                    case canonicalUnit = "canonical_unit"
                     case startTime = "start_time"
                 }
             }
 
-            // Query patient_quantity_samples directly
+            // Query patient_quantity_samples - use canonical values for chart display
+            // (canonical_value is always in standard units like kg, which we then convert to user preference)
             let results: [SampleResult] = try await supabase
                 .from("patient_quantity_samples")
-                .select("quantity_value, quantity_unit, start_time")
+                .select("canonical_value, canonical_unit, start_time")
                 .eq("patient_id", value: patientId)
                 .eq("quantity_type", value: quantityType)
                 .gte("start_time", value: formatter.string(from: startDate))
@@ -810,8 +884,8 @@ class BiometricLineChartScrollManager: ObservableObject {
                 .execute()
                 .value
 
-            // Update the actual unit from the first result
-            if let firstResult = results.first, let unit = firstResult.quantityUnit {
+            // Update the actual unit from the first result (canonical unit is always kg, cm, etc.)
+            if let firstResult = results.first, let unit = firstResult.canonicalUnit {
                 await MainActor.run {
                     self.actualUnit = unit
                 }
@@ -853,7 +927,7 @@ class BiometricLineChartScrollManager: ObservableObject {
                     bucketStart = result.startTime
                 }
 
-                bucketData[bucketStart, default: []].append(result.quantityValue)
+                bucketData[bucketStart, default: []].append(result.canonicalValue)
             }
 
             // Calculate averages for each bucket

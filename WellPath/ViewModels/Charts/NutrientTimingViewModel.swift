@@ -399,6 +399,8 @@ class NutrientTimingViewModel: ObservableObject {
 
             let oldestDate: Date
             switch period {
+            case .hour:
+                oldestDate = calendar.date(byAdding: .hour, value: -3, to: now) ?? now
             case .day:
                 oldestDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
             case .week:

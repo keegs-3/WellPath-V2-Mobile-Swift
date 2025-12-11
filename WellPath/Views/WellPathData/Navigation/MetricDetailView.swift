@@ -161,6 +161,7 @@ struct ChartDataPoint: Identifiable, Equatable {
 // Note: AggregationResult and DisplayMetricAggregation models are defined in SleepViewModel.swift
 
 enum TimePeriod: String, CaseIterable {
+    case hour = "H"
     case day = "D"
     case week = "W"
     case month = "M"
@@ -169,6 +170,7 @@ enum TimePeriod: String, CaseIterable {
 
     var numberOfBars: Int {
         switch self {
+        case .hour: return 60     // 60 minutes (each bar = that minute)
         case .day: return 24      // 24 hours (each bar = that hour)
         case .week: return 7      // 7 days (each bar = that day)
         case .month: return 33    // 33 days (each bar = that day)
@@ -180,6 +182,7 @@ enum TimePeriod: String, CaseIterable {
     // How many periods to load at once
     var loadChunkSize: Int {
         switch self {
+        case .hour: return 120     // Load 2 hours at a time
         case .day: return 48       // Load 2 days at a time
         case .week: return 28      // Load 4 weeks at a time
         case .month: return 66     // Load 2 months at a time
@@ -190,6 +193,7 @@ enum TimePeriod: String, CaseIterable {
 
     var calendarComponent: Calendar.Component {
         switch self {
+        case .hour: return .minute
         case .day: return .hour
         case .week, .month: return .day
         case .sixMonth: return .weekOfYear
@@ -201,6 +205,7 @@ enum TimePeriod: String, CaseIterable {
     // All views query hourly or daily aggregations; 6M/Y aggregate client-side
     var databasePeriodType: String {
         switch self {
+        case .hour: return "minute"  // Raw series data
         case .day: return "hourly"
         case .week: return "daily"
         case .month: return "daily"

@@ -680,6 +680,7 @@ struct SleepPeriodDetailView: View {
                         SleepDetailRow(label: "Session ID", value: sessionId.uuidString)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .cornerRadius(10)
@@ -689,17 +690,23 @@ struct SleepPeriodDetailView: View {
                     Button(action: {
                         showingDeleteAlert = true
                     }) {
-                        Image(systemName: "trash")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.red.opacity(0.1))
-                            .foregroundColor(.red)
-                            .cornerRadius(10)
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Period")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Period Details")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete Period?", isPresented: $showingDeleteAlert) {

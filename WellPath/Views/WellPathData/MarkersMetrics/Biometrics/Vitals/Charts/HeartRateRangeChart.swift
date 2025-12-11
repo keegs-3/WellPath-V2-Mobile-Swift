@@ -1,33 +1,34 @@
 //
-//  BloodPressureRangeChart.swift
+//  HeartRateRangeChart.swift
 //  WellPath
 //
-//  Range/band chart showing blood pressure over time
-//  Displays shaded area between systolic (top) and diastolic (bottom)
+//  Range/band chart showing heart rate over time
+//  Displays shaded area between min and max values for each period
 //
 
 import SwiftUI
 import Charts
 import Supabase
 
-struct BloodPressureRangeChart: View {
+struct HeartRateRangeChart: View {
     let color: Color
     var showAbout: Binding<Bool>? = nil
 
     @State private var selectedPeriod: TimePeriod = .week
     @State private var selectedPointDate: Date?
-    @StateObject private var scrollManager: BPChartScrollManager
+    @StateObject private var scrollManager: HRChartScrollManager
     @State private var scrollPosition: Date
+    @State private var unitDisplayLoaded: Bool = false
 
-    private var selectedPoint: BPDataPoint? {
+    private var selectedPoint: HRDataPoint? {
         guard let selectedDate = selectedPointDate else { return nil }
         return scrollManager.chartData.first(where: {
             Calendar.current.isDate($0.date, equalTo: selectedDate, toGranularity: getDateGranularity())
         })
     }
 
-    private var dataPointsWithValues: [BPDataPoint] {
-        scrollManager.chartData.filter { $0.systolicMax > 0 && $0.diastolicMax > 0 }
+    private var dataPointsWithValues: [HRDataPoint] {
+        scrollManager.chartData.filter { $0.maxValue > 0 }
     }
 
     /// Bar width varies by time period for optimal visual density
@@ -39,6 +40,11 @@ struct BloodPressureRangeChart: View {
         case .sixMonth: return 5
         case .year: return 6
         }
+    }
+
+    private var displayUnit: String {
+        _ = unitDisplayLoaded
+        return UnitConversionService.shared.getUIDisplay(for: "beats_per_minute")
     }
 
     init(color: Color, showAbout: Binding<Bool>? = nil) {
@@ -56,7 +62,7 @@ struct BloodPressureRangeChart: View {
         ) ?? now
 
         _scrollPosition = State(initialValue: scrollStart)
-        _scrollManager = StateObject(wrappedValue: BPChartScrollManager(period: initialPeriod))
+        _scrollManager = StateObject(wrappedValue: HRChartScrollManager(period: initialPeriod))
     }
 
     var body: some View {
@@ -85,33 +91,19 @@ struct BloodPressureRangeChart: View {
                 ) ?? now
             }
 
-            // Value display - shows selected point or most recent reading
+            // Value display - shows selected point or range for visible window
             HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
                     if let selected = selectedPoint {
                         Text("RANGE")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        // Selected period values
-                        VStack(alignment: .leading, spacing: 2) {
-                            // Systolic display
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(formatRangeValue(min: selected.systolicMin, max: selected.systolicMax))
-                                    .font(.system(size: 34, weight: .semibold))
-                                    .foregroundColor(color)
-                                Text("SYS")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            // Diastolic display
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(formatRangeValue(min: selected.diastolicMin, max: selected.diastolicMax))
-                                    .font(.system(size: 34, weight: .semibold))
-                                    .foregroundColor(color.opacity(0.7))
-                                Text("DIA")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(formatRangeValue(min: selected.minValue, max: selected.maxValue))
+                                .font(.system(size: 48, weight: .semibold))
+                            Text(displayUnit)
+                                .font(.title2)
+                                .foregroundColor(.secondary)
                         }
                         Text(formatSelectedDate(selected.date))
                             .font(.subheadline)
@@ -120,31 +112,18 @@ struct BloodPressureRangeChart: View {
                         Text("RANGE")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        let overallRanges = getOverallRanges()
-                        if let ranges = overallRanges {
-                            VStack(alignment: .leading, spacing: 2) {
-                                // Systolic range
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Text(formatRangeValue(min: ranges.systolicMin, max: ranges.systolicMax))
-                                        .font(.system(size: 34, weight: .semibold))
-                                        .foregroundColor(color)
-                                    Text("SYS")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                // Diastolic range
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Text(formatRangeValue(min: ranges.diastolicMin, max: ranges.diastolicMax))
-                                        .font(.system(size: 34, weight: .semibold))
-                                        .foregroundColor(color.opacity(0.7))
-                                    Text("DIA")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                        let overallRange = getOverallRange()
+                        if let range = overallRange {
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text(formatRangeValue(min: range.min, max: range.max))
+                                    .font(.system(size: 48, weight: .semibold))
+                                Text(displayUnit)
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
                             }
                         } else {
                             Text("--")
-                                .font(.system(size: 34, weight: .semibold))
+                                .font(.system(size: 48, weight: .semibold))
                         }
                         Text(visibleDateRangeString())
                             .font(.subheadline)
@@ -154,7 +133,7 @@ struct BloodPressureRangeChart: View {
 
                 Spacer()
 
-                // Info button only (chat is in the About modal)
+                // Info button
                 if let showAboutBinding = showAbout {
                     Button(action: {
                         withAnimation {
@@ -171,7 +150,7 @@ struct BloodPressureRangeChart: View {
             .padding(.horizontal)
             .padding(.top, MetricScreenLayout.headerTopPadding)
 
-            // Range chart - Apple Health style with separate systolic/diastolic range bars
+            // Range chart - Apple Health style with range bars
             Chart(scrollManager.chartData) { dataPoint in
                 // Invisible placeholder for x-axis domain
                 PointMark(
@@ -181,47 +160,27 @@ struct BloodPressureRangeChart: View {
                 .opacity(0)
 
                 // Only show marks for valid readings
-                if dataPoint.systolicMax > 0 && dataPoint.diastolicMax > 0 {
+                if dataPoint.maxValue > 0 {
                     let isSelected = selectedPointDate != nil &&
                         Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
 
-                    // Systolic range bar (upper bar - darker color)
-                    if dataPoint.isSystolicRange {
+                    if dataPoint.isRange {
+                        // Range bar (min to max)
                         BarMark(
                             x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            yStart: .value("Systolic Min", dataPoint.systolicMin),
-                            yEnd: .value("Systolic Max", dataPoint.systolicMax),
+                            yStart: .value("Min", dataPoint.minValue),
+                            yEnd: .value("Max", dataPoint.maxValue),
                             width: .fixed(barWidth)
                         )
                         .foregroundStyle(isSelected ? color : color.opacity(0.85))
                         .clipShape(Capsule())
                     } else {
-                        // Single systolic value - show as point
+                        // Single value - show as point
                         PointMark(
                             x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            y: .value("Systolic", dataPoint.systolicMax)
+                            y: .value("Value", dataPoint.maxValue)
                         )
                         .foregroundStyle(isSelected ? color : color.opacity(0.85))
-                        .symbolSize(isSelected ? 80 : 50)
-                    }
-
-                    // Diastolic range bar (lower bar - lighter color)
-                    if dataPoint.isDiastolicRange {
-                        BarMark(
-                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            yStart: .value("Diastolic Min", dataPoint.diastolicMin),
-                            yEnd: .value("Diastolic Max", dataPoint.diastolicMax),
-                            width: .fixed(barWidth)
-                        )
-                        .foregroundStyle(isSelected ? color.opacity(0.6) : color.opacity(0.5))
-                        .clipShape(Capsule())
-                    } else {
-                        // Single diastolic value - show as point
-                        PointMark(
-                            x: .value("Date", dataPoint.date, unit: selectedPeriod.calendarComponent),
-                            y: .value("Diastolic", dataPoint.diastolicMax)
-                        )
-                        .foregroundStyle(isSelected ? color.opacity(0.6) : color.opacity(0.5))
                         .symbolSize(isSelected ? 80 : 50)
                     }
                 }
@@ -236,7 +195,7 @@ struct BloodPressureRangeChart: View {
                     .onEnded { value in
                         if let tappedDate: Date = proxy.value(atX: value.location.x) {
                             let closest = scrollManager.chartData
-                                .filter { $0.systolic > 0 && $0.diastolic > 0 }
+                                .filter { $0.maxValue > 0 }
                                 .min(by: {
                                     abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
                                 })
@@ -254,7 +213,6 @@ struct BloodPressureRangeChart: View {
                 handleChartScrolling(position: newValue)
             }
             .onChange(of: dataPointsWithValues.count) { oldValue, newValue in
-                // Scroll to most recent data point when actual data with values first loads
                 if oldValue == 0 && newValue > 0 {
                     scrollToMostRecentData()
                 }
@@ -312,13 +270,17 @@ struct BloodPressureRangeChart: View {
             .padding(.vertical)
             .background(Color(uiColor: .systemGroupedBackground))
         }
+        .task {
+            await UnitConversionService.shared.loadConversions()
+            unitDisplayLoaded = true
+        }
     }
 
     // MARK: - Computed Properties
 
     private var yAxisDomain: ClosedRange<Double> {
         let values = scrollManager.chartData
-            .flatMap { [$0.systolicMin, $0.systolicMax, $0.diastolicMin, $0.diastolicMax] }
+            .flatMap { [$0.minValue, $0.maxValue] }
             .filter { $0 > 0 }
 
         guard !values.isEmpty else { return 40...180 }
@@ -357,28 +319,23 @@ struct BloodPressureRangeChart: View {
         }
     }
 
-    private func getLatestReading() -> BPDataPoint? {
+    private func getLatestReading() -> HRDataPoint? {
         scrollManager.chartData
-            .filter { $0.systolicMax > 0 && $0.diastolicMax > 0 }
+            .filter { $0.maxValue > 0 }
             .sorted { $0.date > $1.date }
             .first
     }
 
-    /// Scroll to position the most recent data point at the right edge of visible area
     private func scrollToMostRecentData() {
         guard let latestData = getLatestReading() else { return }
 
         let calendar = Calendar.current
         let visibleBars = selectedPeriod.numberOfBars
-        // Position so the most recent data is at the right edge
-        // Visible window is scrollPosition to scrollPosition + (visibleBars - 1)
-        // So to have latestData at right edge: scrollPosition = latestData - (visibleBars - 1)
         if let newPosition = calendar.date(byAdding: selectedPeriod.calendarComponent, value: -(visibleBars - 1), to: latestData.date) {
             scrollPosition = newPosition
         }
     }
 
-    /// Format a range value - shows "120-130" for range, or "120" for single value
     private func formatRangeValue(min: Double, max: Double) -> String {
         if min == max || min == 0 {
             return "\(Int(max))"
@@ -387,27 +344,23 @@ struct BloodPressureRangeChart: View {
         }
     }
 
-    /// Get overall min/max ranges across visible window data points only
-    private func getOverallRanges() -> (systolicMin: Double, systolicMax: Double, diastolicMin: Double, diastolicMax: Double)? {
+    private func getOverallRange() -> (min: Double, max: Double)? {
         let calendar = Calendar.current
         let visibleDuration = selectedPeriod.numberOfBars
         let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration, to: scrollPosition) ?? scrollPosition
 
-        // Filter to only visible window
         let visiblePoints = dataPointsWithValues.filter { point in
             point.date >= scrollPosition && point.date <= endDate
         }
 
         guard !visiblePoints.isEmpty else { return nil }
 
-        let systolicMin = visiblePoints.map { $0.systolicMin }.filter { $0 > 0 }.min() ?? 0
-        let systolicMax = visiblePoints.map { $0.systolicMax }.max() ?? 0
-        let diastolicMin = visiblePoints.map { $0.diastolicMin }.filter { $0 > 0 }.min() ?? 0
-        let diastolicMax = visiblePoints.map { $0.diastolicMax }.max() ?? 0
+        let minVal = visiblePoints.map { $0.minValue }.filter { $0 > 0 }.min() ?? 0
+        let maxVal = visiblePoints.map { $0.maxValue }.max() ?? 0
 
-        guard systolicMax > 0 && diastolicMax > 0 else { return nil }
+        guard maxVal > 0 else { return nil }
 
-        return (systolicMin, systolicMax, diastolicMin, diastolicMax)
+        return (minVal, maxVal)
     }
 
     private func visibleDateRangeString() -> String {
@@ -415,7 +368,6 @@ struct BloodPressureRangeChart: View {
         let visibleDuration = selectedPeriod.numberOfBars
         let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration - 1, to: scrollPosition) ?? scrollPosition
 
-        // Check if start and end are in same year
         let sameYear = calendar.component(.year, from: scrollPosition) == calendar.component(.year, from: endDate)
 
         let formatter = DateFormatter()
@@ -425,7 +377,6 @@ struct BloodPressureRangeChart: View {
             formatter.dateFormat = "MMM yyyy"
             return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
         default:
-            // Always show year for context
             if sameYear {
                 let startFormatter = DateFormatter()
                 startFormatter.dateFormat = "MMM d"
@@ -449,7 +400,6 @@ struct BloodPressureRangeChart: View {
         case .week, .month:
             formatter.dateFormat = "MMM d, yyyy"
         case .sixMonth:
-            // Show week range
             guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else {
                 formatter.dateFormat = "MMM d, yyyy"
                 return formatter.string(from: date)
@@ -512,53 +462,37 @@ struct BloodPressureRangeChart: View {
     }
 }
 
-// MARK: - BP Data Point (with min/max ranges for aggregation)
+// MARK: - HR Data Point (with min/max ranges for aggregation)
 
-struct BPDataPoint: Identifiable {
+struct HRDataPoint: Identifiable {
     let id = UUID()
     let date: Date
-    // Systolic range (min to max for the period)
-    let systolicMin: Double
-    let systolicMax: Double
-    // Diastolic range (min to max for the period)
-    let diastolicMin: Double
-    let diastolicMax: Double
-    // Number of readings in this period
+    let minValue: Double
+    let maxValue: Double
     let readingCount: Int
 
-    // Convenience for single readings
-    var systolic: Double { systolicMax }
-    var diastolic: Double { diastolicMax }
+    var isRange: Bool { minValue != maxValue && minValue > 0 }
 
-    // Check if this is a range (multiple readings) or single value
-    var isSystolicRange: Bool { systolicMin != systolicMax }
-    var isDiastolicRange: Bool { diastolicMin != diastolicMax }
-
-    init(date: Date, systolicMin: Double, systolicMax: Double, diastolicMin: Double, diastolicMax: Double, readingCount: Int = 1) {
+    init(date: Date, minValue: Double, maxValue: Double, readingCount: Int = 1) {
         self.date = date
-        self.systolicMin = systolicMin
-        self.systolicMax = systolicMax
-        self.diastolicMin = diastolicMin
-        self.diastolicMax = diastolicMax
+        self.minValue = minValue
+        self.maxValue = maxValue
         self.readingCount = readingCount
     }
 
-    // Convenience initializer for single readings
-    init(date: Date, systolic: Double, diastolic: Double) {
+    init(date: Date, value: Double) {
         self.date = date
-        self.systolicMin = systolic
-        self.systolicMax = systolic
-        self.diastolicMin = diastolic
-        self.diastolicMax = diastolic
+        self.minValue = value
+        self.maxValue = value
         self.readingCount = 1
     }
 }
 
-// MARK: - BP Chart Scroll Manager
+// MARK: - HR Chart Scroll Manager
 
 @MainActor
-class BPChartScrollManager: ObservableObject {
-    @Published var chartData: [BPDataPoint] = []
+class HRChartScrollManager: ObservableObject {
+    @Published var chartData: [HRDataPoint] = []
     @Published var isLoadingOlder = false
     @Published var isLoadingNewer = false
 
@@ -658,13 +592,9 @@ class BPChartScrollManager: ObservableObject {
     }
 
     private func loadDataRange(from startDate: Date, to endDate: Date) async {
-        // Generate empty timeline
         var timeline = generateEmptyTimeline(from: startDate, to: endDate)
-
-        // Fetch data from patient_samples
         let dataPoints = await fetchDataPoints(from: startDate, to: endDate)
 
-        // Overlay actual data on timeline
         for dataPoint in dataPoints {
             if let index = timeline.firstIndex(where: {
                 Calendar.current.isDate($0.date, equalTo: dataPoint.date, toGranularity: selectedPeriod.calendarComponent)
@@ -673,7 +603,6 @@ class BPChartScrollManager: ObservableObject {
             }
         }
 
-        // Merge with existing data
         await MainActor.run {
             let existingDates = Set(chartData.map { $0.date })
             let newPoints = timeline.filter { !existingDates.contains($0.date) }
@@ -682,117 +611,106 @@ class BPChartScrollManager: ObservableObject {
         }
     }
 
-    private func generateEmptyTimeline(from startDate: Date, to endDate: Date) -> [BPDataPoint] {
-        var timeline: [BPDataPoint] = []
+    private func generateEmptyTimeline(from startDate: Date, to endDate: Date) -> [HRDataPoint] {
+        var timeline: [HRDataPoint] = []
         var currentDate = startDate
         let calendar = Calendar.current
         let component = selectedPeriod.calendarComponent
 
         while currentDate <= endDate {
-            timeline.append(BPDataPoint(
-                date: currentDate,
-                systolicMin: 0,
-                systolicMax: 0,
-                diastolicMin: 0,
-                diastolicMax: 0,
-                readingCount: 0
-            ))
+            timeline.append(HRDataPoint(date: currentDate, minValue: 0, maxValue: 0, readingCount: 0))
             currentDate = calendar.date(byAdding: component, value: 1, to: currentDate) ?? endDate
         }
 
         return timeline
     }
 
-    private func fetchDataPoints(from startDate: Date, to endDate: Date) async -> [BPDataPoint] {
+    private func fetchDataPoints(from startDate: Date, to endDate: Date) async -> [HRDataPoint] {
         do {
             let patientId = try await supabase.auth.session.user.id
 
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-            // Fetch blood pressure readings from patient_correlation_samples
-            let results: [CorrelationSampleRead] = try await supabase
-                .from("patient_correlation_samples")
-                .select("id, patient_id, correlation_type, components, sample_time, source, user_timezone")
-                .eq("patient_id", value: patientId)
-                .eq("correlation_type", value: CorrelationTypes.bloodPressure)
-                .gte("sample_time", value: formatter.string(from: startDate))
-                .lte("sample_time", value: formatter.string(from: endDate))
-                .order("sample_time", ascending: false)
-                .execute()
-                .value
+            struct SeriesResult: Codable {
+                let value: Double
+                let timestamp: Date
 
-            // Group by period and aggregate min/max for systolic and diastolic
-            // Period grouping varies by selected time period:
-            // - Day view: group by hour
-            // - Week/Month view: group by day
-            // - 6M view: group by week
-            // - Year view: group by month
-            struct PeriodAggregate {
-                var systolicValues: [Double] = []
-                var diastolicValues: [Double] = []
+                enum CodingKeys: String, CodingKey {
+                    case value
+                    case timestamp
+                }
             }
 
-            var groupedByPeriod: [Date: PeriodAggregate] = [:]
+            // Custom decoder for Supabase timestamps
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .custom { decoder in
+                let container = try decoder.singleValueContainer()
+                let dateString = try container.decode(String.self)
+
+                let iso8601 = ISO8601DateFormatter()
+                iso8601.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = iso8601.date(from: dateString) {
+                    return date
+                }
+
+                iso8601.formatOptions = [.withInternetDateTime]
+                if let date = iso8601.date(from: dateString) {
+                    return date
+                }
+
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
+            }
+
+            let data = try await supabase
+                .from("patient_series_samples")
+                .select("value, timestamp")
+                .eq("patient_id", value: patientId)
+                .eq("series_type", value: "heart_rate_series")
+                .gte("timestamp", value: formatter.string(from: startDate))
+                .lte("timestamp", value: formatter.string(from: endDate))
+                .order("timestamp", ascending: false)
+                .execute()
+                .data
+
+            let results = try decoder.decode([SeriesResult].self, from: data)
+
+            // Group by period and aggregate min/max
+            var groupedByPeriod: [Date: [Double]] = [:]
             let calendar = Calendar.current
 
             for reading in results {
-                guard let systolic = reading.systolic, let diastolic = reading.diastolic else { continue }
-
-                let periodKey = getPeriodKey(for: reading.sampleTime, calendar: calendar)
-
-                if groupedByPeriod[periodKey] == nil {
-                    groupedByPeriod[periodKey] = PeriodAggregate()
-                }
-
-                groupedByPeriod[periodKey]?.systolicValues.append(systolic)
-                groupedByPeriod[periodKey]?.diastolicValues.append(diastolic)
+                let periodKey = getPeriodKey(for: reading.timestamp, calendar: calendar)
+                groupedByPeriod[periodKey, default: []].append(reading.value)
             }
 
-            // Convert to BPDataPoint array with min/max ranges
-            return groupedByPeriod.compactMap { date, aggregate in
-                guard !aggregate.systolicValues.isEmpty && !aggregate.diastolicValues.isEmpty else {
-                    return nil
-                }
+            return groupedByPeriod.compactMap { date, values in
+                guard !values.isEmpty else { return nil }
 
-                let systolicMin = aggregate.systolicValues.min() ?? 0
-                let systolicMax = aggregate.systolicValues.max() ?? 0
-                let diastolicMin = aggregate.diastolicValues.min() ?? 0
-                let diastolicMax = aggregate.diastolicValues.max() ?? 0
-                let readingCount = aggregate.systolicValues.count
+                let minVal = values.min() ?? 0
+                let maxVal = values.max() ?? 0
+                let count = values.count
 
-                return BPDataPoint(
-                    date: date,
-                    systolicMin: systolicMin,
-                    systolicMax: systolicMax,
-                    diastolicMin: diastolicMin,
-                    diastolicMax: diastolicMax,
-                    readingCount: readingCount
-                )
+                return HRDataPoint(date: date, minValue: minVal, maxValue: maxVal, readingCount: count)
             }
 
         } catch {
-            print("❌ Error fetching BP data: \(error)")
+            print("Error fetching HR data: \(error)")
             return []
         }
     }
 
-    /// Get the period key (start date of period) for a given reading time
     private func getPeriodKey(for date: Date, calendar: Calendar) -> Date {
         switch selectedPeriod {
         case .day:
-            // Group by hour
             let components = calendar.dateComponents([.year, .month, .day, .hour], from: date)
             return calendar.date(from: components) ?? date
         case .week, .month:
-            // Group by day
             return calendar.startOfDay(for: date)
         case .sixMonth:
-            // Group by week (start of week)
             let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
             return calendar.date(from: components) ?? date
         case .year:
-            // Group by month
             let components = calendar.dateComponents([.year, .month], from: date)
             return calendar.date(from: components) ?? date
         }
@@ -800,5 +718,5 @@ class BPChartScrollManager: ObservableObject {
 }
 
 #Preview {
-    BloodPressureRangeChart(color: .red)
+    HeartRateRangeChart(color: .red)
 }

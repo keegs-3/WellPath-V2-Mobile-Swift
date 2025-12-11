@@ -406,6 +406,7 @@ class NutrientTypeViewModel: ObservableObject {
         // Map TimePeriod to database period_type
         let periodKey: String
         switch period {
+        case .hour: periodKey = "hourly"
         case .day: periodKey = "daily"
         case .week: periodKey = "weekly"
         case .month: periodKey = "monthly"

@@ -300,6 +300,8 @@ struct WaistHipRatioChart: View {
     private func formatSelectedDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         switch selectedPeriod {
+        case .hour:
+            formatter.dateFormat = "h:mm a"
         case .day:
             formatter.dateFormat = "MMM d, h:mm a"
         case .week:
@@ -312,6 +314,7 @@ struct WaistHipRatioChart: View {
 
     private func getDateGranularity() -> Calendar.Component {
         switch selectedPeriod {
+        case .hour: return .minute
         case .day: return .hour
         case .week, .month: return .day
         case .sixMonth: return .weekOfYear
@@ -321,6 +324,7 @@ struct WaistHipRatioChart: View {
 
     private func getVisibleDomainTimeInterval() -> TimeInterval {
         switch selectedPeriod {
+        case .hour: return 3600
         case .day: return 24 * 3600
         case .week: return 7 * 24 * 3600
         case .month: return 30 * 24 * 3600
@@ -331,6 +335,7 @@ struct WaistHipRatioChart: View {
 
     private func getAxisLabelStride() -> Calendar.Component {
         switch selectedPeriod {
+        case .hour: return .minute
         case .day: return .hour
         case .week: return .day
         case .month: return .weekOfYear
@@ -340,6 +345,7 @@ struct WaistHipRatioChart: View {
 
     private func getAxisLabelMultiplier() -> Int {
         switch selectedPeriod {
+        case .hour: return 10
         case .day: return 6
         default: return 1
         }
@@ -347,6 +353,7 @@ struct WaistHipRatioChart: View {
 
     private func getAxisLabelFormat() -> Date.FormatStyle {
         switch selectedPeriod {
+        case .hour: return .dateTime.minute()
         case .day: return .dateTime.hour(.defaultDigits(amPM: .abbreviated))
         case .week: return .dateTime.weekday(.narrow)
         case .month: return .dateTime.day(.defaultDigits)

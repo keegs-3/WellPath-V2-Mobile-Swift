@@ -3,6 +3,7 @@
 //  WellPath
 //
 //  Full detail view for Resting Heart Rate biometric - chart-only layout
+//  Loads title, subtitle, and unit from database
 //
 
 import SwiftUI
@@ -11,13 +12,17 @@ struct RestingHRView: View {
     let metric: DisplayMetric
     let color: Color
 
-    @StateObject private var educationLoader = BiometricEducationLoader()
-    @State private var showAbout = false
+    @State private var showAboutModal = false
     @State private var showDataManagement = false
     @State private var showAddEntry = false
+    @State private var metadata: ViewMetadata?
 
     private let metricId = "DISP_RESTING_HR"
-    private let metricName = "Resting Heart Rate"
+
+    // Computed from metadata with fallbacks
+    private var metricName: String { metadata?.title ?? "Resting Heart Rate" }
+    private var metricNameLong: String? { metadata?.subtitle }
+    private var unitDisplay: String { metadata?.unit ?? "bpm" }
 
     /// DisplayMetric for the BiometricLineChart
     private var displayMetric: DisplayMetric {
@@ -25,8 +30,8 @@ struct RestingHRView: View {
             id: metricId,
             metricId: metricId,
             metricName: metricName,
-            description: "Beats per minute at rest",
-            pillar: nil,
+            description: metricNameLong ?? "Beats per minute at rest",
+            pillar: metadata?.pillar,
             chartTypeId: "trend_line",
             isActive: true,
             aboutContent: metric.aboutContent,
@@ -36,7 +41,7 @@ struct RestingHRView: View {
     }
 
     var body: some View {
-        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAbout)
+        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal, subtitle: metricNameLong)
             .metricScreenBackground(color: color)
             .navigationTitle(metricName)
             .navigationBarTitleDisplayMode(.large)
@@ -64,22 +69,23 @@ struct RestingHRView: View {
                 SimpleBiometricDataManagementView(
                     title: metricName,
                     biometricName: BiometricDisplayNames.displayName(for: metricId),
-                    unit: "bpm",
+                    unit: unitDisplay,
                     color: color
                 )
             }
             .sheet(isPresented: $showAddEntry) {
                 RestingHREntryView()
             }
-            .sheet(isPresented: $showAbout) {
-                BiometricAboutModal(
-                    title: metricName,
-                    educationLoader: educationLoader,
-                    color: color
+            .sheet(isPresented: $showAboutModal) {
+                MetricEducationModal(
+                    viewId: metricId,
+                    metricName: metricName,
+                    color: color,
+                    isPresented: $showAboutModal
                 )
             }
             .task {
-                await educationLoader.loadSections(for: metricId)
+                metadata = await ViewMetadataService.shared.loadMetadata(for: metricId)
             }
     }
 }

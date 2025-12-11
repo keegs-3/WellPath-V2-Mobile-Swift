@@ -243,6 +243,7 @@ struct ComponentScoreTrendChart: View {
 
     private func getVisibleDomainTimeInterval() -> TimeInterval {
         switch selectedPeriod {
+        case .hour: return 3600 // 1 hour in seconds
         case .day: return 24 * 3600 // 24 hours in seconds
         case .week: return 7 * 24 * 3600 // 7 days in seconds
         case .month: return 30 * 24 * 3600 // 30 days in seconds
@@ -253,6 +254,7 @@ struct ComponentScoreTrendChart: View {
 
     private func getAxisStride() -> Calendar.Component {
         switch selectedPeriod {
+        case .hour: return .minute
         case .day: return .hour
         case .week: return .day
         case .month: return .weekOfYear
@@ -263,6 +265,7 @@ struct ComponentScoreTrendChart: View {
 
     private func getAxisMultiplier() -> Int {
         switch selectedPeriod {
+        case .hour: return 10  // Every 10 minutes
         case .day: return 6  // Every 6 hours
         case .week: return 1  // Every day
         case .month: return 1  // Every week
@@ -273,6 +276,7 @@ struct ComponentScoreTrendChart: View {
 
     private func getAxisFormat() -> Date.FormatStyle {
         switch selectedPeriod {
+        case .hour: return .dateTime.minute()
         case .day: return .dateTime.hour(.defaultDigits(amPM: .abbreviated))
         case .week: return .dateTime.weekday(.narrow)
         case .month: return .dateTime.day(.defaultDigits)
@@ -283,6 +287,7 @@ struct ComponentScoreTrendChart: View {
 
     private func getAggregateLabel() -> String {
         switch selectedPeriod {
+        case .hour: return "HOUR"
         case .day: return "DAY"
         case .week: return "WEEK"
         case .month: return "MONTH"
@@ -296,6 +301,9 @@ struct ComponentScoreTrendChart: View {
         let calendar = Calendar.current
 
         switch selectedPeriod {
+        case .hour:
+            formatter.dateFormat = "h:mm a"
+            return formatter.string(from: date)
         case .day:
             formatter.dateFormat = "h:00 a"
             return formatter.string(from: date)

@@ -62,6 +62,9 @@ class UnitConversionService: ObservableObject {
     /// Cached unit display symbols: "unit_id" -> symbol (e.g., "kilogram" -> "kg")
     private var unitSymbolCache: [String: String] = [:]
 
+    /// Cached unit UI display: "unit_id" -> ui_display (e.g., "beats_per_minute" -> "BPM")
+    private var unitUIDisplayCache: [String: String] = [:]
+
     /// Whether initial load has completed
     private var isLoaded = false
 
@@ -150,6 +153,24 @@ class UnitConversionService: ObservableObject {
 
             print("📐 Loaded \(quantityTypes.count) canonical unit definitions")
 
+            // Load unit UI display strings
+            let unitBases: [UnitBaseRecord] = try await supabase
+                .from("units_base")
+                .select("unit_id, symbol, ui_display")
+                .execute()
+                .value
+
+            for unit in unitBases {
+                if let uiDisplay = unit.uiDisplay {
+                    unitUIDisplayCache[unit.unitId] = uiDisplay
+                }
+                if let symbol = unit.symbol {
+                    unitSymbolCache[unit.unitId] = symbol
+                }
+            }
+
+            print("📐 Loaded \(unitBases.count) unit display definitions")
+
             isLoaded = true
 
         } catch {
@@ -179,6 +200,17 @@ class UnitConversionService: ObservableObject {
     /// Get the canonical (storage) unit for a quantity type
     func getCanonicalUnit(for quantityType: String) -> String? {
         return canonicalUnitCache[quantityType]
+    }
+
+    /// Get the UI display string for a unit (e.g., "beats_per_minute" -> "BPM")
+    /// Returns the original unit ID if no UI display is found
+    func getUIDisplay(for unitId: String) -> String {
+        return unitUIDisplayCache[unitId] ?? unitId
+    }
+
+    /// Get the symbol for a unit (e.g., "kilogram" -> "kg")
+    func getSymbol(for unitId: String) -> String? {
+        return unitSymbolCache[unitId]
     }
 
     /// Convert a value to the canonical unit for storage

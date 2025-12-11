@@ -62,12 +62,14 @@ struct BiometricMetricCard: View {
         case "DISP_HIP_CIRCUMFERENCE":
             HipCircumferenceView(color: color)
         case "DISP_WAIST_HIP":
-            WaistHipRatioView(color: color)
+            WaistHipView(color: color)
         case "DISP_ASMI":
             ASMIView(color: color)
         // Vitals
         case "DISP_BLOOD_PRESSURE", "DISP_SYSTOLIC_BP":
             BloodPressureView(color: color)
+        case "DISP_HEART_RATE":
+            HeartRateView(color: color)
         case "DISP_HRV":
             HRVView(color: color)
         // Fitness

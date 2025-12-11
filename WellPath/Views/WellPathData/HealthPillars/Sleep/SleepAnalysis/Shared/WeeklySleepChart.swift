@@ -304,75 +304,35 @@ struct WeeklySleepChart: View {
         }
     }
 
-    // Calculate average bedtime and waketime from visible weeks with data (like MetricDetailView's calculateAggregate)
-    private func calculateVisibleWeeklyAverages() -> (bedtime: Date, waketime: Date)? {
-        NSLog("[SLEEP] 📊 calculateVisibleWeeklyAverages: Starting calculation")
-        // Get visible weeks based on scroll position (like MetricDetailView's getVisibleData)
+    // Calculate average time in bed and time asleep from visible weeks with data
+    private func calculateVisibleWeeklyAverages() -> (timeInBed: TimeInterval, timeAsleep: TimeInterval)? {
         let visibleWeeks = getVisibleWeeks().compactMap { $0.week }
-        NSLog("[SLEEP] 📊 calculateVisibleWeeklyAverages: Found \(visibleWeeks.count) weeks with data")
-        guard !visibleWeeks.isEmpty else {
-            NSLog("[SLEEP] ⚠️ calculateVisibleWeeklyAverages: No visible weeks with data, returning nil")
-            return nil  // Return nil to indicate "No Data"
-        }
-        
-        // Calculate average by averaging the time components
-        let calendar = Calendar.current
-        var totalBedtimeSeconds: TimeInterval = 0
-        var totalWaketimeSeconds: TimeInterval = 0
-        var count = 0
-        
+        guard !visibleWeeks.isEmpty else { return nil }
+
+        var totalTimeInBed: TimeInterval = 0
+        var totalTimeAsleep: TimeInterval = 0
+
         for week in visibleWeeks {
-            let bedtimeComponents = calendar.dateComponents([.hour, .minute, .second], from: week.avgBedtime)
-            let waketimeComponents = calendar.dateComponents([.hour, .minute, .second], from: week.avgWaketime)
-            
-            if let bedtimeHour = bedtimeComponents.hour, let bedtimeMinute = bedtimeComponents.minute,
-               let waketimeHour = waketimeComponents.hour, let waketimeMinute = waketimeComponents.minute {
-                totalBedtimeSeconds += Double(bedtimeHour * 3600 + bedtimeMinute * 60)
-                totalWaketimeSeconds += Double(waketimeHour * 3600 + waketimeMinute * 60)
-                count += 1
-            }
+            totalTimeInBed += week.avgTimeInBed
+            totalTimeAsleep += week.avgTimeAsleep
         }
-        
-        guard count > 0 else {
-            NSLog("[SLEEP] ⚠️ calculateVisibleWeeklyAverages: count is 0 after processing, returning nil")
-            return nil  // Return nil to indicate "No Data"
-        }
-        
-        let avgBedtimeSeconds = totalBedtimeSeconds / Double(count)
-        let avgWaketimeSeconds = totalWaketimeSeconds / Double(count)
-        
-        let bedtimeHour = Int(avgBedtimeSeconds) / 3600
-        let bedtimeMinute = (Int(avgBedtimeSeconds) % 3600) / 60
-        let waketimeHour = Int(avgWaketimeSeconds) / 3600
-        let waketimeMinute = (Int(avgWaketimeSeconds) % 3600) / 60
-        
-        let avgBedtime = calendar.date(bySettingHour: bedtimeHour, minute: bedtimeMinute, second: 0, of: Date()) ?? Date()
-        let avgWaketime = calendar.date(bySettingHour: waketimeHour, minute: waketimeMinute, second: 0, of: Date()) ?? Date()
-        
-        NSLog("[SLEEP] ✅ calculateVisibleWeeklyAverages: Result - bedtime: \(bedtimeHour):\(String(format: "%02d", bedtimeMinute)), waketime: \(waketimeHour):\(String(format: "%02d", waketimeMinute)) (from \(count) weeks)")
-        return (avgBedtime, avgWaketime)
+
+        let count = Double(visibleWeeks.count)
+        return (totalTimeInBed / count, totalTimeAsleep / count)
     }
     
     private var summaryMetrics: some View {
         let averages = selectedWeek == nil ? calculateVisibleWeeklyAverages() : nil
 
-        if let selected = selectedWeek {
-            NSLog("[SLEEP] 📊 summaryMetrics: Showing selected week data - \(formatTime(selected.avgBedtime)) to \(formatTime(selected.avgWaketime))")
-        } else if let avg = averages {
-            NSLog("[SLEEP] 📊 summaryMetrics: Showing visible range average - \(formatTime(avg.bedtime)) to \(formatTime(avg.waketime))")
-        } else {
-            NSLog("[SLEEP] ⚠️ summaryMetrics: No selected week and no averages available")
-        }
-
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Avg Bedtime").font(.caption).foregroundColor(.secondary)
+                    Text("AVG. TIME IN BED").font(.caption).foregroundColor(.secondary)
                     if let week = selectedWeek {
-                        Text(formatTime(week.avgBedtime))
+                        Text(formatDuration(week.avgTimeInBed))
                             .font(.title2).fontWeight(.semibold)
                     } else if let avg = averages {
-                        Text(formatTime(avg.bedtime))
+                        Text(formatDuration(avg.timeInBed))
                             .font(.title2).fontWeight(.semibold)
                     } else {
                         Text("No Data")
@@ -381,12 +341,12 @@ struct WeeklySleepChart: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Avg Waketime").font(.caption).foregroundColor(.secondary)
+                    Text("AVG. TIME ASLEEP").font(.caption).foregroundColor(.secondary)
                     if let week = selectedWeek {
-                        Text(formatTime(week.avgWaketime))
+                        Text(formatDuration(week.avgTimeAsleep))
                             .font(.title2).fontWeight(.semibold)
                     } else if let avg = averages {
-                        Text(formatTime(avg.waketime))
+                        Text(formatDuration(avg.timeAsleep))
                             .font(.title2).fontWeight(.semibold)
                     } else {
                         Text("No Data")
@@ -497,11 +457,22 @@ struct WeeklySleepChart: View {
         utcCalendar.timeZone = TimeZone(identifier: "UTC")!
         let lastWeekEnd = utcCalendar.date(byAdding: .day, value: 6, to: lastDate) ?? lastDate
 
+        let startYear = utcCalendar.component(.year, from: firstDate)
+        let endYear = utcCalendar.component(.year, from: lastWeekEnd)
+
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
         formatter.timeZone = TimeZone(identifier: "UTC")! // Format in UTC to match database dates
-        let year = utcCalendar.component(.year, from: lastWeekEnd)
-        let result = "\(formatter.string(from: firstDate)) - \(formatter.string(from: lastWeekEnd)), \(year)"
+
+        let result: String
+        if startYear == endYear {
+            // Same year: "Jul 7 - Jan 4, 2025"
+            formatter.dateFormat = "MMM d"
+            result = "\(formatter.string(from: firstDate)) - \(formatter.string(from: lastWeekEnd)), \(endYear)"
+        } else {
+            // Cross-year: "Jul 7, 2024 - Jan 4, 2025"
+            formatter.dateFormat = "MMM d, yyyy"
+            result = "\(formatter.string(from: firstDate)) - \(formatter.string(from: lastWeekEnd))"
+        }
         NSLog("[SLEEP] 📅 visibleDateRangeString: Result = '\(result)' (from \(firstDate) to \(lastWeekEnd) in UTC)")
         return result
     }
@@ -509,7 +480,7 @@ struct WeeklySleepChart: View {
     private func formatWeeklyDateRange() -> String {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        
+
         // Calculate Monday of the week that is 26 weeks ago
         var startComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
         startComponents.weekOfYear = (startComponents.weekOfYear ?? 0) - 26
@@ -517,7 +488,7 @@ struct WeeklySleepChart: View {
         guard let startWeekMonday = calendar.date(from: startComponents) else {
             return ""
         }
-        
+
         // Calculate Sunday of the current week (the 26th week)
         // Get the current week's Monday using yearForWeekOfYear, then add 6 days to get Sunday
         var currentWeekComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
@@ -528,12 +499,21 @@ struct WeeklySleepChart: View {
         guard let currentWeekSunday = calendar.date(byAdding: .day, value: 6, to: currentWeekMonday) else {
             return ""
         }
-        
-        // Use local dates directly (no UTC normalization needed)
+
+        // Check if years match
+        let startYear = calendar.component(.year, from: startWeekMonday)
+        let endYear = calendar.component(.year, from: currentWeekSunday)
+
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        let year = Calendar.current.component(.year, from: currentWeekSunday)
-        return "\(formatter.string(from: startWeekMonday)) - \(formatter.string(from: currentWeekSunday)), \(year)"
+        if startYear == endYear {
+            // Same year: "Jul 7 - Jan 4, 2025"
+            formatter.dateFormat = "MMM d"
+            return "\(formatter.string(from: startWeekMonday)) - \(formatter.string(from: currentWeekSunday)), \(endYear)"
+        } else {
+            // Cross-year: "Jul 7, 2024 - Jan 4, 2025"
+            formatter.dateFormat = "MMM d, yyyy"
+            return "\(formatter.string(from: startWeekMonday)) - \(formatter.string(from: currentWeekSunday))"
+        }
     }
     
     @ViewBuilder
@@ -577,29 +557,39 @@ struct WeeklySleepChart: View {
     // Use ALL chartData (like MetricDetailView) - includes empty weeks for proper X-axis and scrolling
     private var sleepChart: some View {
         let visibleDomainLength: TimeInterval = 26 * 7 * 24 * 60 * 60 // 26 weeks in seconds
-        
-        return Chart(chartData) { weekData in
-            // Render BarMark for all weeks to ensure X-axis labels appear
-            // Only show actual bars when data exists
-            if weekData.week != nil {
-                BarMark(
-                    x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
-                    // yStart must be < yEnd: bedtime (300 min, 11 PM) < waketime (780 min, 7 AM)
-                    yStart: .value("Bedtime", weekData.chartBedtime),     // Earlier time (11 PM)
-                    yEnd: .value("Waketime", weekData.chartWaketime),     // Later time (7 AM)
-                    width: .ratio(0.6)
-                )
-                .foregroundStyle(getBarColor(for: weekData))
-                .cornerRadius(4)
-                                    } else {
-                // Render invisible bar for empty weeks to maintain X-axis structure
-                BarMark(
-                    x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
-                    yStart: .value("Bedtime", weekData.chartBedtime),     // Earlier
-                    yEnd: .value("Waketime", weekData.chartWaketime),     // Later
-                    width: .ratio(0.6)
-                )
-                .foregroundStyle(Color.clear)
+
+        return Chart {
+            // Selection indicator line (behind all bars - Apple Health style)
+            if let selectedWeek = selectedWeek {
+                RuleMark(x: .value("Selected", selectedWeek.weekStartDate, unit: .weekOfYear))
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                    .foregroundStyle(Color.secondary)
+                    .zIndex(-1) // Ensure line renders behind bars
+            }
+
+            ForEach(chartData) { weekData in
+                // Render BarMark for all weeks to ensure X-axis labels appear
+                // Only show actual bars when data exists
+                if weekData.week != nil {
+                    BarMark(
+                        x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
+                        // yStart must be < yEnd: bedtime (300 min, 11 PM) < waketime (780 min, 7 AM)
+                        yStart: .value("Bedtime", weekData.chartBedtime),     // Earlier time (11 PM)
+                        yEnd: .value("Waketime", weekData.chartWaketime),     // Later time (7 AM)
+                        width: .ratio(0.6)
+                    )
+                    .foregroundStyle(getBarColor(for: weekData))
+                    .cornerRadius(4)
+                } else {
+                    // Render invisible bar for empty weeks to maintain X-axis structure
+                    BarMark(
+                        x: .value("Week", weekData.weekStartDate, unit: .weekOfYear),
+                        yStart: .value("Bedtime", weekData.chartBedtime),     // Earlier
+                        yEnd: .value("Waketime", weekData.chartWaketime),     // Later
+                        width: .ratio(0.6)
+                    )
+                    .foregroundStyle(Color.clear)
+                }
             }
         }
         .frame(height: chartHeight)
@@ -1012,7 +1002,7 @@ struct MonthlySleepChart: View {
     private func formatMonthlyDateRange() -> String {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        
+
         // Calculate 12 months ago (first day of that month)
         guard let startMonth = calendar.date(byAdding: .month, value: -12, to: today) else {
             return ""
@@ -1022,7 +1012,7 @@ struct MonthlySleepChart: View {
         guard let startMonthFirstDay = calendar.date(from: startComponents) else {
             return ""
         }
-        
+
         // Calculate end of current month (last day)
         var endComponents = calendar.dateComponents([.year, .month], from: today)
         endComponents.day = 1
@@ -1030,11 +1020,24 @@ struct MonthlySleepChart: View {
               let currentMonthLastDay = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: currentMonthFirstDay) else {
             return ""
         }
-        
+
         let normalizedStart = normalizeToUTCMidnight(startMonthFirstDay)
         let normalizedEnd = normalizeToUTCMidnight(currentMonthLastDay)
+
+        // Check if range spans Jan-Dec of the same year
+        let startMonthComponent = calendar.component(.month, from: normalizedStart)
+        let endMonthComponent = calendar.component(.month, from: normalizedEnd)
+        let startYear = calendar.component(.year, from: normalizedStart)
+        let endYear = calendar.component(.year, from: normalizedEnd)
+
+        // If Jan-Dec of same year, show just the year
+        if startMonthComponent == 1 && endMonthComponent == 12 && startYear == endYear {
+            return "\(startYear)"
+        }
+
+        // Otherwise, show "Nov 2024-Nov 2025" format
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMM, yyyy"
+        formatter.dateFormat = "MMM yyyy"
         return "\(formatter.string(from: normalizedStart)) - \(formatter.string(from: normalizedEnd))"
     }
     
@@ -1111,7 +1114,16 @@ struct MonthlySleepChart: View {
                                         }
                                         .frame(width: monthWidth, height: chartHeight)
 
-                                        // Sleep bar (only if data exists)
+                                        // Selection indicator: single center line (Apple Health style) - drawn before bar to render behind it
+                                        if let month = monthGroup.month, selectedMonth?.id == month.id {
+                                            Rectangle()
+                                                .fill(Color.secondary)
+                                                .frame(width: 2)
+                                                .frame(height: chartHeight)
+                                                .offset(x: barXOffset + barWidth / 2)
+                                        }
+
+                                        // Sleep bar (only if data exists) - drawn after selection line to render in front
                                         if let month = monthGroup.month {
                                             Canvas { context, size in
                                                 drawMonthlyBar(
@@ -1125,12 +1137,6 @@ struct MonthlySleepChart: View {
                                                 )
                                             }
                                             .frame(width: monthWidth, height: chartHeight)
-                                        }
-
-                                        // Selection indicator
-                                        if let month = monthGroup.month, selectedMonth?.id == month.id {
-                                            Rectangle().fill(Color.gray.opacity(0.5)).frame(width: 1).frame(height: chartHeight).offset(x: barXOffset)
-                                            Rectangle().fill(Color.gray.opacity(0.5)).frame(width: 1).frame(height: chartHeight).offset(x: barXOffset + barWidth)
                                         }
                                     }
                                     .frame(width: monthWidth, height: chartHeight)

@@ -1,15 +1,14 @@
 //
-//  BodyWeightView.swift
+//  GripStrengthView.swift
 //  WellPath
 //
-//  Full detail view for Body Weight biometric
-//  Uses BiometricLineChart for trend visualization with unit toggle
+//  Full detail view for Grip Strength biometric
 //  Loads title, subtitle, and unit from database
 //
 
 import SwiftUI
 
-struct BodyWeightView: View {
+struct GripStrengthView: View {
     let color: Color
 
     @State private var showAboutModal = false
@@ -17,21 +16,20 @@ struct BodyWeightView: View {
     @State private var showAddEntry = false
     @State private var metadata: ViewMetadata?
 
-    private let metricId = "DISP_BODYWEIGHT"
+    private let metricId = "DISP_GRIP_STRENGTH"
 
     // Computed from metadata with fallbacks
-    private var metricName: String { metadata?.title ?? "Body Weight" }
+    private var metricName: String { metadata?.title ?? "Grip Strength" }
     private var metricNameLong: String? { metadata?.subtitle }
     private var unitDisplay: String { metadata?.unit ?? "kg" }
 
-    /// DisplayMetric for the BiometricLineChart
     private var displayMetric: DisplayMetric {
         DisplayMetric(
             id: metricId,
             metricId: metricId,
             metricName: metricName,
-            description: metricNameLong ?? "Body weight tracking",
-            pillar: metadata?.pillar,
+            description: metricNameLong ?? "Hand grip strength measurement",
+            pillar: metadata?.pillar ?? "Core Care",
             chartTypeId: "trend_line",
             isActive: true,
             aboutContent: nil,
@@ -41,7 +39,7 @@ struct BodyWeightView: View {
     }
 
     var body: some View {
-        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal, subtitle: metricNameLong)
+        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal)
             .metricScreenBackground(color: color)
             .navigationTitle(metricName)
             .navigationBarTitleDisplayMode(.large)
@@ -65,11 +63,16 @@ struct BodyWeightView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showDataManagement) {
-                BodyWeightDataManagementView(color: color)
-            }
             .sheet(isPresented: $showAddEntry) {
-                BodyWeightEntryView()
+                GripStrengthEntryView()
+            }
+            .sheet(isPresented: $showDataManagement) {
+                SimpleBiometricDataManagementView(
+                    title: metricName,
+                    biometricName: BiometricDisplayNames.displayName(for: metricId),
+                    unit: unitDisplay,
+                    color: color
+                )
             }
             .sheet(isPresented: $showAboutModal) {
                 MetricEducationModal(
@@ -86,7 +89,5 @@ struct BodyWeightView: View {
 }
 
 #Preview {
-    NavigationStack {
-        BodyWeightView(color: .cyan)
-    }
+    NavigationStack { GripStrengthView(color: .orange) }
 }

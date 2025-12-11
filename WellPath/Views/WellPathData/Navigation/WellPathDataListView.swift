@@ -1176,7 +1176,7 @@ struct CategoryCardsListView: View {
             ViewCardsListView(category: category, sectionColor: section.color)
 
         // Biometrics categories - show cards for subcategories
-        case "CAT_BIOMETRICS_BODY_COMP", "CAT_BIOMETRICS_CARDIO", "CAT_BIOMETRICS_STRENGTH", "CAT_FITNESS_METRICS":
+        case "CAT_BIOMETRICS_BODY_COMP", "CAT_BIOMETRICS_VITALS", "CAT_BIOMETRICS_STRENGTH", "CAT_FITNESS_METRICS":
             BiometricCategoryScreen(
                 category: BiometricCategory(rawValue: category.categoryId) ?? .bodyComposition,
                 pillar: pillar,
@@ -1330,6 +1330,38 @@ struct DatabaseDrivenCard: View {
         return false
     }
 
+    /// Check if this is a biomarker view (uses biomarker_readings, not aggregations)
+    var isBiomarker: Bool {
+        // Check viewConfig if available
+        if let config = viewConfig {
+            // Biomarkers have pillar = "Biomarker" or are in biomarker categories
+            if config.pillar == "Biomarker" {
+                return true
+            }
+            // Check category for biomarker categories
+            if let categoryId = config.categoryId, categoryId.hasPrefix("CAT_BIOMARKER") {
+                return true
+            }
+            // Check view_id pattern for biomarkers (DISP_BIO_*)
+            if config.viewId.hasPrefix("DISP_BIO_") {
+                return true
+            }
+        }
+        // Fallback: check the card itself
+        // Card's categoryId may indicate biomarker
+        if let categoryId = card.categoryId, categoryId.hasPrefix("CAT_BIOMARKER") {
+            return true
+        }
+        // Card's view_id or card_id may indicate biomarker (DISP_BIO_* or CARD_BIO_*)
+        if let viewId = card.viewId, viewId.hasPrefix("DISP_BIO_") {
+            return true
+        }
+        if card.cardId.hasPrefix("CARD_BIO_") {
+            return true
+        }
+        return false
+    }
+
     var body: some View {
         // Check if CardRegistry has a custom card for this view_id
         // This ensures category views use the same cards as Favorites
@@ -1339,6 +1371,15 @@ struct DatabaseDrivenCard: View {
                 color: color,
                 pillar: viewConfig?.pillar ?? "",
                 displayName: card.cardName
+            )
+        } else if isBiomarker {
+            // Biomarkers use CardRegistry which routes to BiomarkerFavoriteCard
+            CardRegistry.card(
+                for: card.viewId ?? card.cardId,
+                color: color,
+                pillar: viewConfig?.pillar ?? "Biomarker",
+                displayName: card.cardName,
+                sectionId: "NAV_BIOMARKERS"
             )
         } else {
             // Fallback to generic database-driven rendering
@@ -1499,7 +1540,7 @@ struct ViewRouter {
         case "DISP_HIP_CIRCUMFERENCE":
             HipCircumferenceView(color: color)
         case "DISP_WAIST_HIP":
-            WaistHipRatioView(color: color)
+            WaistHipView(color: color)
         case "DISP_ASMI":
             ASMIView(color: color)
         case "DISP_BLOOD_PRESSURE", "DISP_SYSTOLIC_BP":
