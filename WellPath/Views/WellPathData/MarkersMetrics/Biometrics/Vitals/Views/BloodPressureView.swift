@@ -4,6 +4,7 @@
 //
 //  Full detail view for Blood Pressure biometric
 //  Shows systolic/diastolic values, classification, trend chart, and educational content
+//  Loads title, subtitle, and unit from database
 //
 
 import SwiftUI
@@ -15,50 +16,63 @@ struct BloodPressureView: View {
     @State private var showAboutModal = false
     @State private var showAddEntry = false
     @State private var showDataManagement = false
+    @State private var metadata: ViewMetadata?
 
     private let metricId = "DISP_BLOOD_PRESSURE"
-    private let metricName = "Blood Pressure"
     private let icon = "heart.fill"
+
+    // Computed from metadata with fallbacks
+    private var metricName: String { metadata?.title ?? "Blood Pressure" }
+    private var metricNameLong: String? { metadata?.subtitle }
+    private var unitDisplay: String { metadata?.unit ?? "mmHg" }
 
     var body: some View {
         mainContentView
             .metricScreenBackground(color: color)
-        .navigationTitle("Blood Pressure")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    showDataManagement = true
-                } label: {
-                    Image(systemName: "list.bullet")
+            .navigationTitle(metricName)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showDataManagement = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    FavoriteButton(
+                        itemType: .biometric,
+                        itemId: metricId,
+                        displayName: metricName,
+                        pillar: "Biometrics",
+                        cardId: metricId,
+                        sectionId: "NAV_BIOMETRICS"
+                    )
+                    Button {
+                        showAddEntry = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
-
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showAddEntry = true
-                } label: {
-                    Image(systemName: "plus")
-                }
+            .sheet(isPresented: $showAddEntry) {
+                BloodPressureEntryView()
             }
-        }
-        .sheet(isPresented: $showAddEntry) {
-            BloodPressureEntryView()
-        }
-        .sheet(isPresented: $showDataManagement) {
-            BloodPressureDataManagementView(color: color)
-        }
-        .sheet(isPresented: $showAboutModal) {
-            MetricEducationModal(
-                viewId: metricId,
-                metricName: metricName,
-                color: color,
-                isPresented: $showAboutModal
-            )
-        }
-        .task {
-            await dataLoader.loadLatestReading()
-        }
+            .sheet(isPresented: $showDataManagement) {
+                BloodPressureDataManagementView(color: color)
+            }
+            .sheet(isPresented: $showAboutModal) {
+                MetricEducationModal(
+                    viewId: metricId,
+                    metricName: metricName,
+                    color: color,
+                    isPresented: $showAboutModal
+                )
+            }
+            .task {
+                await dataLoader.loadLatestReading()
+                metadata = await ViewMetadataService.shared.loadMetadata(for: metricId)
+            }
     }
 
     private var mainContentView: some View {
@@ -89,7 +103,7 @@ struct BloodPressureView: View {
                             Text("\(Int(systolic))/\(Int(diastolic))")
                                 .font(.system(size: 44, weight: .bold))
                                 .foregroundColor(.primary)
-                            Text("mmHg")
+                            Text(unitDisplay)
                                 .font(.title3)
                                 .foregroundColor(.secondary)
                         }

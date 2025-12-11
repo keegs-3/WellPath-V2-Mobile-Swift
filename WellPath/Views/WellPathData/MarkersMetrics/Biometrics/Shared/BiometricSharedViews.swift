@@ -571,17 +571,25 @@ struct SimpleBiometricDataManagementView: View {
     @ViewBuilder
     private func entryRow(entry: SimpleBiometricEntry) -> some View {
         if editMode == .inactive {
-            SimpleBiometricEntryRow(entry: entry, unit: viewModel.displayUnit)
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    if entry.canDelete {
-                        Button(role: .destructive) {
-                            selectedEntries = [entry.id]
-                            showingDeleteAlert = true
-                        } label: {
-                            Image(systemName: "trash")
-                        }
+            NavigationLink(destination: SimpleBiometricEntryDetailView(
+                entry: entry,
+                title: title,
+                unit: viewModel.displayUnit,
+                color: color,
+                viewModel: viewModel
+            )) {
+                SimpleBiometricEntryRow(entry: entry, unit: viewModel.displayUnit)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if entry.canDelete {
+                    Button(role: .destructive) {
+                        selectedEntries = [entry.id]
+                        showingDeleteAlert = true
+                    } label: {
+                        Image(systemName: "trash")
                     }
                 }
+            }
         } else {
             Button(action: {
                 if entry.canDelete {
@@ -632,5 +640,137 @@ struct SimpleBiometricDataManagementView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Biometric Entry Detail View
+
+struct SimpleBiometricEntryDetailView: View {
+    let entry: SimpleBiometricEntry
+    let title: String
+    let unit: String
+    let color: Color
+    @ObservedObject var viewModel: SimpleBiometricDataViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingDeleteAlert = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Entry details card
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("\(title) Details")
+                        .font(.headline)
+
+                    BiometricDetailRow(label: "Value", value: formatValue(entry.value) + " " + formatUnit(entry.unit))
+                    BiometricDetailRow(label: "Recorded", value: formatDateTime(entry.recordedAt))
+                    BiometricDetailRow(label: "Source", value: formatSource(entry.source))
+                    BiometricDetailRow(label: "Added to WellPath", value: formatDateTime(entry.createdAt))
+                    BiometricDetailRow(label: "Entry ID", value: entry.id.uuidString)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .cornerRadius(10)
+
+                // Delete button
+                if entry.canDelete {
+                    Button(action: {
+                        showingDeleteAlert = true
+                    }) {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Entry")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .foregroundColor(.red)
+                        .cornerRadius(10)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle("Entry Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Delete Entry?", isPresented: $showingDeleteAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task {
+                    await deleteEntry()
+                }
+            }
+        } message: {
+            Text("This cannot be undone.")
+        }
+    }
+
+    private func deleteEntry() async {
+        await viewModel.deleteEntries([entry])
+        dismiss()
+    }
+
+    private func formatValue(_ value: Double) -> String {
+        if value >= 100 {
+            return String(format: "%.0f", value)
+        } else if value >= 10 {
+            return String(format: "%.1f", value)
+        } else {
+            return String(format: "%.2f", value)
+        }
+    }
+
+    private func formatUnit(_ rawUnit: String) -> String {
+        switch rawUnit.lowercased() {
+        case "pound", "pounds", "lb", "lbs":
+            return "lb"
+        case "kilogram", "kilograms", "kg":
+            return "kg"
+        case "inch", "inches", "in":
+            return "in"
+        case "centimeter", "centimeters", "cm":
+            return "cm"
+        default:
+            return rawUnit
+        }
+    }
+
+    private func formatDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func formatSource(_ source: String) -> String {
+        switch source.lowercased() {
+        case "healthkit":
+            return "HealthKit"
+        case "wellpath", "wellpath_input":
+            return "WellPath"
+        default:
+            return source.capitalized
+        }
+    }
+}
+
+// MARK: - Helper Views
+
+private struct BiometricDetailRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.body)
+        }
     }
 }

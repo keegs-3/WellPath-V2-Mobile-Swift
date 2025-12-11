@@ -760,20 +760,21 @@ class LineChartScrollManager: ObservableObject {
             }
 
             struct SampleReading: Codable {
-                let quantityValue: Double
-                let quantityUnit: String?
+                let canonicalValue: Double
+                let canonicalUnit: String?
                 let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case quantityValue = "quantity_value"
-                    case quantityUnit = "quantity_unit"
+                    case canonicalValue = "canonical_value"
+                    case canonicalUnit = "canonical_unit"
                     case startTime = "start_time"
                 }
             }
 
+            // Use canonical values for chart display (always in standard units like kg, cm)
             let results: [SampleReading] = try await supabase
                 .from("patient_quantity_samples")
-                .select("quantity_value, quantity_unit, start_time")
+                .select("canonical_value, canonical_unit, start_time")
                 .eq("patient_id", value: patientId)
                 .eq("quantity_type", value: quantityType)
                 .eq("is_primary", value: true)  // Only use primary samples for analysis
@@ -783,14 +784,14 @@ class LineChartScrollManager: ObservableObject {
                 .execute()
                 .value
 
-            // Set the unit from the first result
-            if let first = results.first, let unit = first.quantityUnit {
+            // Set the unit from the first result (canonical unit)
+            if let first = results.first, let unit = first.canonicalUnit {
                 await MainActor.run {
                     self.actualUnit = unit
                 }
             }
 
-            return results.map { ChartDataPoint(date: $0.startTime, value: $0.quantityValue, label: "") }
+            return results.map { ChartDataPoint(date: $0.startTime, value: $0.canonicalValue, label: "") }
 
         } catch {
             print("❌ Error fetching line chart data: \(error)")
@@ -808,20 +809,21 @@ class LineChartScrollManager: ObservableObject {
     ) async -> [ChartDataPoint] {
         do {
             struct SampleReading: Codable {
-                let quantityValue: Double
-                let quantityUnit: String?
+                let canonicalValue: Double
+                let canonicalUnit: String?
                 let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case quantityValue = "quantity_value"
-                    case quantityUnit = "quantity_unit"
+                    case canonicalValue = "canonical_value"
+                    case canonicalUnit = "canonical_unit"
                     case startTime = "start_time"
                 }
             }
 
+            // Use canonical values for chart display (always in standard units)
             let results: [SampleReading] = try await supabase
                 .from("patient_quantity_samples")
-                .select("quantity_value, quantity_unit, start_time")
+                .select("canonical_value, canonical_unit, start_time")
                 .eq("patient_id", value: patientId)
                 .eq("quantity_type", value: quantityType)
                 .eq("is_primary", value: true)  // Only use primary samples for analysis
@@ -831,14 +833,14 @@ class LineChartScrollManager: ObservableObject {
                 .execute()
                 .value
 
-            // Set the unit from the first result
-            if let first = results.first, let unit = first.quantityUnit {
+            // Set the unit from the first result (canonical unit)
+            if let first = results.first, let unit = first.canonicalUnit {
                 await MainActor.run {
                     self.actualUnit = BiometricValueLoader.formatUnitForDisplay(unit)
                 }
             }
 
-            return results.map { ChartDataPoint(date: $0.startTime, value: $0.quantityValue, label: "") }
+            return results.map { ChartDataPoint(date: $0.startTime, value: $0.canonicalValue, label: "") }
 
         } catch {
             print("❌ Error fetching biometric data from patient_samples: \(error)")

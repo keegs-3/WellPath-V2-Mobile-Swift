@@ -1,53 +1,37 @@
 //
-//  BodyWeightView.swift
+//  HeartRateView.swift
 //  WellPath
 //
-//  Full detail view for Body Weight biometric
-//  Uses BiometricLineChart for trend visualization with unit toggle
+//  Full detail view for Heart Rate biometric
+//  Shows time series heart rate with min/max ranges
 //  Loads title, subtitle, and unit from database
 //
 
 import SwiftUI
 
-struct BodyWeightView: View {
+struct HeartRateView: View {
     let color: Color
 
     @State private var showAboutModal = false
     @State private var showDataManagement = false
-    @State private var showAddEntry = false
     @State private var metadata: ViewMetadata?
 
-    private let metricId = "DISP_BODYWEIGHT"
+    private let metricId = "DISP_HEART_RATE"
 
     // Computed from metadata with fallbacks
-    private var metricName: String { metadata?.title ?? "Body Weight" }
+    private var metricName: String { metadata?.title ?? "Heart Rate" }
     private var metricNameLong: String? { metadata?.subtitle }
-    private var unitDisplay: String { metadata?.unit ?? "kg" }
-
-    /// DisplayMetric for the BiometricLineChart
-    private var displayMetric: DisplayMetric {
-        DisplayMetric(
-            id: metricId,
-            metricId: metricId,
-            metricName: metricName,
-            description: metricNameLong ?? "Body weight tracking",
-            pillar: metadata?.pillar,
-            chartTypeId: "trend_line",
-            isActive: true,
-            aboutContent: nil,
-            longevityImpact: nil,
-            quickTips: nil
-        )
-    }
 
     var body: some View {
-        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal, subtitle: metricNameLong)
+        HeartRateRangeChart(color: color, showAbout: $showAboutModal)
             .metricScreenBackground(color: color)
             .navigationTitle(metricName)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showDataManagement = true } label: {
+                    Button {
+                        showDataManagement = true
+                    } label: {
                         Image(systemName: "list.bullet")
                     }
                 }
@@ -60,16 +44,10 @@ struct BodyWeightView: View {
                         cardId: metricId,
                         sectionId: "NAV_BIOMETRICS"
                     )
-                    Button { showAddEntry = true } label: {
-                        Image(systemName: "plus")
-                    }
                 }
             }
             .sheet(isPresented: $showDataManagement) {
-                BodyWeightDataManagementView(color: color)
-            }
-            .sheet(isPresented: $showAddEntry) {
-                BodyWeightEntryView()
+                HeartRateDataManagementView(color: color)
             }
             .sheet(isPresented: $showAboutModal) {
                 MetricEducationModal(
@@ -87,6 +65,6 @@ struct BodyWeightView: View {
 
 #Preview {
     NavigationStack {
-        BodyWeightView(color: .cyan)
+        HeartRateView(color: .red)
     }
 }

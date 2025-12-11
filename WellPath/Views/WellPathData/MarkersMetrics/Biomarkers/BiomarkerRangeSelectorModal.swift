@@ -21,6 +21,9 @@ struct BiomarkerRangeSelectorModal: View {
     @State private var selectedDate: Date?
     @State private var selectedRangeFilter: RangeFilter? = nil
     @State private var scrollPosition: Date = Date()
+    @State private var cachedDataMin: Double?
+    @State private var cachedDataMax: Double?
+    @State private var isFilterChanging: Bool = false
 
     // Scroll manager for infinite scroll
     @StateObject private var scrollManager: BiomarkerChartScrollManager
@@ -107,6 +110,20 @@ struct BiomarkerRangeSelectorModal: View {
             }
         }
         return boundaries.sorted { $0.value < $1.value }
+    }
+
+    /// All unique boundary values from all ranges (for stable chart structure)
+    private func getAllBoundaryValues() -> [Double] {
+        var allBoundaries: Set<Double> = []
+        for range in rangeInfo.ranges {
+            if let low = range.rangeLow, low > 0 {
+                allBoundaries.insert(low)
+            }
+            if let high = range.rangeHigh {
+                allBoundaries.insert(high)
+            }
+        }
+        return Array(allBoundaries).sorted()
     }
 
     /// Get the start and end dates for the selected period
@@ -207,6 +224,18 @@ struct BiomarkerRangeSelectorModal: View {
         .preferredColorScheme(.dark)
         .onAppear {
             scrollPosition = calculateScrollPosition()
+            // Cache data bounds so they're available even during state changes
+            updateCachedDataBounds()
+        }
+        .onChange(of: scrollManager.isLoading) { _, isLoading in
+            // Update cached bounds when data finishes loading
+            if !isLoading {
+                updateCachedDataBounds()
+                // Recalculate scroll position when data first loads
+                if !scrollManager.dataPointsWithValues.isEmpty {
+                    scrollPosition = calculateScrollPosition()
+                }
+            }
         }
     }
 
@@ -293,7 +322,7 @@ struct BiomarkerRangeSelectorModal: View {
         case .month: return .day
         case .sixMonth: return .weekOfYear
         case .year: return .month
-        case .fiveYear: return .month
+        case .fiveYear: return .quarter  // Quarterly buckets for 5Y view
         }
     }
 
@@ -312,6 +341,14 @@ struct BiomarkerRangeSelectorModal: View {
         let xStart = calendar.date(byAdding: .month, value: -1, to: oldestData)!
         let xEnd = calendar.date(byAdding: .month, value: 1, to: newestData)!
 
+        // Apple Health style: only draw lines if multiple points are visible in the current scroll window
+        let visibleDuration = getVisibleDomainTimeInterval()
+        let windowEnd = scrollPosition.addingTimeInterval(visibleDuration)
+        let visiblePointsCount = pointsWithData.filter { point in
+            point.date >= scrollPosition && point.date <= windowEnd
+        }.count
+        let shouldDrawLines = visiblePointsCount > 1
+
         Chart {
             // Invisible placeholder for all points to establish x-axis domain
             // Use unit: parameter to match BiometricLineChart pattern
@@ -323,12 +360,19 @@ struct BiomarkerRangeSelectorModal: View {
                 .opacity(0)
             }
 
-            // Range zone shading - only when a filter is selected
-            // Note: RectangleMark doesn't use unit: - it uses raw dates for full-width shading
-            ForEach(matchingRanges, id: \.id) { range in
+            // Range zone shading - ALWAYS render all ranges to prevent chart relayout
+            // Control visibility via opacity (0 when not matching filter, 0.15 when matching)
+            ForEach(rangeInfo.ranges, id: \.id) { range in
                 let rangeLow = range.rangeLow ?? rangeInfo.realisticLow ?? yDomain.lowerBound
                 let rangeHigh = range.rangeHigh ?? rangeInfo.realisticHigh ?? yDomain.upperBound
-                let filterColor = selectedRangeFilter?.color ?? .clear
+
+                // Determine if this range matches the selected filter
+                let isMatchingFilter: Bool = {
+                    guard let filter = selectedRangeFilter else { return false }
+                    return matchesFilter(range: range, filter: filter)
+                }()
+                let filterColor = selectedRangeFilter?.color ?? .green
+                let shadeOpacity: Double = isMatchingFilter ? 0.15 : 0
 
                 RectangleMark(
                     xStart: .value("Start", xStart),
@@ -336,13 +380,17 @@ struct BiomarkerRangeSelectorModal: View {
                     yStart: .value("Low", rangeLow),
                     yEnd: .value("High", rangeHigh)
                 )
-                .foregroundStyle(filterColor.opacity(0.15))
+                .foregroundStyle(filterColor.opacity(shadeOpacity))
             }
 
-            // Range boundary lines (dotted) - only for selected filter
-            ForEach(currentRangeBoundaries, id: \.value) { boundary in
-                RuleMark(y: .value("Boundary", boundary.value))
-                    .foregroundStyle(boundary.color.opacity(0.6))
+            // Range boundary lines (dotted) - ALWAYS render all possible boundaries
+            // Control visibility via opacity
+            ForEach(getAllBoundaryValues(), id: \.self) { boundaryValue in
+                let isVisibleBoundary = currentRangeBoundaries.contains(where: { abs($0.value - boundaryValue) < 0.01 })
+                let boundaryColor = currentRangeBoundaries.first(where: { abs($0.value - boundaryValue) < 0.01 })?.color ?? .gray
+
+                RuleMark(y: .value("Boundary", boundaryValue))
+                    .foregroundStyle(boundaryColor.opacity(isVisibleBoundary ? 0.6 : 0))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
             }
 
@@ -355,17 +403,27 @@ struct BiomarkerRangeSelectorModal: View {
                 let pointColor = pointFilter.color
                 let isSelected = selectedDate != nil && Calendar.current.isDate(point.date, equalTo: selectedDate!, toGranularity: getDateGranularity())
 
-                LineMark(
-                    x: .value("Date", point.date, unit: calComponent),
-                    y: .value("Value", point.value)
-                )
-                .foregroundStyle(sectionColor.opacity(lineOpacity))
-                .interpolationMethod(.catmullRom)
-                .lineStyle(StrokeStyle(lineWidth: 2))
+                // Only draw lines if multiple points visible in window
+                if shouldDrawLines {
+                    LineMark(
+                        x: .value("Date", point.date, unit: calComponent),
+                        y: .value("Value", point.value)
+                    )
+                    .foregroundStyle(sectionColor.opacity(lineOpacity))
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                }
 
+                // Stroked circle points (Apple Health style) - always show
                 PointMark(x: .value("Date", point.date, unit: calComponent), y: .value("Value", point.value))
                     .foregroundStyle(pointColor.opacity(isSelected ? 1.0 : pointOpacity))
-                    .symbolSize(isSelected ? 180 : 60)
+                    .symbolSize(isSelected ? 180 : 80)
+                    .symbol {
+                        Circle()
+                            .strokeBorder(pointColor.opacity(isSelected ? 1.0 : pointOpacity), lineWidth: isSelected ? 3 : 2)
+                            .background(Circle().fill(Color(uiColor: .systemBackground)))
+                            .frame(width: isSelected ? 14 : 10, height: isSelected ? 14 : 10)
+                    }
             }
         }
         // Don't use .id(selectedPeriod) - it forces full chart recreation which breaks scroll position
@@ -391,6 +449,8 @@ struct BiomarkerRangeSelectorModal: View {
                 }
         }
         .onChange(of: scrollPosition) { _, newPosition in
+            // Ignore scroll changes during filter toggle
+            guard !isFilterChanging else { return }
             scrollManager.handleScroll(position: newPosition)
         }
         .chartXAxis {
@@ -401,17 +461,31 @@ struct BiomarkerRangeSelectorModal: View {
             }
         }
         .chartYAxis {
-            // Always use automatic Y-axis marks to prevent layout shifts when filter changes
-            // Boundary values are shown via RuleMarks instead
-            AxisMarks(values: .automatic(desiredCount: 5)) { value in
-                if let yValue = value.as(Double.self) {
-                    AxisValueLabel {
-                        Text(formatAxisValue(yValue))
-                            .font(.caption2)
+            // Y-axis - when filter selected, show ONLY range boundaries (replaces normal axis)
+            if let boundaryValues = getRangeBoundaryValues(), !boundaryValues.isEmpty {
+                // Use explicit boundary values only when filter is selected
+                AxisMarks(values: boundaryValues) { value in
+                    if let yValue = value.as(Double.self) {
+                        AxisValueLabel {
+                            Text(getYAxisLabel(for: yValue))
+                                .font(.caption2)
+                        }
                     }
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                        .foregroundStyle(Color.secondary.opacity(0.2))
                 }
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
-                    .foregroundStyle(Color.secondary.opacity(0.2))
+            } else {
+                // No filter - use automatic values
+                AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                    if let yValue = value.as(Double.self) {
+                        AxisValueLabel {
+                            Text(formatAxisValue(yValue))
+                                .font(.caption2)
+                        }
+                    }
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                        .foregroundStyle(Color.secondary.opacity(0.2))
+                }
             }
         }
         .frame(height: 200)
@@ -462,11 +536,25 @@ struct BiomarkerRangeSelectorModal: View {
                 let isSelected = selectedRangeFilter == filter
 
                 Button {
-                    // Toggle filter
-                    if selectedRangeFilter == filter {
-                        selectedRangeFilter = nil
-                    } else {
-                        selectedRangeFilter = filter
+                    // Save scroll position before filter change
+                    let savedPosition = scrollPosition
+                    isFilterChanging = true
+
+                    // Toggle filter without animation to prevent scroll position drift
+                    withTransaction(Transaction(animation: nil)) {
+                        if selectedRangeFilter == filter {
+                            selectedRangeFilter = nil
+                        } else {
+                            selectedRangeFilter = filter
+                        }
+                    }
+
+                    // Force restore scroll position on next run loop
+                    DispatchQueue.main.async {
+                        withTransaction(Transaction(animation: nil)) {
+                            scrollPosition = savedPosition
+                        }
+                        isFilterChanging = false
                     }
                 } label: {
                     HStack {
@@ -542,40 +630,56 @@ struct BiomarkerRangeSelectorModal: View {
     }
 
     private func calculateScrollPosition() -> Date {
-        // Position the scroll so the most recent data appears on the right side
-        // Use calendar-based positioning (like BiometricLineChart) for consistent behavior
-        let now = Date()
+        // Position the scroll so the most recent DATA appears on the right side (Apple Health style)
+        // Get the most recent data point date, default to now if no data
+        let mostRecentDataDate = scrollManager.dataPointsWithValues.first?.date ?? Date()
 
-        // Use 90% offset so "now" appears near (but not at) the right edge
+        // Use 90% offset so most recent data appears near (but not at) the right edge
         let visibleDuration = scrollManager.numberOfBars
         let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
         return Calendar.current.date(
             byAdding: scrollManager.calendarComponent,
             value: -offsetFromEnd,
-            to: now
-        ) ?? now
+            to: mostRecentDataDate
+        ) ?? mostRecentDataDate
+    }
+
+    /// Update cached data bounds - call when data loads or changes
+    private func updateCachedDataBounds() {
+        let values = chartPointsWithData.map { $0.value }
+        if !values.isEmpty {
+            cachedDataMin = values.min()
+            cachedDataMax = values.max()
+        }
     }
 
     private func calculateYDomain() -> ClosedRange<Double> {
-        // ALWAYS include ALL patient data values - they must always be visible
-        let allDataValues = chartPointsWithData.map { $0.value }
-        let dataMin = allDataValues.min() ?? 0
-        let dataMax = allDataValues.max() ?? 100
+        // Use cached data bounds to ensure they're always available
+        let dataMin = cachedDataMin ?? chartPointsWithData.map { $0.value }.min()
+        let dataMax = cachedDataMax ?? chartPointsWithData.map { $0.value }.max()
 
-        // If a filter is selected, EXPAND Y-axis to also include that range's bounds
-        // This allows the range shading to be visible even if patient data is outside the range
+        // If a filter is selected, EXPAND Y-axis to include both data AND selected range bounds
         if let filter = selectedRangeFilter {
             let matchingRanges = rangeInfo.ranges.filter { matchesFilter(range: $0, filter: filter) }
             let filteredRangeLows = matchingRanges.compactMap { $0.rangeLow }
             let filteredRangeHighs = matchingRanges.compactMap { $0.rangeHigh }
 
-            // Get range bounds (with fallbacks)
-            let rangeMin = filteredRangeLows.min() ?? dataMin
-            let rangeMax = filteredRangeHighs.max() ?? dataMax
+            // Get range bounds
+            let rangeMin = filteredRangeLows.min() ?? 0
+            let rangeMax = filteredRangeHighs.max() ?? 100
 
-            // Y-domain must include BOTH patient data AND selected range bounds
-            let yMin = min(dataMin, rangeMin)
-            let yMax = max(dataMax, rangeMax)
+            let yMin: Double
+            let yMax: Double
+
+            if let dMin = dataMin, let dMax = dataMax {
+                // Have data - include both data and range bounds
+                yMin = min(dMin, rangeMin)
+                yMax = max(dMax, rangeMax)
+            } else {
+                // No data - just use range bounds
+                yMin = rangeMin
+                yMax = rangeMax
+            }
 
             let range = yMax - yMin
             let buffer = max(range * 0.1, 2.0)
@@ -583,12 +687,12 @@ struct BiomarkerRangeSelectorModal: View {
         }
 
         // Default: base Y-axis on actual patient data only
-        guard !allDataValues.isEmpty else { return 0...100 }
+        guard let dMin = dataMin, let dMax = dataMax else { return 0...100 }
 
-        let range = dataMax - dataMin
-        let buffer = max(range * 0.15, dataMax * 0.1, 5.0)
+        let range = dMax - dMin
+        let buffer = max(range * 0.15, dMax * 0.1, 5.0)
 
-        return max(0, dataMin - buffer)...(dataMax + buffer)
+        return max(0, dMin - buffer)...(dMax + buffer)
     }
 
     /// Format axis values
@@ -655,14 +759,15 @@ struct BiomarkerRangeSelectorModal: View {
         }
     }
 
-    /// Get visible data points (points with actual values in the visible window)
+    /// Get data points within the visible scroll window (for average calculation)
+    /// Average updates as user scrolls the chart
     private func getVisibleDataPoints() -> [BiomarkerChartPoint] {
-        let calendar = Calendar.current
-        let visibleDuration = scrollManager.numberOfBars
-        let endDate = calendar.date(byAdding: scrollManager.calendarComponent, value: visibleDuration, to: scrollPosition) ?? scrollPosition
+        let visibleDuration = getVisibleDomainTimeInterval()
+        let windowEnd = scrollPosition.addingTimeInterval(visibleDuration)
 
+        // Return data points within the visible scroll window
         return chartPointsWithData.filter { point in
-            point.date >= scrollPosition && point.date <= endDate
+            point.date >= scrollPosition && point.date <= windowEnd
         }
     }
 
@@ -704,10 +809,22 @@ struct BiomarkerRangeSelectorModal: View {
             endFormatter.dateFormat = "MMM d, yyyy"
             let lastDay = calendar.date(byAdding: .day, value: -1, to: weekInterval.end) ?? weekInterval.end
             return "\(startFormatter.string(from: weekInterval.start)) - \(endFormatter.string(from: lastDay))"
-        case .year, .fiveYear:
+        case .year:
             // Show month name and year
             formatter.dateFormat = "MMMM yyyy"
             return formatter.string(from: date)
+        case .fiveYear:
+            // Show quarter range (e.g., "Oct - Dec 2025")
+            guard let quarterInterval = calendar.dateInterval(of: .quarter, for: date) else {
+                formatter.dateFormat = "MMMM yyyy"
+                return formatter.string(from: date)
+            }
+            let startFormatter = DateFormatter()
+            startFormatter.dateFormat = "MMM"
+            let endFormatter = DateFormatter()
+            endFormatter.dateFormat = "MMM yyyy"
+            let lastDay = calendar.date(byAdding: .day, value: -1, to: quarterInterval.end) ?? quarterInterval.end
+            return "\(startFormatter.string(from: quarterInterval.start)) - \(endFormatter.string(from: lastDay))"
         }
     }
 
@@ -715,6 +832,63 @@ struct BiomarkerRangeSelectorModal: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM d, yyyy"
         return formatter.string(from: date)
+    }
+
+    /// Get Y-axis boundary values - when filter selected, returns ONLY range boundaries
+    /// Returns nil when no filter is selected (use automatic axis values)
+    private func getRangeBoundaryValues() -> [Double]? {
+        guard let filter = selectedRangeFilter else { return nil }
+
+        // When filter selected, show ONLY the range boundaries
+        let matchingRanges = rangeInfo.ranges.filter { matchesFilter(range: $0, filter: filter) }
+        var boundaryValues: [Double] = []
+
+        for range in matchingRanges {
+            if let low = range.rangeLow {
+                boundaryValues.append(low)
+            }
+            if let high = range.rangeHigh {
+                boundaryValues.append(high)
+            }
+        }
+
+        // Return explicit boundary values only (sorted, unique)
+        let uniqueValues = Array(Set(boundaryValues)).sorted()
+        return uniqueValues.isEmpty ? nil : uniqueValues
+    }
+
+    /// Get Y-axis label for a value - show < or > for open-ended range boundaries
+    private func getYAxisLabel(for value: Double) -> String {
+        // Get all range boundaries sorted
+        let allBoundaries = getAllBoundaryValues()
+        guard !allBoundaries.isEmpty else {
+            return formatAxisValue(value)
+        }
+
+        let lowestBoundary = allBoundaries.first!
+        let highestBoundary = allBoundaries.last!
+
+        // Check if this is the lowest boundary - show "< X" (open-ended below)
+        if abs(value - lowestBoundary) < 0.5 {
+            // Check if any range has no meaningful lower bound (nil or 0) - indicates open-ended
+            let hasOpenLowRange = rangeInfo.ranges.contains { range in
+                range.rangeLow == nil || range.rangeLow == 0
+            }
+            if hasOpenLowRange {
+                return "< \(formatAxisValue(value))"
+            }
+        }
+
+        // Check if this is the highest boundary - show "> X" (open-ended above)
+        if abs(value - highestBoundary) < 0.5 {
+            // Check if any range has no upper bound - indicates open-ended
+            let hasOpenHighRange = rangeInfo.ranges.contains { $0.rangeHigh == nil }
+            if hasOpenHighRange {
+                return "> \(formatAxisValue(value))"
+            }
+        }
+
+        return formatAxisValue(value)
     }
 }
 

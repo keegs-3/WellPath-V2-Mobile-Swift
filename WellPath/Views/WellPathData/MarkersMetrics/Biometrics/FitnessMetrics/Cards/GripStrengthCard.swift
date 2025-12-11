@@ -60,7 +60,7 @@ struct GripStrengthMiniCard: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
-                Text("Hand grip strength")
+                Text("Grip strength")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)

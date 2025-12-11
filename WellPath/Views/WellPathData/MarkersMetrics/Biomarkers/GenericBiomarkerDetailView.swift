@@ -44,7 +44,7 @@ struct GenericBiomarkerDetailView: View {
             }
         }
         .metricScreenBackground(color: sectionColor)
-        .navigationTitle(biomarkerName)
+        .navigationTitle(biomarker?.name ?? biomarkerName)
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
@@ -179,8 +179,18 @@ struct GenericBiomarkerDetailView: View {
     // MARK: - Chart View
 
     private func chartView(data: BiomarkerDisplayData) -> some View {
-        ScrollView {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            // Subtitle (full name for acronyms like HDL, ALT, etc.) - outside ScrollView to appear in gradient
+            if let nameLong = data.nameLong {
+                Text(nameLong)
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+            }
+
+            ScrollView {
                 VStack(spacing: 0) {
                     // Period picker
                     Picker("Period", selection: $selectedPeriod) {
@@ -196,11 +206,8 @@ struct GenericBiomarkerDetailView: View {
                         // Only update scroll position if period actually changed
                         if lastPeriod != newPeriod {
                             scrollManager.manager?.updatePeriod(newPeriod)
-                            // Preserve scroll position if possible
-                            // Only reset if period is not 5y (which causes jump)
-                            if newPeriod != .fiveYear {
-                                scrollPosition = calculateScrollPosition()
-                            }
+                            // Always recalculate scroll position for correct date range display
+                            scrollPosition = calculateScrollPosition()
                             lastPeriod = newPeriod
                         }
                     }
@@ -257,24 +264,38 @@ struct GenericBiomarkerDetailView: View {
     // MARK: - Value Display
 
     private func valueDisplay(data: BiomarkerDisplayData) -> some View {
-        let pointsWithData = scrollManager.manager?.dataPointsWithValues ?? []
-        let visiblePoints = getVisibleDataPoints()
-        let hasVisibleData = !visiblePoints.isEmpty
+        let allSamples = scrollManager.manager?.samples ?? data.historicalValues
+        let samplesInWindow = getSamplesInVisibleWindow(from: allSamples)
+        let hasVisibleData = !samplesInWindow.isEmpty
 
         return VStack(alignment: .leading, spacing: 4) {
-            let selectedValue = selectedDate.flatMap { date in
-                pointsWithData.first { Calendar.current.isDate($0.date, equalTo: date, toGranularity: getDateGranularity()) }?.value
+            // When a bucket is selected, show the average for that bucket (week/month/quarter avg)
+            // When unselected, show the average of samples in the visible scroll window
+            let selectedBucketAverage: Double? = selectedDate.flatMap { date in
+                getBucketAverage(for: date, from: allSamples)
             }
 
-            // Show "Value" when selected, "AVG" when showing average, nothing special for NO DATA
-            Text(selectedDate != nil ? "Value" : (hasVisibleData ? "AVG" : ""))
+            // Determine if we should show "AVG" label
+            // - For W/M views: selecting shows actual daily value, not an average
+            // - For 6M/Y/5Y views: selecting shows bucket average (weekly/monthly/quarterly)
+            let isAveragingPeriod = selectedPeriod == .sixMonth || selectedPeriod == .year || selectedPeriod == .fiveYear
+            let showAvgLabel: Bool = {
+                if selectedDate != nil {
+                    // When selected, only show AVG for periods that average into buckets
+                    return isAveragingPeriod
+                }
+                // When unselected, show AVG if there's visible data
+                return hasVisibleData
+            }()
+
+            Text(showAvgLabel ? "AVG" : (hasVisibleData && selectedDate != nil ? "" : ""))
                 .font(.caption)
                 .foregroundColor(.secondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if let val = selectedValue {
-                    // Show selected point value
-                    Text(formatDisplayValue(val))
+                if let bucketAvg = selectedBucketAverage {
+                    // Show selected bucket average (weekly/monthly/yearly avg depending on view)
+                    Text(formatDisplayValue(bucketAvg))
                         .font(.system(size: 48, weight: .semibold))
                         .foregroundColor(sectionColor)
                         .lineLimit(1)
@@ -284,8 +305,8 @@ struct GenericBiomarkerDetailView: View {
                         .font(.title2)
                         .foregroundColor(.secondary)
                 } else if hasVisibleData {
-                    // Show average of visible data
-                    let values = visiblePoints.map { $0.value }
+                    // Show average of samples in visible scroll window
+                    let values = samplesInWindow.map { $0.value }
                     let avgValue = values.reduce(0, +) / Double(values.count)
 
                     Text(formatDisplayValue(avgValue))
@@ -331,8 +352,34 @@ struct GenericBiomarkerDetailView: View {
         case .month: return .day
         case .sixMonth: return .weekOfYear
         case .year: return .month
-        case .fiveYear: return .month
+        case .fiveYear: return .quarter  // Quarterly buckets for 5Y view
         }
+    }
+
+    /// Maximum gap between points to draw a connecting line (1 year in seconds)
+    private let maxLineGapSeconds: TimeInterval = 365 * 24 * 3600
+
+    /// Assign segment IDs to data points - points within 1 year of each other share a segment
+    /// Points in different segments won't be connected by lines
+    private func segmentedPoints(from points: [BiomarkerChartPoint]) -> [(point: BiomarkerChartPoint, segmentId: Int)] {
+        let sortedPoints = points.sorted { $0.date < $1.date }
+        guard !sortedPoints.isEmpty else { return [] }
+
+        var result: [(point: BiomarkerChartPoint, segmentId: Int)] = []
+        var currentSegment = 0
+
+        for (index, point) in sortedPoints.enumerated() {
+            if index > 0 {
+                let previousPoint = sortedPoints[index - 1]
+                let gap = point.date.timeIntervalSince(previousPoint.date)
+                if gap > maxLineGapSeconds {
+                    currentSegment += 1
+                }
+            }
+            result.append((point: point, segmentId: currentSegment))
+        }
+
+        return result
     }
 
     @ViewBuilder
@@ -341,10 +388,10 @@ struct GenericBiomarkerDetailView: View {
         let chartPoints = scrollManager.manager?.chartData ?? []
         let pointsWithData = chartPoints.filter { $0.hasData }
         let calComponent = chartCalendarComponent
+        let segmented = segmentedPoints(from: pointsWithData)
 
         Chart {
             // Invisible placeholder for all loaded points (establishes x-axis domain)
-            // Use unit: parameter to match BiometricLineChart pattern
             ForEach(chartPoints) { point in
                 PointMark(
                     x: .value("Date", point.date, unit: calComponent),
@@ -353,35 +400,31 @@ struct GenericBiomarkerDetailView: View {
                 .opacity(0)
             }
 
-            // Only show line/points for non-zero values
-            ForEach(pointsWithData) { point in
+            // Lines connecting points - segmented to break at gaps > 1 year
+            ForEach(segmented, id: \.point.id) { item in
                 LineMark(
-                    x: .value("Date", point.date, unit: calComponent),
-                    y: .value("Value", point.value)
+                    x: .value("Date", item.point.date, unit: calComponent),
+                    y: .value("Value", item.point.value),
+                    series: .value("Segment", item.segmentId)
                 )
                 .foregroundStyle(sectionColor)
                 .interpolationMethod(.catmullRom)
                 .lineStyle(StrokeStyle(lineWidth: 3))
+            }
 
-                // Point marks
-                if let selectedDate = selectedDate,
-                   Calendar.current.isDate(point.date, equalTo: selectedDate, toGranularity: getDateGranularity()) {
-                    // Selected point (larger with outline)
-                    PointMark(x: .value("Date", point.date, unit: calComponent), y: .value("Value", point.value))
-                        .foregroundStyle(sectionColor)
-                        .symbolSize(200)
-                        .symbol {
-                            Circle()
-                                .strokeBorder(sectionColor, lineWidth: 3)
-                                .background(Circle().fill(Color(uiColor: .systemBackground)))
-                                .frame(width: 16, height: 16)
-                        }
-                } else {
-                    // Regular point
-                    PointMark(x: .value("Date", point.date, unit: calComponent), y: .value("Value", point.value))
-                        .foregroundStyle(sectionColor)
-                        .symbolSize(80)
-                }
+            // Stroked circle points (Apple Health style) - always show
+            ForEach(pointsWithData) { point in
+                let isSelected = selectedDate != nil && Calendar.current.isDate(point.date, equalTo: selectedDate!, toGranularity: getDateGranularity())
+
+                PointMark(x: .value("Date", point.date, unit: calComponent), y: .value("Value", point.value))
+                    .foregroundStyle(sectionColor)
+                    .symbolSize(isSelected ? 200 : 100)
+                    .symbol {
+                        Circle()
+                            .strokeBorder(sectionColor, lineWidth: isSelected ? 3 : 2)
+                            .background(Circle().fill(Color(uiColor: .systemBackground)))
+                            .frame(width: isSelected ? 16 : 12, height: isSelected ? 16 : 12)
+                    }
             }
         }
         // Don't use .id(selectedPeriod) - it forces full chart recreation which breaks scroll/x-axis
@@ -644,16 +687,54 @@ struct GenericBiomarkerDetailView: View {
         }
     }
 
-    /// Get visible data points (points with actual values in the visible window)
-    private func getVisibleDataPoints() -> [BiomarkerChartPoint] {
-        guard let manager = scrollManager.manager else { return [] }
-        let calendar = Calendar.current
-        let visibleDuration = manager.numberOfBars
-        let endDate = calendar.date(byAdding: manager.calendarComponent, value: visibleDuration, to: scrollPosition) ?? scrollPosition
+    /// Get raw samples within the visible scroll window (for average calculation)
+    /// Average updates as user scrolls the chart
+    private func getSamplesInVisibleWindow(from samples: [BiomarkerSample]) -> [BiomarkerSample] {
+        let visibleDuration = getVisibleDomainTimeInterval()
+        let windowEnd = scrollPosition.addingTimeInterval(visibleDuration)
 
-        return manager.dataPointsWithValues.filter { point in
-            point.date >= scrollPosition && point.date <= endDate
+        // Return samples within the visible scroll window
+        return samples.filter { sample in
+            sample.sampleTime >= scrollPosition && sample.sampleTime <= windowEnd
         }
+    }
+
+    /// Get the average value for samples within a selected bucket
+    /// - 6M view: weekly average
+    /// - Y view: monthly average
+    /// - 5Y view: quarterly average
+    private func getBucketAverage(for date: Date, from samples: [BiomarkerSample]) -> Double? {
+        let calendar = Calendar.current
+
+        // Determine bucket boundaries based on current period
+        let bucketInterval: DateInterval?
+        switch selectedPeriod {
+        case .week, .month:
+            // Daily buckets - average samples from that day
+            bucketInterval = calendar.dateInterval(of: .day, for: date)
+        case .sixMonth:
+            // Weekly buckets - average samples from that week
+            bucketInterval = calendar.dateInterval(of: .weekOfYear, for: date)
+        case .year:
+            // Monthly buckets - average samples from that month
+            bucketInterval = calendar.dateInterval(of: .month, for: date)
+        case .fiveYear:
+            // Quarterly buckets - average samples from that quarter
+            bucketInterval = calendar.dateInterval(of: .quarter, for: date)
+        }
+
+        guard let interval = bucketInterval else { return nil }
+
+        // Filter samples within this bucket
+        let samplesInBucket = samples.filter { sample in
+            sample.sampleTime >= interval.start && sample.sampleTime < interval.end
+        }
+
+        guard !samplesInBucket.isEmpty else { return nil }
+
+        // Return the average
+        let total = samplesInBucket.map { $0.value }.reduce(0, +)
+        return total / Double(samplesInBucket.count)
     }
 
     /// Format the visible date range as a string (always includes year for context)
@@ -707,10 +788,22 @@ struct GenericBiomarkerDetailView: View {
             endFormatter.dateFormat = "MMM d, yyyy"
             let lastDay = calendar.date(byAdding: .day, value: -1, to: weekInterval.end) ?? weekInterval.end
             return "\(startFormatter.string(from: weekInterval.start)) - \(endFormatter.string(from: lastDay))"
-        case .year, .fiveYear:
+        case .year:
             // Show month name and year
             formatter.dateFormat = "MMMM yyyy"
             return formatter.string(from: date)
+        case .fiveYear:
+            // Show quarter range (e.g., "Oct - Dec 2025")
+            guard let quarterInterval = calendar.dateInterval(of: .quarter, for: date) else {
+                formatter.dateFormat = "MMMM yyyy"
+                return formatter.string(from: date)
+            }
+            let startFormatter = DateFormatter()
+            startFormatter.dateFormat = "MMM"
+            let endFormatter = DateFormatter()
+            endFormatter.dateFormat = "MMM yyyy"
+            let lastDay = calendar.date(byAdding: .day, value: -1, to: quarterInterval.end) ?? quarterInterval.end
+            return "\(startFormatter.string(from: quarterInterval.start)) - \(endFormatter.string(from: lastDay))"
         }
     }
 
@@ -755,23 +848,24 @@ struct GenericBiomarkerDetailView: View {
     }
 
     private func calculateScrollPosition() -> Date {
-        // Position the scroll so the most recent data appears on the right side
-        // Use calendar-based positioning (like BiometricLineChart) for consistent behavior
-        let now = Date()
+        // Position the scroll so the most recent DATA appears on the right side (Apple Health style)
         guard let manager = scrollManager.manager else {
             // Fallback if manager not initialized
             let visibleDomain = getVisibleDomainTimeInterval()
-            return now.addingTimeInterval(-visibleDomain)
+            return Date().addingTimeInterval(-visibleDomain)
         }
 
-        // Use 90% offset so "now" appears near (but not at) the right edge
+        // Get the most recent data point date, default to now if no data
+        let mostRecentDataDate = manager.dataPointsWithValues.first?.date ?? Date()
+
+        // Use 90% offset so most recent data appears near (but not at) the right edge
         let visibleDuration = manager.numberOfBars
         let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
         return Calendar.current.date(
             byAdding: manager.calendarComponent,
             value: -offsetFromEnd,
-            to: now
-        ) ?? now
+            to: mostRecentDataDate
+        ) ?? mostRecentDataDate
     }
 
     private func getAxisStride() -> Calendar.Component {
@@ -822,23 +916,32 @@ struct GenericBiomarkerDetailView: View {
 
     /// Get a label for a range boundary value (with < or > for open-ended ranges)
     private func getRangeBoundaryLabel(for value: Double, ranges: [BiomarkerRange]) -> String? {
-        for range in ranges {
-            // Check if this is the low boundary
-            if let low = range.rangeLow, abs(low - value) < 0.5 {
-                if range.rangeHigh == nil {
-                    // This is a "> low" range
-                    return "> \(formatAxisValue(low))"
-                }
-            }
+        // Get all boundary values for comparison
+        let allLows = ranges.compactMap { $0.rangeLow }
+        let allHighs = ranges.compactMap { $0.rangeHigh }
+        let lowestBoundary = min(allLows.min() ?? Double.greatestFiniteMagnitude, allHighs.min() ?? Double.greatestFiniteMagnitude)
+        let highestBoundary = max(allLows.max() ?? 0, allHighs.max() ?? 0)
 
-            // Check if this is the high boundary
-            if let high = range.rangeHigh, abs(high - value) < 0.5 {
-                if range.rangeLow == nil {
-                    // This is a "< high" range
-                    return "< \(formatAxisValue(high))"
-                }
+        // Check if this is the lowest boundary - indicates open-ended below
+        if abs(value - lowestBoundary) < 0.5 {
+            // Find if there's a range with no meaningful lower bound (indicates "< X" zone)
+            let hasOpenLowRange = ranges.contains { range in
+                range.rangeLow == nil || range.rangeLow == 0
+            }
+            if hasOpenLowRange {
+                return "< \(formatAxisValue(value))"
             }
         }
+
+        // Check if this is the highest boundary - indicates open-ended above
+        if abs(value - highestBoundary) < 0.5 {
+            // Find if there's a range with no upper bound (indicates "> X" zone)
+            let hasOpenHighRange = ranges.contains { $0.rangeHigh == nil }
+            if hasOpenHighRange {
+                return "> \(formatAxisValue(value))"
+            }
+        }
+
         return nil
     }
 

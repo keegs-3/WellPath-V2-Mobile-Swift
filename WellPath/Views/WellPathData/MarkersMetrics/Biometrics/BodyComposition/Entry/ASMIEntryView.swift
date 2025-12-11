@@ -19,7 +19,12 @@ struct ASMIEntryView: View {
     @State private var isLoadingHeight = true
     @State private var errorMessage: String?
 
+    // Validation state
+    @State private var validationResult: ValidationResult?
+    @State private var showingValidationWarning = false
+
     private let supabase = SupabaseManager.shared.client
+    private let validationService = EntryValidationService.shared
     private let color = Color.cyan  // Biometrics color
 
     enum MassUnit: String, CaseIterable {
@@ -97,20 +102,6 @@ struct ASMIEntryView: View {
                     }
                 }
 
-                // Calculated ASMI preview
-                if let asmi = calculatedASMI {
-                    Section("Calculated ASMI") {
-                        HStack {
-                            Text(String(format: "%.2f", asmi))
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            Text("kg/m²")
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                    }
-                }
-
                 if let error = errorMessage {
                     Section {
                         Text(error)
@@ -122,7 +113,7 @@ struct ASMIEntryView: View {
 
             // Save button
             Button(action: {
-                Task { await saveEntry() }
+                Task { await attemptSave() }
             }) {
                 if isSaving {
                     ProgressView()
@@ -145,11 +136,38 @@ struct ASMIEntryView: View {
         .task {
             await loadPatientHeight()
         }
+        .onChange(of: muscleMassValue) { _, _ in
+            Task { await validateInput() }
+        }
+        .onChange(of: selectedUnit) { _, _ in
+            Task { await validateInput() }
+        }
+        .validationAlert(
+            result: $validationResult,
+            showingWarning: $showingValidationWarning,
+            onConfirm: {
+                Task { await performSave() }
+            },
+            onCancel: {
+                // User cancelled, stay on form
+            }
+        )
     }
 
-    private var isValid: Bool {
-        guard let massKg = muscleMassInKg, massKg > 0, massKg < 50 else { return false }
+    // Basic input validity (not blocked by hard limits)
+    private var hasValidInput: Bool {
+        guard let massKg = muscleMassInKg, massKg > 0 else { return false }
         return patientHeight != nil
+    }
+
+    // Full validity including hard limit checks
+    private var isValid: Bool {
+        guard hasValidInput else { return false }
+        // Block if we have an invalid result from validation
+        if case .invalid = validationResult {
+            return false
+        }
+        return true
     }
 
     private func loadPatientHeight() async {
@@ -188,7 +206,55 @@ struct ASMIEntryView: View {
         }
     }
 
-    private func saveEntry() async {
+    private func validateInput() async {
+        guard let massKg = muscleMassInKg, massKg > 0 else {
+            validationResult = nil
+            return
+        }
+
+        // Validate ASMM value in kg (canonical unit)
+        validationResult = await validationService.validate(
+            massKg,
+            for: QuantityTypes.appendicularSkeletalMuscleMass,
+            displayUnit: selectedUnit.displayName
+        )
+
+        // Show error for invalid (hard limit exceeded)
+        if case .invalid(let message) = validationResult {
+            errorMessage = message
+        } else {
+            // Clear error if not invalid
+            if errorMessage?.contains("must be") == true || errorMessage?.contains("cannot exceed") == true {
+                errorMessage = nil
+            }
+        }
+    }
+
+    private func attemptSave() async {
+        guard let massKg = muscleMassInKg, massKg > 0 else {
+            errorMessage = "Please enter a valid value"
+            return
+        }
+
+        // Run validation
+        await validateInput()
+
+        // Check result
+        switch validationResult {
+        case .invalid:
+            // Already showing error message, don't save
+            return
+        case .warning:
+            // Show confirmation dialog
+            showingValidationWarning = true
+            return
+        case .valid, .none:
+            // Proceed with save
+            await performSave()
+        }
+    }
+
+    private func performSave() async {
         guard let inputValue = Double(muscleMassValue), inputValue > 0 else {
             errorMessage = "Please enter a valid value"
             return
@@ -204,23 +270,50 @@ struct ASMIEntryView: View {
             // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // Create patient_quantity_samples entry - store in original unit
-            let sample = QuantitySampleWrite.create(
+            // Convert to kg for canonical value
+            let valueInKg = selectedUnit == .kilograms ? inputValue : inputValue * 0.453592
+
+            // Create shared event instance ID for both entries
+            let eventId = UUID()
+
+            // 1. Save ASMM (Appendicular Skeletal Muscle Mass) in user's chosen unit
+            let asmmSample = QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.appendicularSkeletalMuscleMass,
-                value: inputValue,  // Store original value, not converted
-                unit: selectedUnit == .pounds ? "pound" : "kilogram",  // Store actual unit
+                value: inputValue,
+                unit: selectedUnit == .pounds ? "pound" : "kilogram",
                 timestamp: selectedDateTime,
                 source: .wellpathInput,
                 timezone: deviceTimezone,
-                eventInstanceId: UUID()
+                eventInstanceId: eventId
             )
 
-            // Insert into patient_quantity_samples
             try await supabase
                 .from("patient_quantity_samples")
-                .insert(sample)
+                .insert(asmmSample)
                 .execute()
+
+            // 2. Calculate and save ASMI if we have height
+            if let heightCm = patientHeight, heightCm > 0 {
+                let heightM = heightCm / 100.0
+                let asmiValue = valueInKg / (heightM * heightM)
+
+                let asmiSample = QuantitySampleWrite.create(
+                    patientId: userId,
+                    quantityType: QuantityTypes.asmi,
+                    value: asmiValue,
+                    unit: "kg/m²",
+                    timestamp: selectedDateTime,
+                    source: .wellpathInput,
+                    timezone: deviceTimezone,
+                    eventInstanceId: eventId
+                )
+
+                try await supabase
+                    .from("patient_quantity_samples")
+                    .insert(asmiSample)
+                    .execute()
+            }
 
             await MainActor.run {
                 dismiss()
