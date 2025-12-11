@@ -370,8 +370,7 @@ struct BiomarkerDisplayData: Identifiable {
     let id: UUID
     let cardId: String
     let viewId: String?  // For loading education sections from biomarkers_education_sections
-    let name: String          // Short name (e.g., "HDL") - used for nav title
-    let nameLong: String?     // Full name (e.g., "High-Density Lipoprotein") - used for subtitle
+    let name: String
     let value: Double
     let formattedValue: String
     let unit: String
@@ -392,7 +391,6 @@ struct BiomarkerDisplayData: Identifiable {
         cardId: String,
         viewId: String? = nil,
         name: String,
-        nameLong: String? = nil,
         value: Double,
         formattedValue: String,
         unit: String,
@@ -410,7 +408,6 @@ struct BiomarkerDisplayData: Identifiable {
         self.cardId = cardId
         self.viewId = viewId
         self.name = name
-        self.nameLong = nameLong
         self.value = value
         self.formattedValue = formattedValue
         self.unit = unit

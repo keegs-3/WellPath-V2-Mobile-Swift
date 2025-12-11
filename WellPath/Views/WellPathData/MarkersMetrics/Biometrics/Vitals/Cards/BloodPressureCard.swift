@@ -30,7 +30,8 @@ struct BloodPressureCard: View {
 
 struct BloodPressureMiniCard: View {
     let color: Color
-    @StateObject private var loader = BPCardLoader()
+    @StateObject private var systolicLoader = BiometricValueLoader()
+    @StateObject private var diastolicLoader = BiometricValueLoader()
 
     var body: some View {
         HStack(spacing: 16) {
@@ -38,22 +39,21 @@ struct BloodPressureMiniCard: View {
                 Circle()
                     .fill(color.opacity(0.15))
                     .frame(width: 44, height: 44)
-                Image(systemName: "heart.fill")
+                Image(systemName: systolicLoader.icon ?? "heart.fill")
                     .font(.title3)
                     .foregroundColor(color)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                if loader.isLoading {
+                if systolicLoader.isLoading || diastolicLoader.isLoading {
                     ProgressView().scaleEffect(0.8)
-                } else if let systolic = loader.systolic, let diastolic = loader.diastolic {
+                } else if let systolic = systolicLoader.currentValue,
+                          let diastolic = diastolicLoader.currentValue {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("\(Int(systolic))/\(Int(diastolic))")
                             .font(.title2)
                             .fontWeight(.bold)
-                    }
-                    if let date = loader.lastDate {
-                        Text(formatDate(date))
+                        Text("mmHg")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -62,55 +62,18 @@ struct BloodPressureMiniCard: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
+                Text("Blood pressure")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
         }
         .task {
-            await loader.loadLatest()
-        }
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: date)
-    }
-}
-
-/// Loads latest blood pressure from patient_correlation_samples
-@MainActor
-class BPCardLoader: ObservableObject {
-    @Published var systolic: Double?
-    @Published var diastolic: Double?
-    @Published var lastDate: Date?
-    @Published var isLoading = false
-
-    private let supabase = SupabaseManager.shared.client
-
-    func loadLatest() async {
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            let patientId = try await supabase.auth.session.user.id
-
-            let results: [CorrelationSampleRead] = try await supabase
-                .from("patient_correlation_samples")
-                .select("id, patient_id, correlation_type, components, sample_time, source, user_timezone")
-                .eq("patient_id", value: patientId)
-                .eq("correlation_type", value: CorrelationTypes.bloodPressure)
-                .order("sample_time", ascending: false)
-                .limit(1)
-                .execute()
-                .value
-
-            if let reading = results.first {
-                systolic = reading.systolic
-                diastolic = reading.diastolic
-                lastDate = reading.sampleTime
-            }
-        } catch {
-            print("❌ BPCardLoader error: \(error)")
+            // Blood pressure needs both systolic and diastolic values
+            async let loadSystolic: () = systolicLoader.loadValue(for: "DISP_SYSTOLIC_BP")
+            async let loadDiastolic: () = diastolicLoader.loadValue(for: "DISP_DIASTOLIC_BP")
+            _ = await (loadSystolic, loadDiastolic)
         }
     }
 }

@@ -27,9 +27,6 @@ class BiomarkerViewModel: ObservableObject {
     /// Biomarkers use clinical_type, NOT quantity_type
     private var cardClinicalTypes: [String: String] = [:]
 
-    /// Mapping of viewId -> (view_name, view_name_long) from display_views
-    private var viewNameInfo: [String: (name: String, nameLong: String?)] = [:]
-
     /// Complete biomarker display data with values
     @Published var biomarkerData: [String: BiomarkerDisplayData] = [:]
 
@@ -160,29 +157,6 @@ class BiomarkerViewModel: ObservableObject {
                           let cType = viewToClinicalType[viewId] else { return nil }
                     return (card.cardId, cType)
                 }
-            )
-
-            // Load view_name and view_name_long from display_views
-            struct ViewNameInfo: Codable {
-                let viewId: String
-                let viewName: String
-                let viewNameLong: String?
-                enum CodingKeys: String, CodingKey {
-                    case viewId = "view_id"
-                    case viewName = "view_name"
-                    case viewNameLong = "view_name_long"
-                }
-            }
-
-            let viewNames: [ViewNameInfo] = try await supabase
-                .from("display_views")
-                .select("view_id, view_name, view_name_long")
-                .in("view_id", values: viewIds)
-                .execute()
-                .value
-
-            viewNameInfo = Dictionary(uniqueKeysWithValues:
-                viewNames.map { ($0.viewId, (name: $0.viewName, nameLong: $0.viewNameLong)) }
             )
 
         } catch {
@@ -378,16 +352,10 @@ class BiomarkerViewModel: ObservableObject {
 
                 let unitDisplay = BiomarkerDisplayData.formatUnit(latestSample.unit)
 
-                // Get view_name and view_name_long from display_views
-                let nameInfo = card.viewId.flatMap { viewNameInfo[$0] }
-                let displayName = nameInfo?.name ?? card.cardName
-                let displayNameLong = nameInfo?.nameLong
-
                 let displayData = BiomarkerDisplayData(
                     cardId: card.cardId,
                     viewId: card.viewId,  // For loading education sections
-                    name: displayName,
-                    nameLong: displayNameLong,
+                    name: card.cardName,
                     value: latestSample.value,
                     formattedValue: formattedValue,
                     unit: latestSample.unit,
@@ -399,8 +367,8 @@ class BiomarkerViewModel: ObservableObject {
                     historicalValues: samples  // All samples for infinite scroll
                 )
 
-                // Key by display name for UI lookups
-                newBiomarkerData[displayName] = displayData
+                // Key by card name for UI lookups
+                newBiomarkerData[card.cardName] = displayData
             }
 
             biomarkerData = newBiomarkerData
@@ -490,44 +458,10 @@ class BiomarkerViewModel: ObservableObject {
 
             let unitDisplay = BiomarkerDisplayData.formatUnit(latestSample.unit)
 
-            // Get view_name and view_name_long from display_views
-            var displayName = name
-            var displayNameLong: String?
-
-            // Try cache first
-            if let vid = viewId, let nameInfo = viewNameInfo[vid] {
-                displayName = nameInfo.name
-                displayNameLong = nameInfo.nameLong
-            } else if let vid = viewId {
-                // Fetch from database if not in cache
-                struct ViewNameInfo: Codable {
-                    let viewName: String
-                    let viewNameLong: String?
-                    enum CodingKeys: String, CodingKey {
-                        case viewName = "view_name"
-                        case viewNameLong = "view_name_long"
-                    }
-                }
-
-                let viewInfo: [ViewNameInfo] = try await supabase
-                    .from("display_views")
-                    .select("view_name, view_name_long")
-                    .eq("view_id", value: vid)
-                    .limit(1)
-                    .execute()
-                    .value
-
-                if let info = viewInfo.first {
-                    displayName = info.viewName
-                    displayNameLong = info.viewNameLong
-                }
-            }
-
             return BiomarkerDisplayData(
                 cardId: cardId ?? clinicalType,
                 viewId: viewId,  // For loading education sections
-                name: displayName,
-                nameLong: displayNameLong,
+                name: name,
                 value: latestSample.value,
                 formattedValue: formattedValue,
                 unit: latestSample.unit,

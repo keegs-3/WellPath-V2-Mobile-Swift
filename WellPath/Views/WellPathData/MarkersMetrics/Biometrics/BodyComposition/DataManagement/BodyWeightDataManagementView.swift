@@ -482,20 +482,19 @@ class BodyWeightDataViewModel: ObservableObject {
 
             let samples = try decoder.decode([PatientSampleRow].self, from: data)
 
-            // Create BodyWeightEntry with original entry values (no conversion)
-            // Data Management shows as-entered values, not converted values
+            // Convert to BodyWeightEntry with user's preferred unit
             var entries: [BodyWeightEntry] = []
             for sample in samples {
                 guard let value = sample.quantityValue else { continue }
 
-                // Use the original entry unit, formatted for display
+                // Convert to user's preferred unit
                 let storedUnit = sample.quantityUnit ?? "kilogram"
-                let displayUnit = formatUnitForDisplay(storedUnit)
+                let converted = unitService.convertWeightToPreferred(value: value, fromUnit: storedUnit)
 
                 let entry = BodyWeightEntry(
                     id: sample.id,
-                    value: value,  // Original entry value, not converted
-                    unit: displayUnit,  // Original entry unit, not patient preference
+                    value: converted.value,
+                    unit: converted.unit,
                     recordedAt: sample.startTime,
                     source: sample.source,
                     createdAt: sample.createdAt ?? sample.startTime
@@ -509,22 +508,13 @@ class BodyWeightDataViewModel: ObservableObject {
                 calendar.startOfDay(for: entry.recordedAt)
             }
 
-            print("Loaded \(entries.count) body weight entries (showing original entry values)")
+            print("Loaded \(entries.count) body weight entries in \(preferredUnit.rawValue)")
 
         } catch {
             print("Error loading body weight data: \(error)")
         }
 
         isLoading = false
-    }
-
-    /// Format unit string for display (e.g., "kilogram" -> "kg", "pound" -> "lb")
-    private func formatUnitForDisplay(_ unit: String) -> String {
-        switch unit.lowercased() {
-        case "kilogram", "kg": return "kg"
-        case "pound", "lb", "lbs": return "lb"
-        default: return unit
-        }
     }
 
     func deleteEntries(_ entries: [BodyWeightEntry]) async {

@@ -121,20 +121,6 @@ extension ProteinTypeDonutViewModel {
         let localComponents = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
 
         switch period {
-        case .hour:
-            // Single hour
-            let hourComponents = calendar.dateComponents([.year, .month, .day, .hour], from: date)
-            var utcComponents = DateComponents()
-            utcComponents.year = hourComponents.year
-            utcComponents.month = hourComponents.month
-            utcComponents.day = hourComponents.day
-            utcComponents.hour = hourComponents.hour
-            utcComponents.minute = 0
-            utcComponents.second = 0
-            utcComponents.timeZone = TimeZone(identifier: "UTC")
-            let hourStart = utcCalendar.date(from: utcComponents)!
-            return (hourStart, hourStart)
-
         case .day:
             // Single day
             var utcComponents = DateComponents()

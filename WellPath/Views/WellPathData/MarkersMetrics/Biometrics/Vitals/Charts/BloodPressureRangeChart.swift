@@ -18,6 +18,7 @@ struct BloodPressureRangeChart: View {
     @State private var selectedPointDate: Date?
     @StateObject private var scrollManager: BPChartScrollManager
     @State private var scrollPosition: Date
+    @State private var showAskAI = false
 
     private var selectedPoint: BPDataPoint? {
         guard let selectedDate = selectedPointDate else { return nil }
@@ -60,17 +61,16 @@ struct BloodPressureRangeChart: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Time period picker
-                Picker("Period", selection: $selectedPeriod) {
-                    ForEach(TimePeriod.allCases, id: \.self) { period in
-                        Text(period.rawValue).tag(period)
-                    }
+        VStack(spacing: 0) {
+            // Time period picker
+            Picker("Period", selection: $selectedPeriod) {
+                ForEach(TimePeriod.allCases, id: \.self) { period in
+                    Text(period.rawValue).tag(period)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, MetricScreenLayout.pickerTopPadding)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.top, 16)
             .onChange(of: selectedPeriod) { oldValue, newPeriod in
                 scrollManager.updatePeriod(newPeriod)
                 selectedPointDate = nil
@@ -85,7 +85,7 @@ struct BloodPressureRangeChart: View {
                 ) ?? now
             }
 
-            // Value display - shows selected point or most recent reading
+            // Value display - shows min/max ranges for systolic and diastolic
             HStack(alignment: .top, spacing: 40) {
                 VStack(alignment: .leading, spacing: 4) {
                     if let selected = selectedPoint {
@@ -154,22 +154,40 @@ struct BloodPressureRangeChart: View {
 
                 Spacer()
 
-                // Info button only (chat is in the About modal)
-                if let showAboutBinding = showAbout {
-                    Button(action: {
-                        withAnimation {
-                            showAboutBinding.wrappedValue = true
+                // Unit label and action buttons
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text("mmHg")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 16) {
+                        // Ask AI button
+                        Button(action: {
+                            showAskAI = true
+                        }) {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(.title3)
+                                .foregroundColor(color)
                         }
-                    }) {
-                        Image(systemName: "info.circle")
-                            .font(.title3)
-                            .foregroundColor(color)
+
+                        // Info button
+                        if let showAboutBinding = showAbout {
+                            Button(action: {
+                                withAnimation {
+                                    showAboutBinding.wrappedValue = true
+                                }
+                            }) {
+                                Image(systemName: "info.circle")
+                                    .font(.title3)
+                                    .foregroundColor(color)
+                            }
+                        }
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)
-            .padding(.top, MetricScreenLayout.headerTopPadding)
+            .padding(.top, 12)
 
             // Range chart - Apple Health style with separate systolic/diastolic range bars
             Chart(scrollManager.chartData) { dataPoint in
@@ -253,12 +271,6 @@ struct BloodPressureRangeChart: View {
             .onChange(of: scrollPosition) { oldValue, newValue in
                 handleChartScrolling(position: newValue)
             }
-            .onChange(of: dataPointsWithValues.count) { oldValue, newValue in
-                // Scroll to most recent data point when actual data with values first loads
-                if oldValue == 0 && newValue > 0 {
-                    scrollToMostRecentData()
-                }
-            }
             .chartXAxis {
                 AxisMarks(values: .stride(by: getAxisLabelStride(), count: getAxisLabelMultiplier())) { value in
                     if value.as(Date.self) != nil {
@@ -285,8 +297,8 @@ struct BloodPressureRangeChart: View {
                 plotArea.frame(height: 280)
             }
             .padding(.horizontal)
-            .padding(.top, MetricScreenLayout.chartTopPadding)
-            .padding(.bottom, MetricScreenLayout.chartBottomPadding)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
 
             // Loading indicators
             HStack {
@@ -308,9 +320,14 @@ struct BloodPressureRangeChart: View {
             }
             .frame(height: 20)
             .padding(.horizontal)
-            }
-            .padding(.vertical)
-            .background(Color(uiColor: .systemGroupedBackground))
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .sheet(isPresented: $showAskAI) {
+            EducationQAModal(
+                viewId: "DISP_BLOOD_PRESSURE",
+                viewName: "Blood Pressure",
+                color: color
+            )
         }
     }
 
@@ -364,20 +381,6 @@ struct BloodPressureRangeChart: View {
             .first
     }
 
-    /// Scroll to position the most recent data point at the right edge of visible area
-    private func scrollToMostRecentData() {
-        guard let latestData = getLatestReading() else { return }
-
-        let calendar = Calendar.current
-        let visibleBars = selectedPeriod.numberOfBars
-        // Position so the most recent data is at the right edge
-        // Visible window is scrollPosition to scrollPosition + (visibleBars - 1)
-        // So to have latestData at right edge: scrollPosition = latestData - (visibleBars - 1)
-        if let newPosition = calendar.date(byAdding: selectedPeriod.calendarComponent, value: -(visibleBars - 1), to: latestData.date) {
-            scrollPosition = newPosition
-        }
-    }
-
     /// Format a range value - shows "120-130" for range, or "120" for single value
     private func formatRangeValue(min: Double, max: Double) -> String {
         if min == max || min == 0 {
@@ -387,23 +390,15 @@ struct BloodPressureRangeChart: View {
         }
     }
 
-    /// Get overall min/max ranges across visible window data points only
+    /// Get overall min/max ranges across all visible data points
     private func getOverallRanges() -> (systolicMin: Double, systolicMax: Double, diastolicMin: Double, diastolicMax: Double)? {
-        let calendar = Calendar.current
-        let visibleDuration = selectedPeriod.numberOfBars
-        let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration, to: scrollPosition) ?? scrollPosition
+        let validPoints = dataPointsWithValues
+        guard !validPoints.isEmpty else { return nil }
 
-        // Filter to only visible window
-        let visiblePoints = dataPointsWithValues.filter { point in
-            point.date >= scrollPosition && point.date <= endDate
-        }
-
-        guard !visiblePoints.isEmpty else { return nil }
-
-        let systolicMin = visiblePoints.map { $0.systolicMin }.filter { $0 > 0 }.min() ?? 0
-        let systolicMax = visiblePoints.map { $0.systolicMax }.max() ?? 0
-        let diastolicMin = visiblePoints.map { $0.diastolicMin }.filter { $0 > 0 }.min() ?? 0
-        let diastolicMax = visiblePoints.map { $0.diastolicMax }.max() ?? 0
+        let systolicMin = validPoints.map { $0.systolicMin }.filter { $0 > 0 }.min() ?? 0
+        let systolicMax = validPoints.map { $0.systolicMax }.max() ?? 0
+        let diastolicMin = validPoints.map { $0.diastolicMin }.filter { $0 > 0 }.min() ?? 0
+        let diastolicMax = validPoints.map { $0.diastolicMax }.max() ?? 0
 
         guard systolicMax > 0 && diastolicMax > 0 else { return nil }
 
@@ -415,53 +410,21 @@ struct BloodPressureRangeChart: View {
         let visibleDuration = selectedPeriod.numberOfBars
         let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration - 1, to: scrollPosition) ?? scrollPosition
 
-        // Check if start and end are in same year
-        let sameYear = calendar.component(.year, from: scrollPosition) == calendar.component(.year, from: endDate)
-
         let formatter = DateFormatter()
+        formatter.dateFormat = selectedPeriod == .year ? "MMM yyyy" : "MMM d"
 
-        switch selectedPeriod {
-        case .year:
-            formatter.dateFormat = "MMM yyyy"
-            return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
-        default:
-            // Always show year for context
-            if sameYear {
-                let startFormatter = DateFormatter()
-                startFormatter.dateFormat = "MMM d"
-                let endFormatter = DateFormatter()
-                endFormatter.dateFormat = "MMM d, yyyy"
-                return "\(startFormatter.string(from: scrollPosition)) - \(endFormatter.string(from: endDate))"
-            } else {
-                formatter.dateFormat = "MMM d, yyyy"
-                return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
-            }
-        }
+        return "\(formatter.string(from: scrollPosition)) - \(formatter.string(from: endDate))"
     }
 
     private func formatSelectedDate(_ date: Date) -> String {
-        let calendar = Calendar.current
         let formatter = DateFormatter()
-
         switch selectedPeriod {
         case .day:
-            formatter.dateFormat = "MMM d, yyyy, h:mm a"
-        case .week, .month:
+            formatter.dateFormat = "MMM d, h:mm a"
+        case .week:
+            formatter.dateFormat = "E, MMM d"
+        case .month, .sixMonth, .year:
             formatter.dateFormat = "MMM d, yyyy"
-        case .sixMonth:
-            // Show week range
-            guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else {
-                formatter.dateFormat = "MMM d, yyyy"
-                return formatter.string(from: date)
-            }
-            let startFormatter = DateFormatter()
-            startFormatter.dateFormat = "MMM d"
-            let endFormatter = DateFormatter()
-            endFormatter.dateFormat = "MMM d, yyyy"
-            let lastDay = calendar.date(byAdding: .day, value: -1, to: weekInterval.end) ?? weekInterval.end
-            return "\(startFormatter.string(from: weekInterval.start)) - \(endFormatter.string(from: lastDay))"
-        case .year:
-            formatter.dateFormat = "MMM yyyy"
         }
         return formatter.string(from: date)
     }

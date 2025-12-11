@@ -65,7 +65,7 @@ struct SleepPercentagesChart: View {
         ) ?? now
     }
 
-    private let metricId = "DISP_SLEEP_PERCENTAGES"
+    private let metricId = "DISP_SLEEP_ANALYSIS_PERCENTAGES"
     private let metricName = "Sleep Percentages"
 
     var body: some View {

@@ -21,14 +21,12 @@ class BiometricValueLoader: ObservableObject {
     @Published var preferredWeightUnit: WeightDisplayUnit = .lb
     @Published var preferredLengthUnit: HeightDisplayUnit2 = .ftIn
     @Published var icon: String?           // Icon from display_views.icon_name
-    @Published var sparklinePoints: [SparklinePoint] = []  // Recent points for mini chart
 
     private let supabase = SupabaseManager.shared.client
     private let unitService = UnitConversionService.shared
-    private let sparklinePointCount = 7  // Number of points for sparkline
 
     // Metrics that use weight units
-    private let weightMetrics: Set<String> = ["DISP_BODYWEIGHT", "DISP_GRIP_STRENGTH"]
+    private let weightMetrics: Set<String> = ["DISP_BODYWEIGHT"]
 
     // Metrics that use length units
     private let lengthMetrics: Set<String> = ["DISP_WAIST_CIRCUMFERENCE", "DISP_HIP_CIRCUMFERENCE"]
@@ -142,64 +140,53 @@ class BiometricValueLoader: ObservableObject {
             let patientId = try await supabase.auth.session.user.id
 
             struct SampleReading: Codable {
-                let canonicalValue: Double
-                let canonicalUnit: String?
+                let quantityValue: Double
+                let quantityUnit: String?
                 let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case canonicalValue = "canonical_value"
-                    case canonicalUnit = "canonical_unit"
+                    case quantityValue = "quantity_value"
+                    case quantityUnit = "quantity_unit"
                     case startTime = "start_time"
                 }
             }
 
-            // Query patient_quantity_samples for recent values (for sparkline)
-            // Use canonical values - always in standard units (kg, cm) for consistent conversion
+            // Query patient_quantity_samples for the latest value
             let results: [SampleReading] = try await supabase
                 .from("patient_quantity_samples")
-                .select("canonical_value, canonical_unit, start_time")
+                .select("quantity_value, quantity_unit, start_time")
                 .eq("patient_id", value: patientId)
                 .eq("quantity_type", value: quantityType)
                 .order("start_time", ascending: false)
-                .limit(sparklinePointCount)
+                .limit(1)
                 .execute()
                 .value
 
-            // Build sparkline points (reversed to show oldest first)
-            let reversedResults = results.reversed()
-            sparklinePoints = reversedResults.enumerated().map { index, reading in
-                SparklinePoint(
-                    date: reading.startTime,
-                    value: reading.canonicalValue,
-                    isLatest: index == reversedResults.count - 1
-                )
-            }
-
             if let reading = results.first {
-                // Store raw canonical value (always in standard units like kg, cm)
-                rawValue = reading.canonicalValue
-                rawUnit = reading.canonicalUnit
+                // Store raw canonical value
+                rawValue = reading.quantityValue
+                rawUnit = reading.quantityUnit
 
                 // Store user's preferred units
                 preferredWeightUnit = unitService.preferredWeightUnit
                 preferredLengthUnit = unitService.preferredHeightUnit
 
-                // Convert canonical value to user's preferred unit for display
+                // Convert to user's preferred unit for default display
                 if weightMetrics.contains(metricId) {
-                    let converted = unitService.convertWeightToPreferred(value: reading.canonicalValue, fromUnit: reading.canonicalUnit)
+                    let converted = unitService.convertWeightToPreferred(value: reading.quantityValue, fromUnit: reading.quantityUnit)
                     currentValue = converted.value
                     unit = converted.unit
                 } else if lengthMetrics.contains(metricId) {
-                    let converted = unitService.convertLengthToPreferred(value: reading.canonicalValue, fromUnit: reading.canonicalUnit)
+                    let converted = unitService.convertLengthToPreferred(value: reading.quantityValue, fromUnit: reading.quantityUnit)
                     currentValue = converted.value
                     unit = converted.unit
                 } else {
-                    currentValue = reading.canonicalValue
+                    currentValue = reading.quantityValue
                     // Look up symbol from units_base, fallback to static map
-                    if let symbol = await lookupUnitSymbol(reading.canonicalUnit) {
+                    if let symbol = await lookupUnitSymbol(reading.quantityUnit) {
                         unit = symbol
                     } else {
-                        unit = formatUnitForDisplay(reading.canonicalUnit)
+                        unit = formatUnitForDisplay(reading.quantityUnit)
                     }
                 }
 

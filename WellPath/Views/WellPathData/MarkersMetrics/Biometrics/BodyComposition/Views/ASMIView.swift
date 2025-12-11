@@ -3,7 +3,6 @@
 //  WellPath
 //
 //  Full detail view for Appendicular Skeletal Muscle Index (ASMI)
-//  Loads title, subtitle, and unit from database
 //
 
 import SwiftUI
@@ -14,22 +13,17 @@ struct ASMIView: View {
     @State private var showAboutModal = false
     @State private var showDataManagement = false
     @State private var showAddEntry = false
-    @State private var metadata: ViewMetadata?
 
     private let metricId = "DISP_ASMI"
-
-    // Computed from metadata with fallbacks
-    private var metricName: String { metadata?.title ?? "ASMI" }
-    private var metricNameLong: String? { metadata?.subtitle }
-    private var unitDisplay: String { metadata?.unit ?? "kg/m²" }
+    private let metricName = "ASMI"
 
     private var displayMetric: DisplayMetric {
         DisplayMetric(
             id: metricId,
             metricId: metricId,
-            metricName: metricName,
-            description: metricNameLong ?? "Appendicular Skeletal Muscle Index",
-            pillar: metadata?.pillar ?? "Core Care",
+            metricName: "ASMI",
+            description: "Appendicular Skeletal Muscle Index",
+            pillar: "Core Care",
             chartTypeId: "trend_line",
             isActive: true,
             aboutContent: nil,
@@ -39,48 +33,41 @@ struct ASMIView: View {
     }
 
     var body: some View {
-        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal, subtitle: metricNameLong)
+        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal)
             .metricScreenBackground(color: color)
-            .navigationTitle(metricName)
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showDataManagement = true } label: {
-                        Image(systemName: "list.bullet")
-                    }
-                }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    FavoriteButton(
-                        itemType: .biometric,
-                        itemId: metricId,
-                        displayName: metricName,
-                        pillar: "Biometrics",
-                        cardId: metricId,
-                        sectionId: "NAV_BIOMETRICS"
-                    )
-                    Button { showAddEntry = true } label: {
-                        Image(systemName: "plus")
-                    }
+        .navigationTitle("ASMI")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { showDataManagement = true } label: {
+                    Image(systemName: "list.bullet")
                 }
             }
-            .sheet(isPresented: $showAddEntry) {
-                ASMIEntryView()
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showAddEntry = true } label: {
+                    Image(systemName: "plus")
+                }
             }
-            .sheet(isPresented: $showDataManagement) {
-                ASMIDataManagementView(color: color)
-            }
-            .sheet(isPresented: $showAboutModal) {
-                MetricEducationModal(
-                    viewId: metricId,
-                    metricName: metricName,
-                    color: color,
-                    isPresented: $showAboutModal
-                )
-            }
-            .task {
-                metadata = await ViewMetadataService.shared.loadMetadata(for: metricId)
-            }
+        }
+        .sheet(isPresented: $showAddEntry) {
+            ASMIEntryView()
+        }
+        .sheet(isPresented: $showDataManagement) {
+            SimpleBiometricDataManagementView(
+                title: "Appendicular Muscle Mass",
+                biometricName: "appendicular_skeletal_muscle_mass",
+                unit: "kg",
+                color: color
+            )
+        }
+        .sheet(isPresented: $showAboutModal) {
+            MetricEducationModal(
+                viewId: metricId,
+                metricName: metricName,
+                color: color,
+                isPresented: $showAboutModal
+            )
+        }
     }
 }
 

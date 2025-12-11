@@ -3,7 +3,6 @@
 //  WellPath
 //
 //  Full detail view for Body Fat % biometric
-//  Loads title, subtitle, and unit from database
 //
 
 import SwiftUI
@@ -11,17 +10,13 @@ import SwiftUI
 struct BodyFatView: View {
     let color: Color
 
+    @StateObject private var educationLoader = BiometricEducationLoader()
     @State private var showAbout = false
     @State private var showDataManagement = false
     @State private var showAddEntry = false
-    @State private var metadata: ViewMetadata?
 
     private let metricId = "DISP_BODYFAT"
-
-    // Computed from metadata with fallbacks
-    private var metricName: String { metadata?.title ?? "Body Fat %" }
-    private var metricNameLong: String? { metadata?.subtitle }
-    private var unitDisplay: String { metadata?.unit ?? "%" }
+    private let metricName = "Body Fat %"
 
     /// DisplayMetric for the BiometricLineChart
     private var displayMetric: DisplayMetric {
@@ -29,8 +24,8 @@ struct BodyFatView: View {
             id: metricId,
             metricId: metricId,
             metricName: metricName,
-            description: metricNameLong ?? "Body fat percentage",
-            pillar: metadata?.pillar ?? "Core Care",
+            description: "Body fat percentage",
+            pillar: nil,  // Section info loaded from database via card → category → section
             chartTypeId: "trend_line",
             isActive: true,
             aboutContent: nil,
@@ -40,7 +35,7 @@ struct BodyFatView: View {
     }
 
     var body: some View {
-        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAbout, subtitle: metricNameLong)
+        BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAbout)
             .metricScreenBackground(color: color)
             .navigationTitle(metricName)
             .navigationBarTitleDisplayMode(.large)
@@ -71,15 +66,14 @@ struct BodyFatView: View {
                 BodyFatEntryView()
             }
             .sheet(isPresented: $showAbout) {
-                MetricEducationModal(
-                    viewId: metricId,
-                    metricName: metricName,
-                    color: color,
-                    isPresented: $showAbout
+                BiometricAboutModal(
+                    title: metricName,
+                    educationLoader: educationLoader,
+                    color: color
                 )
             }
             .task {
-                metadata = await ViewMetadataService.shared.loadMetadata(for: metricId)
+                await educationLoader.loadSections(for: metricId)
             }
     }
 

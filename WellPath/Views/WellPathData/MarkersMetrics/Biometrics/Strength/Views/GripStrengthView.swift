@@ -1,29 +1,27 @@
 //
-//  HipCircumferenceView.swift
+//  GripStrengthView.swift
 //  WellPath
 //
-//  Full detail view for Hip Circumference biometric
-//  BiometricLineChart handles unit toggle (in/cm) internally
+//  Full detail view for Grip Strength biometric
 //
 
 import SwiftUI
 
-struct HipCircumferenceView: View {
+struct GripStrengthView: View {
     let color: Color
 
     @State private var showAboutModal = false
-    @State private var showAddEntry = false
     @State private var showDataManagement = false
 
-    private let metricId = "DISP_HIP_CIRCUMFERENCE"
-    private let metricName = "Hip Circumference"
+    private let metricId = "DISP_GRIP_STRENGTH"
+    private let metricName = "Grip Strength"
 
     private var displayMetric: DisplayMetric {
         DisplayMetric(
             id: metricId,
             metricId: metricId,
-            metricName: "Hip Circumference",
-            description: "Hip measurement",
+            metricName: "Grip Strength",
+            description: "Hand grip strength measurement",
             pillar: "Core Care",
             chartTypeId: "trend_line",
             isActive: true,
@@ -36,7 +34,7 @@ struct HipCircumferenceView: View {
     var body: some View {
         BiometricLineChart(metric: displayMetric, color: color, showAbout: $showAboutModal)
             .metricScreenBackground(color: color)
-        .navigationTitle("Hip Circumference")
+        .navigationTitle("Grip Strength")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -44,20 +42,12 @@ struct HipCircumferenceView: View {
                     Image(systemName: "list.bullet")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showAddEntry = true } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
-        .sheet(isPresented: $showAddEntry) {
-            WaistHipEntryView()
         }
         .sheet(isPresented: $showDataManagement) {
             SimpleBiometricDataManagementView(
-                title: "Hip Circumference",
+                title: "Grip Strength",
                 biometricName: BiometricDisplayNames.displayName(for: metricId),
-                unit: "cm",
+                unit: "kg",
                 color: color
             )
         }
@@ -73,5 +63,5 @@ struct HipCircumferenceView: View {
 }
 
 #Preview {
-    NavigationStack { HipCircumferenceView(color: .cyan) }
+    NavigationStack { GripStrengthView(color: .orange) }
 }

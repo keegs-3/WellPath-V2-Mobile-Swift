@@ -104,14 +104,13 @@ struct SleepAmountsView: View {
     }
 
     private func loadSleepDataForPeriod(_ period: SleepPeriod) async {
-        // Load 10 years back, 1 year forward for smooth scrolling
         switch period {
         case .day:
-            await chartViewModel.loadInitialSleepStages(daysBack: 365 * 10, daysAhead: 365)
+            await chartViewModel.loadInitialSleepStages(daysBack: 7, daysAhead: 0)
         case .week:
-            await chartViewModel.loadInitialSleepStages(daysBack: 365 * 10, daysAhead: 365)
+            await chartViewModel.loadInitialSleepStages(daysBack: 14, daysAhead: 7)
         case .month:
-            await chartViewModel.loadInitialSleepStages(daysBack: 365 * 10, daysAhead: 365)
+            await chartViewModel.loadInitialSleepStages(daysBack: 60, daysAhead: 30)
         case .sixMonth:
             break // 6M view uses WeeklySleepDataManager which loads on its own
         }

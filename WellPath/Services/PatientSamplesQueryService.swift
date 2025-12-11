@@ -651,10 +651,6 @@ class PatientSamplesQueryService {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
         switch period {
-        case .hour:
-            let startOfHour = calendar.date(from: calendar.dateComponents([.year, .month, .day, .hour], from: date))!
-            let endOfHour = calendar.date(byAdding: .hour, value: 1, to: startOfHour)!
-            return (startOfHour, endOfHour)
         case .day:
             return (startOfDay, startOfDay)
         case .week:

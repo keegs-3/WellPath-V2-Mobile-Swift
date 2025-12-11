@@ -2,8 +2,8 @@
 //  BiometricsScreen.swift
 //  WellPath
 //
-//  Database-driven card-based layout for Biometrics
-//  Loads categories and metrics dynamically from display_card_categories and display_views
+//  Card-based layout for Biometrics
+//  Shows all biometric metrics as tappable mini cards
 //
 
 import SwiftUI
@@ -12,9 +12,13 @@ struct BiometricsScreen: View {
     let pillar: String
     let color: Color
 
-    @StateObject private var viewModel = BiometricsViewModel()
+    @StateObject private var viewModel = BiometricsPrimaryViewModel()
     @EnvironmentObject private var searchState: WellPathDataSearchState
     @FocusState private var isSearchFocused: Bool
+
+    private var screenIcon: String {
+        MetricsUIConfig.getIcon(for: "Biometrics")
+    }
 
     var body: some View {
         ScrollView {
@@ -36,7 +40,7 @@ struct BiometricsScreen: View {
                             .multilineTextAlignment(.center)
                     }
                     .padding()
-                } else if viewModel.categories.isEmpty {
+                } else if viewModel.biometricMetrics.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "waveform.path.ecg")
                             .font(.largeTitle)
@@ -49,19 +53,122 @@ struct BiometricsScreen: View {
                     }
                     .padding(.vertical, 40)
                 } else {
-                    // Dynamically render categories and their metrics
-                    ForEach(viewModel.categories) { category in
-                        let metrics = viewModel.displayMetrics(for: category.categoryId)
-                        if !metrics.isEmpty {
-                            sectionHeader(category.name)
+                    // Body Composition Section
+                    if hasBodyCompositionMetrics {
+                        sectionHeader("Body Composition")
 
-                            ForEach(metrics) { metric in
-                                BiometricMetricCard(
-                                    metric: metric,
-                                    color: color,
-                                    pillar: pillar
-                                )
-                            }
+                        if let metric = viewModel.weightMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.bmiMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.bodyFatMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.visceralFatMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.waistCircumferenceMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.hipCircumferenceMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.waistHipMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.smmFfmMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+                    }
+
+                    // Cardiovascular Section
+                    if hasCardiovascularMetrics {
+                        sectionHeader("Cardiovascular")
+
+                        if let metric = viewModel.bloodPressureMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.restingHrMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.hrvMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+
+                        if let metric = viewModel.vo2MaxMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
+                        }
+                    }
+
+                    // Strength Section
+                    if hasStrengthMetrics {
+                        sectionHeader("Strength")
+
+                        if let metric = viewModel.gripStrengthMetric {
+                            BiometricMetricCard(
+                                metric: metric,
+                                color: color,
+                                pillar: pillar
+                            )
                         }
                     }
                 }
@@ -94,8 +201,30 @@ struct BiometricsScreen: View {
             }
         }
         .task {
-            await viewModel.loadAll()
+            await viewModel.loadPrimaryScreen()
         }
+    }
+
+    private var hasBodyCompositionMetrics: Bool {
+        viewModel.weightMetric != nil ||
+        viewModel.bmiMetric != nil ||
+        viewModel.bodyFatMetric != nil ||
+        viewModel.visceralFatMetric != nil ||
+        viewModel.waistCircumferenceMetric != nil ||
+        viewModel.hipCircumferenceMetric != nil ||
+        viewModel.waistHipMetric != nil ||
+        viewModel.smmFfmMetric != nil
+    }
+
+    private var hasCardiovascularMetrics: Bool {
+        viewModel.bloodPressureMetric != nil ||
+        viewModel.restingHrMetric != nil ||
+        viewModel.hrvMetric != nil ||
+        viewModel.vo2MaxMetric != nil
+    }
+
+    private var hasStrengthMetrics: Bool {
+        viewModel.gripStrengthMetric != nil
     }
 
     @ViewBuilder

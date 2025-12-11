@@ -47,8 +47,6 @@ enum CardRegistry {
                 ASMICard(color: color, pillar: pillar)
             case "CARD_BLOOD_PRESSURE", "DISP_BLOOD_PRESSURE":
                 BloodPressureCard(color: color, pillar: pillar)
-            case "CARD_HEART_RATE", "DISP_HEART_RATE":
-                HeartRateCard(color: color, pillar: pillar)
             case "CARD_HRV", "DISP_HRV":
                 HRVCard(color: color, pillar: pillar)
             case "CARD_RESTING_HR", "DISP_RESTING_HR":
@@ -232,8 +230,7 @@ struct BiomarkerFavoriteCard: View {
             metricId: cardId,
             pillar: "Biomarker",
             cardId: cardId,
-            sectionId: sectionId,
-            itemType: .biomarker  // Must match itemType used when favoriting
+            sectionId: sectionId
         ) {
             // Mini card content
             if let data = biomarkerData {
@@ -294,41 +291,37 @@ struct BiometricFavoriteCard: View {
             metricId: cardId,
             pillar: "Biometrics",
             cardId: cardId,
-            sectionId: sectionId,
-            itemType: .biometric  // Must match itemType used when favoriting
+            sectionId: sectionId
         ) {
-            // Mini card content - matches path card pattern
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(color.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.title3)
-                        .foregroundColor(color)
+            // Mini card content
+            if let cardData = viewModel.cardData {
+                BiometricFavoriteMiniCard(data: cardData, color: color)
+            } else if viewModel.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    if viewModel.isLoading {
-                        ProgressView().scaleEffect(0.8)
-                    } else if let cardData = viewModel.cardData {
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(cardData.formattedValue)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            if !cardData.unit.isEmpty {
-                                Text(cardData.unit)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    } else {
-                        Text("No data")
+                .frame(height: 50)
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 24))
+                        .foregroundColor(color.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName)
                             .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("Tap to view")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    Spacer()
                 }
-                Spacer()
+                .frame(height: 50)
             }
         } fullScreen: {
             BiometricDetailRouter(cardId: cardId, displayName: displayName, color: color)
@@ -456,7 +449,7 @@ struct BiometricDetailRouter: View {
         case "CARD_HIP_CIRCUMFERENCE", "DISP_HIP_CIRCUMFERENCE":
             HipCircumferenceView(color: color)
         case "CARD_WAIST_TO_HIP", "CARD_WAIST_HIP", "DISP_WAIST_HIP":
-            WaistHipView(color: color)
+            WaistHipRatioView(color: color)
         case "CARD_VO2MAX", "CARD_VO2_MAX", "DISP_VO2_MAX":
             if let metric = viewModel.metric {
                 VO2MaxView(metric: metric, color: color)
@@ -650,22 +643,22 @@ class BiometricFavoriteViewModel: ObservableObject {
                 return
             }
 
-            // Load the latest sample value (use canonical for display)
+            // Load the latest sample value
             struct SampleResult: Codable {
-                let canonicalValue: Double
-                let canonicalUnit: String?
+                let quantityValue: Double
+                let quantityUnit: String?
                 let startTime: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case canonicalValue = "canonical_value"
-                    case canonicalUnit = "canonical_unit"
+                    case quantityValue = "quantity_value"
+                    case quantityUnit = "quantity_unit"
                     case startTime = "start_time"
                 }
             }
 
             let samples: [SampleResult] = try await supabase
                 .from("patient_quantity_samples")
-                .select("canonical_value, canonical_unit, start_time")
+                .select("quantity_value, quantity_unit, start_time")
                 .eq("patient_id", value: patientId)
                 .eq("quantity_type", value: quantityType)
                 .order("start_time", ascending: false)
@@ -676,9 +669,9 @@ class BiometricFavoriteViewModel: ObservableObject {
             if let sample = samples.first {
                 cardData = BiometricFavoriteData(
                     name: card.cardName,
-                    value: sample.canonicalValue,
-                    formattedValue: String(format: "%.1f", sample.canonicalValue),
-                    unit: sample.canonicalUnit ?? "",
+                    value: sample.quantityValue,
+                    formattedValue: String(format: "%.1f", sample.quantityValue),
+                    unit: sample.quantityUnit ?? "",
                     status: "Optimal", // Would need range lookup for accurate status
                     optimalRange: ""
                 )

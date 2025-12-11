@@ -295,7 +295,6 @@ struct QuantityTypes {
     static let appendicularSkeletalMuscleMass = "appendicular_skeletal_muscle_mass"
     static let visceralFatPercent = "visceral_fat_percent"
     static let asmi = "asmi"
-    static let bmi = "bmi"
 
     // Mental
     static let meditationDuration = "meditation_duration"

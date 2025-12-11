@@ -3,54 +3,33 @@
 //  WellPath
 //
 //  Mini card view for biometric metrics
-//  Shows icon, current value, date, and sparkline
+//  Shows current value, status indicator, and description
 //
 
 import SwiftUI
 
 struct BiometricMiniCard: View {
-    let metricId: String
+    let metric: DisplayMetric
     let color: Color
-    let fallbackIcon: String
+    let icon: String
 
-    @StateObject private var loader = BiometricValueLoader()
+    @StateObject private var dataLoader = BiometricValueLoader()
 
     // Metrics that use weight units (lb/kg)
-    private static let weightMetrics: Set<String> = ["DISP_BODYWEIGHT", "DISP_GRIP_STRENGTH"]
+    private let weightMetrics: Set<String> = ["DISP_BODYWEIGHT"]
 
     // Metrics that use length units (in/cm)
-    private static let lengthMetrics: Set<String> = ["DISP_WAIST_CIRCUMFERENCE", "DISP_HIP_CIRCUMFERENCE"]
+    private let lengthMetrics: Set<String> = ["DISP_WAIST_CIRCUMFERENCE", "DISP_HIP_CIRCUMFERENCE"]
 
     /// Display unit based on user preferences for weight/length metrics
     private var displayUnit: String {
-        if Self.weightMetrics.contains(metricId) {
-            return loader.preferredWeightUnit.rawValue
+        if weightMetrics.contains(metric.metricId) {
+            return dataLoader.preferredWeightUnit.rawValue
         }
-        if Self.lengthMetrics.contains(metricId) {
-            return loader.preferredLengthUnit == .cm ? "cm" : "in"
+        if lengthMetrics.contains(metric.metricId) {
+            return dataLoader.preferredLengthUnit == .cm ? "cm" : "in"
         }
-        return loader.unit ?? ""
-    }
-
-    private var formattedDate: String {
-        guard let date = loader.lastUpdated else { return "" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: date)
-    }
-
-    /// Convenience initializer for use with DisplayMetric
-    init(metric: DisplayMetric, color: Color, icon: String) {
-        self.metricId = metric.metricId
-        self.color = color
-        self.fallbackIcon = icon
-    }
-
-    /// Simple initializer with just metricId
-    init(metricId: String, color: Color, fallbackIcon: String = "circle.fill") {
-        self.metricId = metricId
-        self.color = color
-        self.fallbackIcon = fallbackIcon
+        return dataLoader.unit ?? ""
     }
 
     var body: some View {
@@ -61,17 +40,17 @@ struct BiometricMiniCard: View {
                     .fill(color.opacity(0.15))
                     .frame(width: 44, height: 44)
 
-                Image(systemName: loader.icon ?? fallbackIcon)
+                Image(systemName: icon)
                     .font(.title3)
                     .foregroundColor(color)
             }
 
-            // Value and date
+            // Value and description
             VStack(alignment: .leading, spacing: 4) {
-                if loader.isLoading {
+                if dataLoader.isLoading {
                     ProgressView()
                         .scaleEffect(0.8)
-                } else if let value = loader.currentValue {
+                } else if let value = dataLoader.currentValue {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text(formatValue(value))
                             .font(.title2)
@@ -83,23 +62,56 @@ struct BiometricMiniCard: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    Text(formattedDate)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 } else {
                     Text("No data")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
+
+                if let description = metric.description {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
 
-            // Sparkline
-            BiometricSparkline(dataPoints: loader.sparklinePoints, color: color)
+            // Status indicator if we have a value
+            if dataLoader.currentValue != nil {
+                statusIndicator
+            }
         }
         .task {
-            await loader.loadValue(for: metricId)
+            await dataLoader.loadValue(for: metric.metricId)
+        }
+    }
+
+    @ViewBuilder
+    private var statusIndicator: some View {
+        if let status = dataLoader.status {
+            VStack(alignment: .trailing, spacing: 2) {
+                Circle()
+                    .fill(statusColor(status))
+                    .frame(width: 10, height: 10)
+                Text(status)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "optimal", "normal", "good":
+            return .green
+        case "at risk", "borderline", "elevated":
+            return .orange
+        case "high risk", "high", "low":
+            return .red
+        default:
+            return .gray
         }
     }
 
@@ -114,7 +126,7 @@ struct BiometricMiniCard: View {
     }
 }
 
+// Preview requires real DisplayMetric from database query
 #Preview {
-    BiometricMiniCard(metricId: "DISP_BODYFAT", color: .purple, fallbackIcon: "percent")
-        .padding()
+    Text("BiometricMiniCard Preview")
 }

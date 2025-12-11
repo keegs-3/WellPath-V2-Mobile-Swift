@@ -153,13 +153,6 @@ struct BiomarkerMiniCard: View {
     let biomarker: BiomarkerDisplayData
     let color: Color
 
-    /// Format the date for display
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: biomarker.lastUpdated)
-    }
-
     var body: some View {
         HStack(spacing: 16) {
             // Icon in circle (matches BiometricMiniCard)
@@ -187,10 +180,12 @@ struct BiomarkerMiniCard: View {
                     }
                 }
 
-                // Date of last value
-                Text(formattedDate)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if let description = biomarker.aboutWhy {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()

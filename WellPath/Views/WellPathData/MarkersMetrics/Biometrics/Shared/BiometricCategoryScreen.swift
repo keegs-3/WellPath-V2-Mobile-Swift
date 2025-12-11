@@ -10,14 +10,14 @@ import SwiftUI
 
 enum BiometricCategory: String {
     case bodyComposition = "CAT_BIOMETRICS_BODY_COMP"
-    case vitals = "CAT_BIOMETRICS_VITALS"
+    case cardiovascular = "CAT_BIOMETRICS_CARDIO"
     case strength = "CAT_BIOMETRICS_STRENGTH"
     case fitnessMetrics = "CAT_FITNESS_METRICS"
 
     var title: String {
         switch self {
         case .bodyComposition: return "Body Composition"
-        case .vitals: return "Vitals"
+        case .cardiovascular: return "Vitals"
         case .strength: return "Strength"
         case .fitnessMetrics: return "Fitness Metrics"
         }
@@ -26,7 +26,7 @@ enum BiometricCategory: String {
     var icon: String {
         switch self {
         case .bodyComposition: return "figure.stand"
-        case .vitals: return "heart.fill"
+        case .cardiovascular: return "heart.fill"
         case .strength: return "dumbbell.fill"
         case .fitnessMetrics: return "figure.run"
         }

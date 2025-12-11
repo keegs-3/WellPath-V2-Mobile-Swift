@@ -41,7 +41,7 @@ class BiomarkerChartScrollManager: ObservableObject {
         case .month: return .day
         case .sixMonth: return .weekOfYear
         case .year: return .month
-        case .fiveYear: return .quarter  // Quarterly buckets for 5Y view
+        case .fiveYear: return .month
         }
     }
 
@@ -52,7 +52,7 @@ class BiomarkerChartScrollManager: ObservableObject {
         case .month: return 30
         case .sixMonth: return 26
         case .year: return 12
-        case .fiveYear: return 20  // 5 years × 4 quarters = 20 quarters
+        case .fiveYear: return 60
         }
     }
 

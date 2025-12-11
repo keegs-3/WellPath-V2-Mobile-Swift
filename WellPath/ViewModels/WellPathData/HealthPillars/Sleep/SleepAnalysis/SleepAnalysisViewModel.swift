@@ -135,9 +135,9 @@ class SleepAnalysisViewModel: ObservableObject {
     private var monthlyDataStartDate: Date?
     private var monthlyDataEndDate: Date?
 
-    // Track the data range for infinite scrolling (internal for view access)
-    private(set) var dataStartDate: Date?
-    private(set) var dataEndDate: Date?
+    // Track the data range for infinite scrolling
+    private var dataStartDate: Date?
+    private var dataEndDate: Date?
 
     // Callback when sessions are prepended (so day view can adjust index)
     var onSessionsPrepended: ((Int) -> Void)?
