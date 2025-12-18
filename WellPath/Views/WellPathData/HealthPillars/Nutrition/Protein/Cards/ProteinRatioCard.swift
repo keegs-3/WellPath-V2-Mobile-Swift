@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Charts
 
 struct ProteinRatioCard: View {
     let color: Color
@@ -59,36 +60,61 @@ struct ProteinRatioMiniCard: View {
         usePounds ? dataPoint.perLb : dataPoint.perKg
     }
 
-    // Get last 7 days of data for mini chart
-    private var last7DaysData: [ProteinPerBodyWeightData] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        guard let weekAgo = calendar.date(byAdding: .day, value: -6, to: today) else {
-            return []
-        }
-        return viewModel.chartData.filter { dataPoint in
-            dataPoint.date >= weekAgo && dataPoint.date <= Date()
-        }
+    // Get last 6 data points with values (like biometrics cards)
+    private var last6DataPoints: [ProteinPerBodyWeightData] {
+        return viewModel.chartData
+            .filter { displayValue(for: $0) > 0 }
+            .suffix(6)
+            .map { $0 }
     }
 
-    // Weekly average in user's preferred unit
-    private var weeklyAverage: Double {
-        let validData = last7DaysData.filter { displayValue(for: $0) > 0 }
-        guard !validData.isEmpty else { return 0 }
-        let sum = validData.reduce(0.0) { $0 + displayValue(for: $1) }
-        return sum / Double(validData.count)
+    // Most recent value
+    private var latestValue: Double? {
+        guard let latest = last6DataPoints.last else { return nil }
+        return displayValue(for: latest)
+    }
+
+    // Most recent date
+    private var latestDate: Date? {
+        last6DataPoints.last?.date
     }
 
     private var ratioStatus: (text: String, color: Color) {
-        guard weeklyAverage > 0 else { return ("No data", .secondary) }
+        guard let value = latestValue else { return ("No data", .secondary) }
 
-        if weeklyAverage >= optimalRangeLow && weeklyAverage <= optimalRangeHigh {
+        if value >= optimalRangeLow && value <= optimalRangeHigh {
             return ("Optimal", MetricsUIConfig.tierGood)
-        } else if weeklyAverage < optimalRangeLow {
+        } else if value < optimalRangeLow {
             return ("Below target", MetricsUIConfig.tierMedium)
         } else {
             return ("Above target", MetricsUIConfig.tierMedium)
         }
+    }
+
+    /// Smart date display: Today, Yesterday, day name (if this week), or date
+    private var formattedDate: String {
+        guard let date = latestDate else { return "" }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        if calendar.isDateInToday(date) {
+            return "Today"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+
+        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        if date >= startOfWeek {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE"
+            return formatter.string(from: date)
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
     }
 
     var body: some View {
@@ -100,42 +126,58 @@ struct ProteinRatioMiniCard: View {
                     Spacer()
                 }
                 .frame(height: 60)
-            } else if weeklyAverage > 0 {
-                HStack(spacing: 12) {
-                    // Weekly avg on left
+            } else if let value = latestValue {
+                HStack(spacing: 16) {
+                    // Icon
+                    ZStack {
+                        Circle()
+                            .fill(color.opacity(0.15))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: "percent")
+                            .font(.title3)
+                            .foregroundColor(color)
+                    }
+
+                    // Value, date, and status
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Weekly Avg")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(String(format: "%.2f", weeklyAverage))
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(String(format: "%.2f", value))
                                 .font(.title2)
                                 .fontWeight(.bold)
-                                .foregroundColor(color)
+                                .foregroundColor(.primary)
                             Text(unitLabel)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        Text(ratioStatus.text)
-                            .font(.caption2)
-                            .foregroundColor(ratioStatus.color)
+                        HStack(spacing: 4) {
+                            Text(formattedDate)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("·")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(ratioStatus.text)
+                                .font(.caption)
+                                .foregroundColor(ratioStatus.color)
+                        }
                     }
 
                     Spacer()
 
-                    // Mini line chart with target range band on right
-                    MiniRatioLineChart(
-                        data: last7DaysData,
+                    // Mini sparkline with range band
+                    ProteinRatioSparkline(
+                        dataPoints: last6DataPoints,
                         color: color,
                         optimalLow: optimalRangeLow,
                         optimalHigh: optimalRangeHigh,
                         displayValue: displayValue
                     )
-                    .frame(width: 90, height: 45)
+                    .frame(width: 70, height: 36)
                 }
             } else {
                 HStack(spacing: 12) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
+                    Image(systemName: "percent")
                         .font(.system(size: 24))
                         .foregroundColor(color.opacity(0.6))
                     VStack(alignment: .leading, spacing: 2) {
@@ -158,76 +200,100 @@ struct ProteinRatioMiniCard: View {
     }
 }
 
-// MARK: - Mini Line Chart with Target Range Band
+// MARK: - Protein Ratio Sparkline (with range band and stroked circles)
 
-private struct MiniRatioLineChart: View {
-    let data: [ProteinPerBodyWeightData]
+private struct ProteinRatioSparkline: View {
+    let dataPoints: [ProteinPerBodyWeightData]
     let color: Color
     let optimalLow: Double
     let optimalHigh: Double
     let displayValue: (ProteinPerBodyWeightData) -> Double
 
-    var body: some View {
-        GeometryReader { geometry in
-            let validData = data.filter { displayValue($0) > 0 }
-            let values = validData.map { displayValue($0) }
+    /// Fixed number of slots for consistent spacing
+    private let slotCount = 6
 
-            // Calculate Y scale to include optimal range
-            let dataMin = values.min() ?? optimalLow
-            let dataMax = values.max() ?? optimalHigh
-            let yMin = min(dataMin, optimalLow) * 0.9
-            let yMax = max(dataMax, optimalHigh) * 1.1
-            let yRange = yMax - yMin
+    /// Points positioned in fixed slots (right-aligned)
+    private var slottedPoints: [SlottedRatioPoint] {
+        let points = Array(dataPoints.suffix(slotCount))
+        guard !points.isEmpty else { return [] }
 
-            ZStack {
-                // Target range band (shaded area)
-                let bandTop = (1 - (optimalHigh - yMin) / yRange) * geometry.size.height
-                let bandBottom = (1 - (optimalLow - yMin) / yRange) * geometry.size.height
-
-                Rectangle()
-                    .fill(Color.blue.opacity(0.15))
-                    .frame(height: max(0, bandBottom - bandTop))
-                    .offset(y: bandTop + (bandBottom - bandTop) / 2 - geometry.size.height / 2)
-
-                // Line connecting data points
-                if validData.count >= 2 {
-                    Path { path in
-                        let sortedData = validData.sorted { $0.date < $1.date }
-                        let width = geometry.size.width
-                        let height = geometry.size.height
-
-                        for (index, dataPoint) in sortedData.enumerated() {
-                            let x = (width / CGFloat(sortedData.count - 1)) * CGFloat(index)
-                            let normalizedY = (displayValue(dataPoint) - yMin) / yRange
-                            let y = height - (normalizedY * height)
-
-                            if index == 0 {
-                                path.move(to: CGPoint(x: x, y: y))
-                            } else {
-                                path.addLine(to: CGPoint(x: x, y: y))
-                            }
-                        }
-                    }
-                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                }
-
-                // Data points
-                ForEach(Array(validData.sorted { $0.date < $1.date }.enumerated()), id: \.offset) { index, dataPoint in
-                    let sortedData = validData.sorted { $0.date < $1.date }
-                    let x = sortedData.count > 1
-                        ? (geometry.size.width / CGFloat(sortedData.count - 1)) * CGFloat(index)
-                        : geometry.size.width / 2
-                    let normalizedY = (displayValue(dataPoint) - yMin) / yRange
-                    let y = geometry.size.height - (normalizedY * geometry.size.height)
-
-                    Circle()
-                        .fill(color)
-                        .frame(width: 4, height: 4)
-                        .position(x: x, y: y)
-                }
-            }
+        let startSlot = slotCount - points.count
+        return points.enumerated().map { index, point in
+            SlottedRatioPoint(
+                slot: startSlot + index,
+                value: displayValue(point),
+                isLatest: index == points.count - 1,
+                isInRange: displayValue(point) >= optimalLow && displayValue(point) <= optimalHigh
+            )
         }
     }
+
+    private var hasData: Bool {
+        !dataPoints.isEmpty && dataPoints.contains { displayValue($0) > 0 }
+    }
+
+    var body: some View {
+        if hasData {
+            let values = slottedPoints.map { $0.value }
+            let dataMin = values.min() ?? optimalLow
+            let dataMax = values.max() ?? optimalHigh
+            let yMin = min(dataMin, optimalLow) * 0.85
+            let yMax = max(dataMax, optimalHigh) * 1.15
+
+            Chart {
+                // Optimal range shading
+                RectangleMark(
+                    xStart: .value("Start", -0.5),
+                    xEnd: .value("End", Double(slotCount) - 0.5),
+                    yStart: .value("OptimalLow", optimalLow),
+                    yEnd: .value("OptimalHigh", optimalHigh)
+                )
+                .foregroundStyle(Color.blue.opacity(0.12))
+
+                ForEach(slottedPoints) { point in
+                    // Line connecting points
+                    LineMark(
+                        x: .value("Slot", point.slot),
+                        y: .value("Value", point.value)
+                    )
+                    .foregroundStyle(Color.secondary.opacity(0.3))
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+
+                    // Stroked circle points
+                    PointMark(
+                        x: .value("Slot", point.slot),
+                        y: .value("Value", point.value)
+                    )
+                    .symbol {
+                        Circle()
+                            .strokeBorder(
+                                point.isLatest ? color : Color.secondary.opacity(0.4),
+                                lineWidth: point.isLatest ? 2 : 1.5
+                            )
+                            .background(Circle().fill(Color(uiColor: .systemBackground)))
+                            .frame(width: point.isLatest ? 8 : 6, height: point.isLatest ? 8 : 6)
+                    }
+                }
+            }
+            .chartXScale(domain: 0...slotCount - 1)
+            .chartYScale(domain: yMin...yMax)
+            .chartXAxis(.hidden)
+            .chartYAxis(.hidden)
+            .chartLegend(.hidden)
+        } else {
+            EmptyView()
+        }
+    }
+}
+
+/// Point positioned in a fixed slot for protein ratio
+private struct SlottedRatioPoint: Identifiable {
+    let id = UUID()
+    let slot: Int
+    let value: Double
+    let isLatest: Bool
+    let isInRange: Bool
 }
 
 #Preview {

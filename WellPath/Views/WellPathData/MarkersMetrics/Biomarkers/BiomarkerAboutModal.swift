@@ -506,9 +506,14 @@ struct MetricEducationContent {
             return text.isEmpty ? nil : text
         }
 
-        // Case 2: Object with "text" key
+        // Case 2: Object with "text" or "content" key
         if case .object(let json) = anyJson {
+            // Try "text" key first
             if case .string(let text) = json["text"] {
+                return text.isEmpty ? nil : text
+            }
+            // Try "content" key (used by education_static_content)
+            if case .string(let text) = json["content"] {
                 return text.isEmpty ? nil : text
             }
             if case .array(let paragraphs) = json["paragraphs"] {

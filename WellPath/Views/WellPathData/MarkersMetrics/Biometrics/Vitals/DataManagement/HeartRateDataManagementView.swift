@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Data management view for Heart Rate entries
-//  Queries patient_series_samples (heart_rate_series) instead of patient_quantity_samples
+//  Queries patient_quantity_samples (heart_rate) for individual BPM readings
 //
 
 import SwiftUI
@@ -350,17 +350,17 @@ class HeartRateDataViewModel: ObservableObject {
         do {
             let patientId = try await supabase.auth.session.user.id
 
-            struct SeriesSampleRow: Codable {
+            struct QuantitySampleRow: Codable {
                 let id: UUID
-                let value: Double
-                let timestamp: Date
+                let quantityValue: Double
+                let startTime: Date
                 let source: String
                 let createdAt: Date?
 
                 enum CodingKeys: String, CodingKey {
                     case id
-                    case value
-                    case timestamp
+                    case quantityValue = "quantity_value"
+                    case startTime = "start_time"
                     case source
                     case createdAt = "created_at"
                 }
@@ -386,24 +386,24 @@ class HeartRateDataViewModel: ObservableObject {
             }
 
             let data = try await supabase
-                .from("patient_series_samples")
+                .from("patient_quantity_samples")
                 .select()
                 .eq("patient_id", value: patientId)
-                .eq("series_type", value: "heart_rate_series")
-                .order("timestamp", ascending: false)
+                .eq("quantity_type", value: "heart_rate")
+                .order("start_time", ascending: false)
                 .execute()
                 .data
 
-            let samples = try decoder.decode([SeriesSampleRow].self, from: data)
+            let samples = try decoder.decode([QuantitySampleRow].self, from: data)
 
             var entries: [HeartRateEntry] = []
             for sample in samples {
                 let entry = HeartRateEntry(
                     id: sample.id,
-                    value: sample.value,
-                    timestamp: sample.timestamp,
+                    value: sample.quantityValue,
+                    timestamp: sample.startTime,
                     source: sample.source,
-                    createdAt: sample.createdAt ?? sample.timestamp
+                    createdAt: sample.createdAt ?? sample.startTime
                 )
                 entries.append(entry)
             }
@@ -428,7 +428,7 @@ class HeartRateDataViewModel: ObservableObject {
 
             for entry in entries {
                 try await supabase
-                    .from("patient_series_samples")
+                    .from("patient_quantity_samples")
                     .delete()
                     .eq("id", value: entry.id)
                     .eq("patient_id", value: patientId)

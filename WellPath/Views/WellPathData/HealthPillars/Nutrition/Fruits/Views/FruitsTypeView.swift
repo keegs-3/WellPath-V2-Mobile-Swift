@@ -53,10 +53,10 @@ struct FruitsTypeView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            FruitsEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            MetricDataManagementView(config: MetricDataConfig.fruits(color: color))
+            NutritionDataManagementView(color: color, initialCategory: .fruits)
         }
         .sheet(isPresented: $showAboutModal) {
             MetricEducationModal(viewId: metricId, metricName: metricName, color: color, isPresented: $showAboutModal)

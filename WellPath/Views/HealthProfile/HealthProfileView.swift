@@ -13,6 +13,7 @@ struct HealthProfileView: View {
     @State private var showWelcomeSheet = false
     @State private var selectedSection: SurveySection?
     @State private var showReassessment = false
+    @State private var showQuestionFlow = false
 
     // Optional dismiss handler for when presented modally
     var onDismiss: (() -> Void)?
@@ -66,8 +67,16 @@ struct HealthProfileView: View {
             .fullScreenCover(isPresented: $showReassessment) {
                 ReassessmentEntryView()
             }
-            .navigationDestination(for: SurveySection.self) { section in
-                CategoryListView(section: section, viewModel: viewModel)
+            .fullScreenCover(isPresented: $showQuestionFlow) {
+                if let section = selectedSection {
+                    SectionQuestionFlowView(section: section, viewModel: viewModel) {
+                        showQuestionFlow = false
+                        // Refresh data after completing questions
+                        Task {
+                            await viewModel.loadData()
+                        }
+                    }
+                }
             }
             .onAppear {
                 // Auto-show reassessment if in that phase
@@ -198,7 +207,13 @@ struct HealthProfileView: View {
     private var sectionList: some View {
         VStack(spacing: 12) {
             ForEach(viewModel.sections) { section in
-                NavigationLink(value: section) {
+                Button {
+                    selectedSection = section
+                    Task {
+                        await viewModel.selectSection(section)
+                        showQuestionFlow = true
+                    }
+                } label: {
                     SectionCard(section: section)
                 }
                 .buttonStyle(.plain)
@@ -212,6 +227,10 @@ struct HealthProfileView: View {
         Button {
             if let nextSection = viewModel.nextIncompleteSection {
                 selectedSection = nextSection
+                Task {
+                    await viewModel.selectSection(nextSection)
+                    showQuestionFlow = true
+                }
             }
         } label: {
             HStack {

@@ -53,10 +53,10 @@ struct LegumesTypeView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            LegumesEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            MetricDataManagementView(config: MetricDataConfig.legumes(color: color))
+            NutritionDataManagementView(color: color, initialCategory: .legumes)
         }
         .sheet(isPresented: $showAboutModal) {
             MetricEducationModal(viewId: metricId, metricName: metricName, color: color, isPresented: $showAboutModal)

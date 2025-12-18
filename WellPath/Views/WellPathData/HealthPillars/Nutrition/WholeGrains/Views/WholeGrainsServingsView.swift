@@ -22,7 +22,9 @@ struct WholeGrainsServingsView: View {
         NutrientServingsFullView(
             viewModel: viewModel,
             color: color,
-            screenIcon: screenIcon
+            screenIcon: screenIcon,
+            metricId: "DISP_WHOLE_GRAINS_SERVINGS",
+            metricName: "Whole Grain Servings"
         )
         .navigationTitle("Whole Grain Servings")
         .navigationBarTitleDisplayMode(.large)
@@ -53,10 +55,10 @@ struct WholeGrainsServingsView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            WholeGrainsEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            MetricDataManagementView(config: MetricDataConfig.wholeGrains(color: color))
+            NutritionDataManagementView(color: color, initialCategory: .wholeGrains)
         }
         .task {
             await viewModel.loadPrimaryScreen()

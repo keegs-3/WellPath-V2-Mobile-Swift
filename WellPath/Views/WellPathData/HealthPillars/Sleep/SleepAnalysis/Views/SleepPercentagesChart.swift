@@ -42,27 +42,65 @@ struct SleepPercentagesChart: View {
         self.sleepViewModel = sleepViewModel
         _viewModel = StateObject(wrappedValue: SleepPercentagesViewModel(baseColor: color))
 
-        // Initialize scroll position to today
+        // Initialize scroll position correctly for default period (week)
+        // Position so today is ~90% across the visible window
+        // Align to bar centering (noon for daily bars in week view)
         let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        _scrollPosition = State(initialValue: today)
+        let now = Date()
+        let defaultPeriod = TimePeriod.week
+
+        // Week view: daily bars at noon
+        let startOfDay = calendar.startOfDay(for: now)
+        let todayBarDate = calendar.date(byAdding: .hour, value: 12, to: startOfDay) ?? now
+
+        let visibleDuration = defaultPeriod.numberOfBars
+        let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+        let initialScroll = calendar.date(
+            byAdding: defaultPeriod.calendarComponent,
+            value: -offsetFromEnd,
+            to: todayBarDate
+        ) ?? todayBarDate
+        _scrollPosition = State(initialValue: initialScroll)
         // dayViewIndex defaults to 0 (today = last item in reversed array)
     }
 
     /// Use simple pattern from ParentMetricBarChart:
     /// Position scroll so today is ~90% across the visible window
     /// NOTE: Only used for W/M/6M/Y views. Day view uses dayViewIndex instead.
+    /// IMPORTANT: Align scroll position to match bar centering for proper positioning
     private func initializeScrollPosition() {
         let calendar = Calendar.current
         let now = Date()
 
+        // First, find the bar date that represents "today" based on period
+        let todayBarDate: Date
+        switch selectedPeriod {
+        case .year:
+            // Year: bars at noon on 15th of month
+            var components = calendar.dateComponents([.year, .month], from: now)
+            components.day = 15
+            components.hour = 12
+            todayBarDate = calendar.date(from: components) ?? now
+        case .sixMonth:
+            // 6M: weekly bars at Wednesday noon
+            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            components.weekday = 2  // Monday
+            let monday = calendar.date(from: components) ?? now
+            todayBarDate = calendar.date(byAdding: .init(day: 2, hour: 12), to: monday) ?? monday
+        default:
+            // W/M: daily bars at noon
+            let startOfDay = calendar.startOfDay(for: now)
+            todayBarDate = calendar.date(byAdding: .hour, value: 12, to: startOfDay) ?? now
+        }
+
+        // Position scroll so today's bar is ~90% across the visible window
         let visibleDuration = selectedPeriod.numberOfBars
         let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
         scrollPosition = calendar.date(
             byAdding: selectedPeriod.calendarComponent,
             value: -offsetFromEnd,
-            to: now
-        ) ?? now
+            to: todayBarDate
+        ) ?? todayBarDate
     }
 
     private let metricId = "DISP_SLEEP_PERCENTAGES"
@@ -1084,6 +1122,12 @@ class SleepPercentagesViewModel: ObservableObject {
             dailyTimeInBedCache = dailyStageData.map { SleepChartDataPoint(date: $0.date, value: $0.timeInBedMinutes, label: "Time in Bed") }
             dailyTimeAsleepCache = dailyStageData.map { SleepChartDataPoint(date: $0.date, value: $0.sleepDurationMinutes, label: "Time Asleep") }
 
+            // Debug: Log cache population
+            print("📊 Cache populated: \(dailyTimeInBedCache.count) time_in_bed entries, \(dailyTimeAsleepCache.count) time_asleep entries")
+            if let firstInBed = dailyTimeInBedCache.first, let lastInBed = dailyTimeInBedCache.last {
+                print("📊 Cache date range: \(firstInBed.date) to \(lastInBed.date)")
+            }
+
             chartData = allDataPoints
 
             // Build Day view sessions ONLY for Day period: only days with data, newest first (reversed)
@@ -1367,8 +1411,12 @@ class SleepPercentagesViewModel: ObservableObject {
 
         // Calculate the end of the visible window
         guard let endDate = calendar.date(byAdding: period.calendarComponent, value: period.numberOfBars, to: normalizedStart) else {
+            print("⚠️ getAverageTimeInBed: Failed to calculate endDate from \(normalizedStart)")
             return 0
         }
+
+        // Debug: Show the query parameters
+        print("🔍 getAverageTimeInBed: scrollPos=\(scrollPosition), normalized=\(normalizedStart), end=\(endDate), period=\(period.rawValue)")
 
         // Filter daily data that falls within the visible window
         // Use startOfDay for both sides to handle any time component differences
@@ -1378,14 +1426,24 @@ class SleepPercentagesViewModel: ObservableObject {
             return normalizedDataDate >= normalizedStart && normalizedDataDate < endDate
         }
 
-        guard !visibleDailyData.isEmpty else {
-            print("⚠️ getAverageTimeInBed: No data in range \(normalizedStart) to \(endDate), cache has \(dailyTimeInBedCache.count) items")
-            return 0
+        // If visible window filter finds no data, use all data from cache as fallback
+        let dataToUse: [SleepChartDataPoint]
+        if visibleDailyData.isEmpty {
+            print("⚠️ getAverageTimeInBed: No data in range \(normalizedStart) to \(endDate)")
+            // Use all data with value > 0 as fallback
+            dataToUse = dailyTimeInBedCache.filter { $0.value > 0 }
+            if dataToUse.isEmpty {
+                print("⚠️ getAverageTimeInBed: Cache also empty, has \(dailyTimeInBedCache.count) total items")
+                return 0
+            }
+            print("📊 getAverageTimeInBed: Using fallback with \(dataToUse.count) days from cache")
+        } else {
+            dataToUse = visibleDailyData
         }
 
         // Sum all daily values and divide by number of days with data
-        let totalMinutes = visibleDailyData.reduce(0.0) { $0 + $1.value }
-        let averageMinutes = totalMinutes / Double(visibleDailyData.count)
+        let totalMinutes = dataToUse.reduce(0.0) { $0 + $1.value }
+        let averageMinutes = totalMinutes / Double(dataToUse.count)
         print("📊 getAverageTimeInBed: \(visibleDailyData.count) days, avg \(averageMinutes)min")
         return (averageMinutes / 60.0) * 3600 // Convert minutes to hours to seconds
     }
@@ -1410,15 +1468,25 @@ class SleepPercentagesViewModel: ObservableObject {
             return normalizedDataDate >= normalizedStart && normalizedDataDate < endDate
         }
 
-        guard !visibleDailyData.isEmpty else {
-            print("⚠️ getAverageTimeAsleep: No data in range \(normalizedStart) to \(endDate), cache has \(dailyTimeAsleepCache.count) items")
-            return 0
+        // If visible window filter finds no data, use all data from cache as fallback
+        let dataToUse: [SleepChartDataPoint]
+        if visibleDailyData.isEmpty {
+            print("⚠️ getAverageTimeAsleep: No data in range \(normalizedStart) to \(endDate)")
+            // Use all data with value > 0 as fallback
+            dataToUse = dailyTimeAsleepCache.filter { $0.value > 0 }
+            if dataToUse.isEmpty {
+                print("⚠️ getAverageTimeAsleep: Cache also empty, has \(dailyTimeAsleepCache.count) total items")
+                return 0
+            }
+            print("📊 getAverageTimeAsleep: Using fallback with \(dataToUse.count) days from cache")
+        } else {
+            dataToUse = visibleDailyData
         }
 
         // Sum all daily values and divide by number of days with data
-        let totalMinutes = visibleDailyData.reduce(0.0) { $0 + $1.value }
-        let averageMinutes = totalMinutes / Double(visibleDailyData.count)
-        print("📊 getAverageTimeAsleep: \(visibleDailyData.count) days, avg \(averageMinutes)min")
+        let totalMinutes = dataToUse.reduce(0.0) { $0 + $1.value }
+        let averageMinutes = totalMinutes / Double(dataToUse.count)
+        print("📊 getAverageTimeAsleep: \(dataToUse.count) days, avg \(averageMinutes)min")
         return (averageMinutes / 60.0) * 3600 // Convert minutes to hours to seconds
     }
 }

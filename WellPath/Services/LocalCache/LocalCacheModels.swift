@@ -48,10 +48,10 @@ final class CachedSleepSummary {
     var patientId: UUID
     var sleepDate: Date
     var sessionCount: Int
-    var sessionStart: Date
-    var sessionEnd: Date
-    var bedtime: Date
-    var waketime: Date
+    var sessionStart: Date?
+    var sessionEnd: Date?
+    var bedtime: Date?        // Can be NULL for some legacy data
+    var waketime: Date?       // Can be NULL for some legacy data
     var deepMinutes: Double
     var remMinutes: Double
     var lightMinutes: Double
@@ -142,10 +142,10 @@ final class CachedSleepSummary {
 struct SleepSessionSummaryRowLocal {
     let sleepDate: String
     let sessionCount: Int
-    let sessionStart: Date
-    let sessionEnd: Date
-    let bedtime: Date
-    let waketime: Date
+    let sessionStart: Date?
+    let sessionEnd: Date?
+    let bedtime: Date?
+    let waketime: Date?
     let deepMinutes: Double
     let remMinutes: Double
     let lightMinutes: Double

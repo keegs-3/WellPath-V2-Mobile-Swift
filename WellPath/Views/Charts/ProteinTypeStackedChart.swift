@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Charts
+import Supabase
 
 struct ProteinTypeStackedChart: View {
     let color: Color
@@ -364,7 +365,7 @@ private struct ProteinSampleRow: Codable {
     let quantityValue: Double?
     let startTime: Date
     let aggregationDateString: String?
-    let metadata: [String: String]?
+    let metadata: [String: AnyJSON]?
 
     enum CodingKeys: String, CodingKey {
         case quantityValue = "quantity_value"
@@ -439,7 +440,11 @@ class ProteinTypeChartViewModel: ObservableObject {
                 guard let value = sample.quantityValue, value > 0 else { continue }
 
                 // Get protein_type from metadata (default to "unassigned")
-                let proteinType = sample.metadata?["protein_type"] ?? "unassigned"
+                var proteinType = "unassigned"
+                if let metadata = sample.metadata,
+                   case .string(let type) = metadata["protein_type"] {
+                    proteinType = type
+                }
 
                 // For day view, use hour granularity; otherwise use aggregation_date or start of day
                 let groupDate: Date

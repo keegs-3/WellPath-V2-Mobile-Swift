@@ -418,7 +418,7 @@ struct ProteinEntryDetailView: View {
         switch source.lowercased() {
         case "healthkit":
             return "HealthKit"
-        case "wellpath", "wellpath_input":
+        case "wellpath", "wellpath_input", "food_log":
             return "WellPath"
         default:
             return source.capitalized

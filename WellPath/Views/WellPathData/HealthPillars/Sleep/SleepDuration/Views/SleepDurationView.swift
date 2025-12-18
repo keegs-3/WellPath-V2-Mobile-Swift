@@ -31,8 +31,25 @@ struct SleepDurationView: View {
         self.color = color
         self.sectionId = sectionId
 
-        // Initialize scroll position to today (will be properly set in onAppear with delay)
-        _scrollPosition = State(initialValue: Date())
+        // Initialize scroll position correctly for default period (week)
+        // Position so today is ~90% across the visible window
+        // Align to bar centering (noon for daily bars in week view)
+        let calendar = Calendar.current
+        let now = Date()
+        let defaultPeriod = TimePeriod.week
+
+        // Week view: daily bars at noon
+        let startOfDay = calendar.startOfDay(for: now)
+        let todayBarDate = calendar.date(byAdding: .hour, value: 12, to: startOfDay) ?? now
+
+        let visibleDuration = defaultPeriod.numberOfBars
+        let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+        let initialScroll = calendar.date(
+            byAdding: defaultPeriod.calendarComponent,
+            value: -offsetFromEnd,
+            to: todayBarDate
+        ) ?? todayBarDate
+        _scrollPosition = State(initialValue: initialScroll)
     }
 
     var body: some View {
@@ -222,14 +239,39 @@ struct SleepDurationView: View {
     private func initializeScrollPosition() {
         // Use simple pattern from ParentMetricBarChart:
         // Position scroll so today is ~90% across the visible window
+        // IMPORTANT: Align scroll position to match bar centering for proper positioning
+        let calendar = Calendar.current
         let now = Date()
+
+        // First, find the bar date that represents "today" based on period
+        let todayBarDate: Date
+        switch selectedPeriod {
+        case .year:
+            // Year: bars at noon on 15th of month
+            var components = calendar.dateComponents([.year, .month], from: now)
+            components.day = 15
+            components.hour = 12
+            todayBarDate = calendar.date(from: components) ?? now
+        case .sixMonth:
+            // 6M: weekly bars at Wednesday noon
+            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            components.weekday = 2  // Monday
+            let monday = calendar.date(from: components) ?? now
+            todayBarDate = calendar.date(byAdding: .init(day: 2, hour: 12), to: monday) ?? monday
+        default:
+            // W/M: daily bars at noon
+            let startOfDay = calendar.startOfDay(for: now)
+            todayBarDate = calendar.date(byAdding: .hour, value: 12, to: startOfDay) ?? now
+        }
+
+        // Position scroll so today's bar is ~90% across the visible window
         let visibleDuration = selectedPeriod.numberOfBars
         let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-        scrollPosition = Calendar.current.date(
+        scrollPosition = calendar.date(
             byAdding: selectedPeriod.calendarComponent,
             value: -offsetFromEnd,
-            to: now
-        ) ?? now
+            to: todayBarDate
+        ) ?? todayBarDate
     }
 
     private func getDisplayValue() -> Double {

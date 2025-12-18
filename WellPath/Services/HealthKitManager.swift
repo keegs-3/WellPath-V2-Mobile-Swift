@@ -30,6 +30,26 @@ class HealthKitManager: ObservableObject {
 
     private init() {
         checkAvailability()
+        restoreAuthorizationStatus()
+    }
+
+    /// Restore authorization status from UserDefaults on app launch
+    private func restoreAuthorizationStatus() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
+        // Check if we previously granted authorization
+        if UserDefaults.standard.bool(forKey: "healthKitAuthorizationGranted") {
+            // Verify we still have access by checking a common type
+            if let stepsType = HKObjectType.quantityType(forIdentifier: .stepCount) {
+                let status = healthStore.authorizationStatus(for: stepsType)
+                if status == .sharingAuthorized {
+                    authorizationStatus = .authorized
+                    print("✅ HealthKit authorization restored from previous session")
+                    return
+                }
+            }
+        }
+        // Otherwise leave as .notDetermined
     }
 
     // MARK: - Availability
@@ -315,6 +335,9 @@ class HealthKitManager: ObservableObject {
 
             await MainActor.run {
                 authorizationStatus = authorized ? .authorized : .denied
+                if authorized {
+                    UserDefaults.standard.set(true, forKey: "healthKitAuthorizationGranted")
+                }
             }
 
             print("✅ HealthKit authorization completed. Status: \(authorizationStatus)")

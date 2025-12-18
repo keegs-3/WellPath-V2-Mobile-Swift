@@ -56,56 +56,59 @@ class NutrientTypeViewModel: ObservableObject {
     }
 
     /// Discovers type aggregations for this nutrient type from the database
+    /// Queries sample_category_types_reference to get available type options
     func discoverTypeAggregations() async {
         do {
             // Fetch scoring explanation and thresholds from database
             await loadScoringExplanation()
             await loadVarietyThresholds()
 
-            struct AggMetric: Codable {
-                let aggId: String
-                let metricName: String
+            struct TypeReference: Codable {
+                let referenceKey: String
                 let displayName: String
+                let displayOrder: Int?
+                let description: String?
 
                 enum CodingKeys: String, CodingKey {
-                    case aggId = "agg_id"
-                    case metricName = "metric_name"
+                    case referenceKey = "reference_key"
                     case displayName = "display_name"
+                    case displayOrder = "display_order"
+                    case description
                 }
             }
 
-            // Query for type aggregations matching pattern: AGG_{NUTRIENT}_TYPE_*
-            let prefix = "AGG_\(nutrientType.rawValue)_TYPE_"
+            // Query sample_category_types_reference for type options
+            // Use typeReferenceCategory property for correct category name (handles singular/plural)
+            let category = nutrientType.typeReferenceCategory
 
-            let results: [AggMetric] = try await supabase
-                .from("aggregation_metrics")
-                .select("agg_id, metric_name, display_name")
-                .like("agg_id", pattern: "\(prefix)%")
+            let results: [TypeReference] = try await supabase
+                .from("sample_category_types_reference")
+                .select("reference_key, display_name, display_order, description")
+                .eq("reference_category", value: category)
+                .eq("is_active", value: true)
+                .order("display_order")
                 .execute()
                 .value
 
-            print("🍽️ Discovered \(results.count) type aggregations for \(nutrientType.displayName)")
+            print("🍽️ Discovered \(results.count) type options for \(nutrientType.displayName) from sample_category_types_reference")
 
-            // Fetch descriptions from sample_category_types_reference
-            let descriptions = await fetchTypeDescriptions()
-
-            // Sort by display name, but put "Other" last
+            // Sort by display order, but put "Other" last
             let sortedResults = results.sorted { a, b in
-                let aIsOther = a.aggId.hasSuffix("_OTHER")
-                let bIsOther = b.aggId.hasSuffix("_OTHER")
+                let aIsOther = a.referenceKey.lowercased() == "other"
+                let bIsOther = b.referenceKey.lowercased() == "other"
 
                 if aIsOther && !bIsOther { return false }
                 if !aIsOther && bIsOther { return true }
-                return a.displayName < b.displayName
+                return (a.displayOrder ?? 99) < (b.displayOrder ?? 99)
             }
+
+            // Prefix to strip from reference_keys (e.g., "vegetables_types_" from "vegetables_types_root")
+            let categoryPrefix = category + "_"
 
             // Assign gradient colors based on position
             let colorCount = Double(sortedResults.count)
-            typeAggregations = sortedResults.enumerated().map { index, agg in
-                let isOther = agg.aggId.hasSuffix("_OTHER")
-
-                // Clean display name by removing nutrient prefix
-                let cleanName = cleanTypeName(agg.displayName)
+            typeAggregations = sortedResults.enumerated().map { index, ref in
+                let isOther = ref.referenceKey.lowercased() == "other" || ref.referenceKey.lowercased().hasSuffix("_other")
 
                 let color: Color
                 if isOther {
@@ -117,15 +120,22 @@ class NutrientTypeViewModel: ObservableObject {
                     color = baseColor.opacity(opacity)
                 }
 
-                // Extract reference_key from aggId (e.g., AGG_LEGUMES_TYPE_LENTILS -> lentils)
-                let referenceKey = extractReferenceKey(from: agg.aggId, prefix: prefix)
-                let description = descriptions[referenceKey]
+                // Normalize reference_key by stripping category prefix if present
+                // e.g., "vegetables_types_root" -> "root"
+                var normalizedKey = ref.referenceKey
+                if normalizedKey.hasPrefix(categoryPrefix) {
+                    normalizedKey = String(normalizedKey.dropFirst(categoryPrefix.count))
+                }
+
+                // Construct aggId for compatibility with existing display logic
+                // Format: AGG_{NUTRIENT}_TYPE_{NORMALIZED_KEY_UPPER}
+                let aggId = "AGG_\(nutrientType.rawValue)_TYPE_\(normalizedKey.uppercased())"
 
                 return TypeAggregation(
-                    aggId: agg.aggId,
-                    displayName: cleanName,
+                    aggId: aggId,
+                    displayName: ref.displayName,
                     color: color,
-                    description: description
+                    description: ref.description
                 )
             }
 
@@ -147,8 +157,8 @@ class NutrientTypeViewModel: ObservableObject {
                 }
             }
 
-            // Map nutrient type to reference category (e.g., LEGUMES -> legumes_types)
-            let category = "\(nutrientType.rawValue.lowercased())_types"
+            // Use typeReferenceCategory property for correct category name
+            let category = nutrientType.typeReferenceCategory
 
             let results: [ReferenceData] = try await supabase
                 .from("sample_category_types_reference")
@@ -299,12 +309,21 @@ class NutrientTypeViewModel: ObservableObject {
             var typeSums: [String: Double] = [:]
             var dailyByType: [String: [Date: Double]] = [:]
 
+            // Prefix to strip from metadata values (e.g., "vegetables_types_" from "vegetables_types_leafy_greens")
+            let typePrefix = nutrientType.typeReferenceCategory + "_"
+
             for sample in samples {
                 guard let value = sample.quantityValue,
                       let aggDate = sample.aggregationDate else { continue }
 
-                // Extract type from metadata (e.g., "protein_type": "lean")
-                let typeValue = sample.metadata?[nutrientType.typeMetadataKey]?.stringValue ?? "other"
+                // Extract type from metadata (e.g., "vegetables_types": "vegetables_types_leafy_greens" or "leafy_greens")
+                var typeValue = sample.metadata?[nutrientType.typeMetadataKey]?.stringValue ?? "other"
+
+                // Normalize: strip the category prefix if present (e.g., "vegetables_types_leafy_greens" -> "leafy_greens")
+                if typeValue.hasPrefix(typePrefix) {
+                    typeValue = String(typeValue.dropFirst(typePrefix.count))
+                }
+
                 // Convert to agg format for compatibility with existing display logic
                 let aggId = "AGG_\(nutrientType.rawValue)_TYPE_\(typeValue.uppercased())"
 
@@ -406,7 +425,6 @@ class NutrientTypeViewModel: ObservableObject {
         // Map TimePeriod to database period_type
         let periodKey: String
         switch period {
-        case .hour: periodKey = "hourly"
         case .day: periodKey = "daily"
         case .week: periodKey = "weekly"
         case .month: periodKey = "monthly"

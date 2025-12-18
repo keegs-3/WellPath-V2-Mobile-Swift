@@ -13,6 +13,9 @@ struct QuickActionsView: View {
 
     // Track which entry form to show
     @State private var showingProteinEntry = false
+    @State private var showingFoodEntry = false
+    @State private var showingWaterEntry = false
+    @State private var showingCaffeineEntry = false
 
     var body: some View {
         NavigationStack {
@@ -79,6 +82,15 @@ struct QuickActionsView: View {
         .sheet(isPresented: $showingProteinEntry) {
             ProteinEntryView()
         }
+        .sheet(isPresented: $showingFoodEntry) {
+            FoodEntryView()
+        }
+        .sheet(isPresented: $showingWaterEntry) {
+            WaterEntryView()
+        }
+        .sheet(isPresented: $showingCaffeineEntry) {
+            CaffeineEntryView()
+        }
     }
 
     private func handleActionTap(_ action: QuickAction) {
@@ -89,6 +101,12 @@ struct QuickActionsView: View {
             switch action.id {
             case "protein_entry":
                 showingProteinEntry = true
+            case "food_entry":
+                showingFoodEntry = true
+            case "water_entry":
+                showingWaterEntry = true
+            case "caffeine_entry":
+                showingCaffeineEntry = true
             default:
                 break
             }
@@ -111,11 +129,35 @@ class QuickActionsViewModel: ObservableObject {
         // For now, hardcoded. Later can load from UserDefaults or database
         pinnedActions = [
             QuickAction(
+                id: "food_entry",
+                title: "Log Food",
+                subtitle: "Track meals and snacks",
+                iconName: "fork.knife",
+                color: Color.green,
+                category: "Nutrition"
+            ),
+            QuickAction(
                 id: "protein_entry",
                 title: "Log Protein",
                 subtitle: "Record protein intake",
                 iconName: "fish.fill",
                 color: Color(red: 0.2, green: 0.7, blue: 0.4),
+                category: "Nutrition"
+            ),
+            QuickAction(
+                id: "water_entry",
+                title: "Log Water",
+                subtitle: "Track hydration",
+                iconName: "drop.fill",
+                color: Color(red: 0.3, green: 0.6, blue: 0.9),
+                category: "Nutrition"
+            ),
+            QuickAction(
+                id: "caffeine_entry",
+                title: "Log Caffeine",
+                subtitle: "Coffee, tea, energy drinks",
+                iconName: "cup.and.saucer.fill",
+                color: Color(red: 0.5, green: 0.3, blue: 0.2),
                 category: "Nutrition"
             )
         ]

@@ -108,18 +108,32 @@ struct WaistHipView: View {
             await hipLoader.loadValue(for: "DISP_HIP_CIRCUMFERENCE")
             selectedUnit = waistLoader.preferredLengthUnit
         }
+        .onReceive(NotificationCenter.default.publisher(for: .biometricDataDidChange)) { _ in
+            // Refresh chart data when biometric data changes
+            scrollManager.refresh()
+            Task {
+                await waistLoader.loadValue(for: "DISP_WAIST_CIRCUMFERENCE")
+                await hipLoader.loadValue(for: "DISP_HIP_CIRCUMFERENCE")
+            }
+        }
         .onChange(of: selectedPeriod) { oldValue, newPeriod in
             scrollManager.updatePeriod(newPeriod)
 
-            let now = Date()
-            let visibleDuration = newPeriod.numberOfBars
-            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-            scrollPosition = Calendar.current.date(
-                byAdding: newPeriod.calendarComponent,
-                value: -offsetFromEnd,
-                to: now
-            ) ?? now
+            // Use optimal position if available, otherwise calculate based on now
+            if let optimalPosition = scrollManager.optimalScrollPosition {
+                scrollPosition = optimalPosition
+            } else {
+                let now = Date()
+                let visibleDuration = newPeriod.numberOfBars
+                let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+                scrollPosition = Calendar.current.date(
+                    byAdding: newPeriod.calendarComponent,
+                    value: -offsetFromEnd,
+                    to: now
+                ) ?? now
+            }
         }
+        // Removed unused optimalScrollPosition handler - StackedMeasurementsChart manages its own scroll
     }
 
     private var mainContentView: some View {

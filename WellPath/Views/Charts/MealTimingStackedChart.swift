@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Charts
+import Supabase
 
 struct MealTimingStackedChart: View {
     let color: Color
@@ -315,7 +316,7 @@ private struct MealProteinSampleRow: Codable {
     let quantityValue: Double?
     let startTime: Date
     let aggregationDateString: String?
-    let metadata: [String: String]?
+    let metadata: [String: AnyJSON]?
 
     enum CodingKeys: String, CodingKey {
         case quantityValue = "quantity_value"
@@ -452,7 +453,11 @@ class MealTimingViewModel: ObservableObject {
                 guard let value = sample.quantityValue, value > 0 else { continue }
 
                 // Get meal_type from metadata (default to "unassigned")
-                let mealType = sample.metadata?["meal_type"] ?? "unassigned"
+                var mealType = "unassigned"
+                if let metadata = sample.metadata,
+                   case .string(let type) = metadata["meal_type"] {
+                    mealType = type
+                }
 
                 // For day view, use hour granularity; otherwise use aggregation_date or start of day
                 let groupDate: Date

@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Entry form for logging waist and hip measurements to patient_samples
-//  These trigger automatic WHR calculation via database trigger
+//  Also calculates and saves waist-to-hip ratio
 //
 
 import SwiftUI
@@ -70,7 +70,7 @@ struct WaistHipEntryView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("Enter both to calculate Waist-to-Hip Ratio")
+                Text("Both measurements required")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -167,7 +167,8 @@ struct WaistHipEntryView: View {
     }
 
     private var isValid: Bool {
-        !waistValue.isEmpty || !hipValue.isEmpty
+        guard let waist = Double(waistValue), let hip = Double(hipValue) else { return false }
+        return waist > 0 && hip > 0
     }
 
     private func saveEntries() async {
@@ -177,6 +178,10 @@ struct WaistHipEntryView: View {
         do {
             let userId = try await supabase.auth.session.user.id
             let deviceTimezone = TimeZone.current.identifier
+
+            // Create ONE shared event_instance_id for both measurements
+            // This links waist and hip as a paired entry
+            let sharedEventId = UUID()
 
             // Save waist if entered
             if let waist = Double(waistValue), waist > 0 {
@@ -188,7 +193,7 @@ struct WaistHipEntryView: View {
                     timestamp: selectedDateTime,
                     source: .wellpathInput,
                     timezone: deviceTimezone,
-                    eventInstanceId: UUID()
+                    eventInstanceId: sharedEventId
                 )
 
                 try await supabase
@@ -207,7 +212,7 @@ struct WaistHipEntryView: View {
                     timestamp: selectedDateTime,
                     source: .wellpathInput,
                     timezone: deviceTimezone,
-                    eventInstanceId: UUID()
+                    eventInstanceId: sharedEventId
                 )
 
                 try await supabase
@@ -215,6 +220,29 @@ struct WaistHipEntryView: View {
                     .insert(hipSample)
                     .execute()
             }
+
+            // Save calculated waist-to-hip ratio
+            if let waist = Double(waistValue), let hip = Double(hipValue), waist > 0, hip > 0 {
+                let ratio = waist / hip
+                let ratioSample = QuantitySampleWrite.create(
+                    patientId: userId,
+                    quantityType: QuantityTypes.waistToHipRatio,
+                    value: ratio,
+                    unit: "ratio",
+                    timestamp: selectedDateTime,
+                    source: .wellpathInput,
+                    timezone: deviceTimezone,
+                    eventInstanceId: sharedEventId
+                )
+
+                try await supabase
+                    .from("patient_quantity_samples")
+                    .insert(ratioSample)
+                    .execute()
+            }
+
+            // Notify other views that biometric data changed
+            NotificationCenter.default.post(name: .biometricDataDidChange, object: nil)
 
             await MainActor.run { dismiss() }
 

@@ -22,7 +22,9 @@ struct LegumesServingsView: View {
         NutrientServingsFullView(
             viewModel: viewModel,
             color: color,
-            screenIcon: screenIcon
+            screenIcon: screenIcon,
+            metricId: "DISP_LEGUMES_SERVINGS",
+            metricName: "Legume Servings"
         )
         .navigationTitle("Legume Servings")
         .navigationBarTitleDisplayMode(.large)
@@ -53,10 +55,10 @@ struct LegumesServingsView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            LegumesEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            MetricDataManagementView(config: MetricDataConfig.legumes(color: color))
+            NutritionDataManagementView(color: color, initialCategory: .legumes)
         }
         .task {
             await viewModel.loadPrimaryScreen()

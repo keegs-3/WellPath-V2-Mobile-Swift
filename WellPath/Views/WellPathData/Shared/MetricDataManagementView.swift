@@ -106,6 +106,21 @@ extension MetricDataConfig {
         )
     }
 
+    static func nutsSeeds(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Nuts & Seeds",
+            quantityTypes: [QuantityTypes.nutsSeedsServings],
+            color: color,
+            icon: "seal.fill",
+            valueFormatter: { value, _ in String(format: "%.1f servings", value) },
+            metadataFields: [
+                MetadataFieldConfig("nuts_seeds_type", label: "Type", category: "nuts_seeds_types"),
+                MetadataFieldConfig("food_timing", label: "Meal", category: "meal_timings")
+            ],
+            isDuration: false
+        )
+    }
+
     static func protein(color: Color) -> MetricDataConfig {
         MetricDataConfig(
             metricName: "Protein",

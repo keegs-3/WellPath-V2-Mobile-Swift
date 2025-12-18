@@ -6,25 +6,34 @@
 //
 
 import SwiftUI
+import Supabase
 
 @main
 struct WellPathApp: App {
     @StateObject private var syncService = HealthKitSyncService.shared
     @StateObject private var displayConfig = DisplayConfigurationService.shared
 
+    private let supabase = SupabaseManager.shared.client
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(displayConfig)
+                .onOpenURL { url in
+                    handleDeepLink(url)
+                }
                 .task {
                     // Load display configuration from database (pillars, categories, views, tiers)
+                    // This is needed before UI renders, so keep it synchronous
                     await loadDisplayConfiguration()
 
-                    // Perform HealthKit sync on app launch
-                    await performInitialSync()
+                    // Run HealthKit sync in background - don't block UI
+                    Task {
+                        await performInitialSync()
+                    }
 
-                    // Perform local cache sync for offline support
-                    await performCacheSync()
+                    // Run cache sync in background - don't block UI
+                    performCacheSync()
                 }
         }
     }
@@ -58,35 +67,42 @@ struct WellPathApp: App {
         await syncService.performFullSync()
     }
 
-    private func performCacheSync() async {
-        let cacheManager = LocalCacheManager.shared
+    private func performCacheSync() {
+        // DISABLED: LocalCacheManager is @MainActor which blocks UI during sync
+        // TODO: Refactor LocalCacheManager to use background ModelContext
+        // For now, data is fetched on-demand when views load
+        print("📡 Cache sync disabled - data will be fetched on-demand")
+    }
 
-        // Print current cache status
-        cacheManager.printCacheStatus()
+    // MARK: - Deep Link Handling
 
-        // Check if online
-        guard await cacheManager.isOnline() else {
-            print("📡 Offline - using local cache only")
-            cacheManager.printCacheStatus()
-            return
-        }
+    private func handleDeepLink(_ url: URL) {
+        print("🔗 Deep link received: \(url)")
 
-        // Perform recent sync (30 days) for quick startup
-        // Full historical sync happens in background
-        print("🔄 Starting local cache sync...")
-        await cacheManager.performRecentSync()
+        // Handle Supabase auth callback URLs
+        // Format: wellpath://auth/callback#access_token=...&type=...
+        // Format: wellpath://auth/reset#access_token=...&type=recovery
+        // Format: wellpath://auth/callback#access_token=...&type=invite
 
-        // Print status after recent sync
-        print("✅ Recent sync complete")
-        cacheManager.printCacheStatus()
+        Task {
+            do {
+                // Let Supabase handle the URL - it will parse the tokens
+                let session = try await supabase.auth.session(from: url)
+                print("🔐 Session established from deep link: \(session.user.email ?? "unknown")")
 
-        // Schedule full historical sync in background
-        Task.detached(priority: .background) {
-            await cacheManager.performFullHistoricalSync()
-            // Print final status after full sync
-            await MainActor.run {
-                print("✅ Full historical sync complete")
-                cacheManager.printCacheStatus()
+                // Check if this is an invite or password recovery flow
+                // Both require the user to set their password
+                if url.absoluteString.contains("type=recovery") ||
+                   url.absoluteString.contains("type=invite") ||
+                   url.path.contains("reset") ||
+                   url.path.contains("callback") {
+                    // Notify LoginView to show set password sheet
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .showInviteSetPassword, object: nil)
+                    }
+                }
+            } catch {
+                print("❌ Deep link auth error: \(error)")
             }
         }
     }

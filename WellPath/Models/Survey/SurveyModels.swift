@@ -402,6 +402,15 @@ struct SurveyResponseOption: Identifiable, Codable, Hashable {
         optionText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Check if this is an "Other" option that requires free text input
+    var isOtherOption: Bool {
+        let lowercased = optionText.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        // Match patterns like "Other", "Other (please specify)", "Other (open text prompt)"
+        return lowercased == "other" ||
+               lowercased.hasPrefix("other (") ||
+               lowercased.hasPrefix("other:")
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case questionNumber = "question_number"
@@ -779,6 +788,7 @@ struct QuestionResponse: Equatable {
     var selectedOptionTexts: Set<String>  // Option display texts for cross-question matching
     var freeText: String?
     var rankedOptionIds: [String]?
+    var otherText: String?  // Free text for "Other" options
     var savedToDatabase: Bool
     var databaseId: UUID?
 
@@ -786,12 +796,13 @@ struct QuestionResponse: Equatable {
         selectedOptionIds.isEmpty && (freeText?.isEmpty ?? true) && (rankedOptionIds?.isEmpty ?? true)
     }
 
-    init(questionNumber: String, selectedOptionIds: Set<String> = [], selectedOptionTexts: Set<String> = [], freeText: String? = nil, rankedOptionIds: [String]? = nil, savedToDatabase: Bool = false, databaseId: UUID? = nil) {
+    init(questionNumber: String, selectedOptionIds: Set<String> = [], selectedOptionTexts: Set<String> = [], freeText: String? = nil, rankedOptionIds: [String]? = nil, otherText: String? = nil, savedToDatabase: Bool = false, databaseId: UUID? = nil) {
         self.questionNumber = questionNumber
         self.selectedOptionIds = selectedOptionIds
         self.selectedOptionTexts = selectedOptionTexts
         self.freeText = freeText
         self.rankedOptionIds = rankedOptionIds
+        self.otherText = otherText
         self.savedToDatabase = savedToDatabase
         self.databaseId = databaseId
     }

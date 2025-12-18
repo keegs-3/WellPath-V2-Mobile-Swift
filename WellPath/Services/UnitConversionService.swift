@@ -72,6 +72,7 @@ class UnitConversionService: ObservableObject {
 
     @Published var preferredWeightUnit: WeightDisplayUnit = .lb
     @Published var preferredHeightUnit: HeightDisplayUnit2 = .ftIn
+    @Published var preferredDistanceUnit: DistanceDisplayUnit = .mi
     @Published var preferencesLoaded = false
 
     private init() {}
@@ -86,16 +87,18 @@ class UnitConversionService: ObservableObject {
             struct UnitPrefs: Codable {
                 let weightUnit: String?
                 let heightUnit: String?
+                let distanceUnit: String?
 
                 enum CodingKeys: String, CodingKey {
                     case weightUnit = "weight_unit"
                     case heightUnit = "height_unit"
+                    case distanceUnit = "distance_unit"
                 }
             }
 
             let results: [UnitPrefs] = try await supabase
                 .from("patient_unit_preferences")
-                .select("weight_unit, height_unit")
+                .select("weight_unit, height_unit, distance_unit")
                 .eq("patient_id", value: userId.uuidString)
                 .limit(1)
                 .execute()
@@ -108,10 +111,13 @@ class UnitConversionService: ObservableObject {
                 if let h = prefs.heightUnit, let unit = HeightDisplayUnit2(rawValue: h) {
                     preferredHeightUnit = unit
                 }
+                if let d = prefs.distanceUnit, let unit = DistanceDisplayUnit(rawValue: d) {
+                    preferredDistanceUnit = unit
+                }
             }
 
             preferencesLoaded = true
-            print("✅ User unit preferences loaded: weight=\(preferredWeightUnit.rawValue)")
+            print("✅ User unit preferences loaded: weight=\(preferredWeightUnit.rawValue), distance=\(preferredDistanceUnit.rawValue)")
 
         } catch {
             print("⚠️ Could not load user unit preferences: \(error)")

@@ -109,10 +109,10 @@ struct ProteinRatioView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            ProteinEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            ProteinDataManagementView(color: color)
+            NutritionDataManagementView(color: color, initialCategory: .protein)
         }
         .sheet(isPresented: $showAboutModal) {
             MetricEducationModal(viewId: metricId, metricName: metricName, color: color, isPresented: $showAboutModal)
@@ -254,41 +254,29 @@ struct ProteinRatioView: View {
 
                             let value = displayValue(for: dataPoint)
                             if value > 0 {
+                                // Line connecting points - lighter secondary color
                                 LineMark(
                                     x: .value("Date", dataPoint.date),
                                     y: .value("Ratio", value)
                                 )
-                                .foregroundStyle(color)
+                                .foregroundStyle(Color.secondary.opacity(0.3))
                                 .interpolationMethod(.catmullRom)
-                                .lineStyle(StrokeStyle(lineWidth: 3))
+                                .lineStyle(StrokeStyle(lineWidth: 2))
 
-                                AreaMark(
+                                // Stroked circle points
+                                let isSelected = selectedDate != nil && Calendar.current.isDate(dataPoint.date, equalTo: selectedDate!, toGranularity: .day)
+                                PointMark(
                                     x: .value("Date", dataPoint.date),
                                     y: .value("Ratio", value)
                                 )
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [color.opacity(0.2), color.opacity(0.05)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .interpolationMethod(.catmullRom)
-
-                                if let selectedDate = selectedDate,
-                                   Calendar.current.isDate(dataPoint.date, equalTo: selectedDate, toGranularity: .day) {
-                                    PointMark(
-                                        x: .value("Date", dataPoint.date),
-                                        y: .value("Ratio", value)
-                                    )
-                                    .foregroundStyle(color)
-                                    .symbolSize(150)
-                                } else {
-                                    PointMark(
-                                        x: .value("Date", dataPoint.date),
-                                        y: .value("Ratio", value)
-                                    )
-                                    .foregroundStyle(color)
+                                .symbol {
+                                    Circle()
+                                        .strokeBorder(
+                                            isSelected ? color : color.opacity(0.7),
+                                            lineWidth: isSelected ? 3 : 2
+                                        )
+                                        .background(Circle().fill(Color(uiColor: .systemBackground)))
+                                        .frame(width: isSelected ? 12 : 8, height: isSelected ? 12 : 8)
                                 }
                             }
                         }
@@ -503,12 +491,13 @@ private struct ProteinSample: Codable {
         case aggregationDateString = "aggregation_date"
     }
 
+    /// Parse aggregation_date as a local date (noon to avoid DST issues)
     var aggregationDate: Date? {
         guard let dateString = aggregationDateString else { return nil }
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        return formatter.date(from: dateString)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.timeZone = TimeZone.current
+        return formatter.date(from: dateString + " 12:00")
     }
 }
 

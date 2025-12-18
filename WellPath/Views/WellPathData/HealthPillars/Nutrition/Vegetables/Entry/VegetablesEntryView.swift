@@ -203,9 +203,10 @@ struct VegetablesEntryView: View {
             let deviceTimezone = TimeZone.current.identifier
 
             // Build metadata with type and timing
+            // Uses vegetables_types (plural) to match ViewModel's typeMetadataKey
             var metadata: [String: AnyJSON] = [:]
             if !selectedType.isEmpty {
-                metadata["vegetables_type"] = .string(selectedType)
+                metadata["vegetables_types"] = .string(selectedType)
             }
             if !selectedTiming.isEmpty {
                 metadata["food_timing"] = .string(selectedTiming)

@@ -70,7 +70,30 @@ struct BloodPressureMiniCard: View {
         }
     }
 
+    /// Smart date display: Today, Yesterday, day name (if this week), or date
     private func formatDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Check if today
+        if calendar.isDateInToday(date) {
+            return "Today"
+        }
+
+        // Check if yesterday
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+
+        // Check if within the current week (Monday to Sunday)
+        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        if date >= startOfWeek {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE"  // Full day name
+            return formatter.string(from: date)
+        }
+
+        // Otherwise show the date
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
         return formatter.string(from: date)

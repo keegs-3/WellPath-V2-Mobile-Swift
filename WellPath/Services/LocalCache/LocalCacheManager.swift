@@ -111,6 +111,7 @@ final class LocalCacheManager {
     }
 
     /// Save sleep summaries to local cache
+    /// Processes in batches to avoid blocking UI
     func cacheSleepSummaries(
         summaries: [SleepSessionSummaryRow],
         patientId: UUID
@@ -120,6 +121,10 @@ final class LocalCacheManager {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let now = Date()
+
+        // Process in batches of 50 to avoid blocking UI
+        let batchSize = 50
+        var processed = 0
 
         for row in summaries {
             let cached = CachedSleepSummary(from: row, patientId: patientId, cachedAt: now)
@@ -156,6 +161,14 @@ final class LocalCacheManager {
                 existing.cachedAt = now
             } else {
                 context.insert(cached)
+            }
+
+            processed += 1
+
+            // Yield to let UI update every batch
+            if processed % batchSize == 0 {
+                try? context.save()
+                await Task.yield()
             }
         }
 

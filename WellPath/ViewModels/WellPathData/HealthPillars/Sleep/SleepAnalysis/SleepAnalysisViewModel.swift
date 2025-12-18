@@ -200,7 +200,23 @@ class SleepAnalysisViewModel: ObservableObject {
             NSLog("[SLEEP] ✅ Loaded \(sleepStageSegments.count) sleep stage segments across \(sleepSessions.count) days (including empty)")
 
         } catch {
-            NSLog("[SLEEP] ❌ Error loading initial sleep stages: \(error.localizedDescription)")
+            NSLog("[SLEEP] ❌ Error loading initial sleep stages: \(error)")
+            NSLog("[SLEEP] ❌ Error description: \(error.localizedDescription)")
+            // Print detailed decoding error if applicable
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .dataCorrupted(let context):
+                    NSLog("[SLEEP] ❌ Decoding data corrupted: \(context.debugDescription)")
+                case .keyNotFound(let key, let context):
+                    NSLog("[SLEEP] ❌ Decoding key not found: \(key), path: \(context.codingPath)")
+                case .typeMismatch(let type, let context):
+                    NSLog("[SLEEP] ❌ Decoding type mismatch: \(type), path: \(context.codingPath)")
+                case .valueNotFound(let type, let context):
+                    NSLog("[SLEEP] ❌ Decoding value not found: \(type), path: \(context.codingPath)")
+                @unknown default:
+                    NSLog("[SLEEP] ❌ Unknown decoding error")
+                }
+            }
         }
 
         isLoading = false

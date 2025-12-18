@@ -151,27 +151,34 @@ struct SleepDurationMiniCardContent: View {
         calendar.isDateInToday(date)
     }
 
-    // Smart date label: "Today", "Yesterday", "Dec 5", "Nov 2025"
+    /// Smart date label: "Last Night", "Yesterday", day name (if this week), or date
     private func smartDateLabel(for date: Date?) -> String {
         guard let date = date else { return "Last Night" }
 
+        let now = Date()
+
+        // Check if today
         if calendar.isDateInToday(date) {
             return "Last Night"
-        } else if calendar.isDateInYesterday(date) {
+        }
+
+        // Check if yesterday
+        if calendar.isDateInYesterday(date) {
             return "Yesterday"
-        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .month) {
+        }
+
+        // Check if within the current week (Monday to Sunday)
+        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        if date >= startOfWeek {
             let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: date)
-        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .year) {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: date)
-        } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM yyyy"
+            formatter.dateFormat = "EEEE"  // Full day name
             return formatter.string(from: date)
         }
+
+        // Otherwise show the date
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
     }
 
     // Convert minutes to "Xh Ym" format

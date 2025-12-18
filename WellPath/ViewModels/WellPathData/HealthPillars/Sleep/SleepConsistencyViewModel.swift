@@ -95,14 +95,17 @@ class SleepConsistencyViewModel: ObservableObject {
 
             for row in rows {
                 // Parse sleep_date string to Date
-                guard let sleepDate = dateFormatter.date(from: row.sleepDate) else {
+                // Skip rows with nil bedtime/waketime (legacy data)
+                guard let sleepDate = dateFormatter.date(from: row.sleepDate),
+                      let bedtime = row.bedtime,
+                      let waketime = row.waketime else {
                     continue
                 }
 
                 sleepTimes.append(DailySleepTime(
                     date: sleepDate,
-                    bedtime: row.bedtime,
-                    waketime: row.waketime,
+                    bedtime: bedtime,
+                    waketime: waketime,
                     avgBedtimeOffset7d: row.avgBedtimeOffset7d,
                     avgWaketimeOffset7d: row.avgWaketimeOffset7d,
                     daysInRolling7d: row.daysInRolling7d,

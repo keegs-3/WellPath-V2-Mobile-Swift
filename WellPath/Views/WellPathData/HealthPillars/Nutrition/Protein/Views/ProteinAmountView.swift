@@ -22,7 +22,9 @@ struct ProteinAmountView: View {
         NutrientServingsFullView(
             viewModel: viewModel,
             color: color,
-            screenIcon: screenIcon
+            screenIcon: screenIcon,
+            metricId: "DISP_PROTEIN_GRAMS",
+            metricName: "Protein Amount"
         )
         .navigationTitle("Protein Amount")
         .navigationBarTitleDisplayMode(.large)
@@ -53,10 +55,10 @@ struct ProteinAmountView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            ProteinEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            ProteinDataManagementView(color: color)
+            NutritionDataManagementView(color: color, initialCategory: .protein)
         }
         .task {
             await viewModel.loadPrimaryScreen()

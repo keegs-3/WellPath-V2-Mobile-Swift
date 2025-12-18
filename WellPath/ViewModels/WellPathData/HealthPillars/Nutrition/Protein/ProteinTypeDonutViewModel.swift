@@ -187,12 +187,12 @@ class ProteinTypeDonutViewModel: ObservableObject {
             // Load protein types for each tier
             struct DBTierType: Codable {
                 let tierId: String
-                let typeValue: String?
+                let categoryTypeReferenceKey: String?
                 let displayOrder: Int
 
                 enum CodingKeys: String, CodingKey {
                     case tierId = "tier_id"
-                    case typeValue = "type_value"
+                    case categoryTypeReferenceKey = "category_type_reference_key"
                     case displayOrder = "display_order"
                 }
             }
@@ -210,7 +210,7 @@ class ProteinTypeDonutViewModel: ObservableObject {
             for dbTier in tierResults {
                 let proteinTypes = tierTypeResults
                     .filter { $0.tierId == dbTier.tierId }
-                    .compactMap { $0.typeValue }
+                    .compactMap { $0.categoryTypeReferenceKey }
 
                 tiers.append(TierConfig.Tier(
                     tierId: dbTier.tierId,

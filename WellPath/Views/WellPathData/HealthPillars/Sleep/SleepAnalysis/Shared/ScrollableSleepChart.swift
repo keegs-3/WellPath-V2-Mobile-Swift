@@ -704,8 +704,11 @@ struct ScrollableSleepChart: View {
         let today = calendar.startOfDay(for: Date())
 
         // Use the full requested date range from viewModel for smooth scrolling
-        let startDate = viewModel.dataStartDate ?? calendar.date(byAdding: .day, value: -viewMode.visibleDays, to: today) ?? today
-        let endDate = viewModel.dataEndDate ?? calendar.date(byAdding: .day, value: 7, to: today) ?? today
+        // IMPORTANT: Must convert to startOfDay to match grouped dictionary keys
+        let rawStartDate = viewModel.dataStartDate ?? calendar.date(byAdding: .day, value: -viewMode.visibleDays, to: today) ?? today
+        let rawEndDate = viewModel.dataEndDate ?? calendar.date(byAdding: .day, value: 7, to: today) ?? today
+        let startDate = calendar.startOfDay(for: rawStartDate)
+        let endDate = calendar.startOfDay(for: rawEndDate)
 
         var groups: [(date: Date, sessions: [SleepSession])] = []
         var current = startDate
@@ -1307,9 +1310,13 @@ class WeeklySleepDataManager: ObservableObject {
                 var validDays = 0
 
                 for day in dailyData {
+                    // Skip entries without bedtime/waketime (legacy data)
+                    guard let bedtime = day.bedtime,
+                          let waketime = day.waketime else { continue }
+
                     // Extract hour:minute from bedtime/waketime timestamps
-                    let bedtimeComponents = calendar.dateComponents([.hour, .minute], from: day.bedtime)
-                    let waketimeComponents = calendar.dateComponents([.hour, .minute], from: day.waketime)
+                    let bedtimeComponents = calendar.dateComponents([.hour, .minute], from: bedtime)
+                    let waketimeComponents = calendar.dateComponents([.hour, .minute], from: waketime)
 
                     guard let bedHour = bedtimeComponents.hour,
                           let bedMin = bedtimeComponents.minute,

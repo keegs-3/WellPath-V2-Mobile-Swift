@@ -559,14 +559,6 @@ struct WeeklySleepChart: View {
         let visibleDomainLength: TimeInterval = 26 * 7 * 24 * 60 * 60 // 26 weeks in seconds
 
         return Chart {
-            // Selection indicator line (behind all bars - Apple Health style)
-            if let selectedWeek = selectedWeek {
-                RuleMark(x: .value("Selected", selectedWeek.weekStartDate, unit: .weekOfYear))
-                    .lineStyle(StrokeStyle(lineWidth: 2))
-                    .foregroundStyle(Color.secondary)
-                    .zIndex(-1) // Ensure line renders behind bars
-            }
-
             ForEach(chartData) { weekData in
                 // Render BarMark for all weeks to ensure X-axis labels appear
                 // Only show actual bars when data exists
@@ -579,7 +571,7 @@ struct WeeklySleepChart: View {
                         width: .ratio(0.6)
                     )
                     .foregroundStyle(getBarColor(for: weekData))
-                    .cornerRadius(4)
+                    // No corner radius for 6M view - flat bars like Apple Health
                 } else {
                     // Render invisible bar for empty weeks to maintain X-axis structure
                     BarMark(
@@ -593,6 +585,18 @@ struct WeeklySleepChart: View {
             }
         }
         .frame(height: chartHeight)
+        .chartBackground { proxy in
+            // Selection indicator line - rendered as background so bars overlay it
+            if let selectedWeek = selectedWeek,
+               let xPosition = proxy.position(forX: selectedWeek.weekStartDate) {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.3))
+                        .frame(width: 2)
+                        .position(x: xPosition, y: geometry.size.height / 2)
+                }
+            }
+        }
         .chartYScale(domain: yAxisDomain)
         .chartScrollableAxes(.horizontal)
         .chartScrollPosition(x: $scrollPosition)
@@ -678,21 +682,32 @@ struct WeeklySleepChart: View {
             NSLog("[SLEEP] ⚠️ handleChartTap: Could not get date from tap location")
             return
         }
-        
+
         NSLog("[SLEEP] 📍 handleChartTap: Tapped date = \(tappedDate)")
-        
+
         // Find closest week with data
         let closest = chartData.compactMap { $0.week }.min(by: {
             abs($0.weekStartDate.timeIntervalSince(tappedDate)) < abs($1.weekStartDate.timeIntervalSince(tappedDate))
         })
-        
+
+        let calendar = Calendar.current
         if let week = closest {
             if selectedWeek?.id == week.id {
                 NSLog("[SLEEP] 📍 handleChartTap: Deselecting week \(week.weekStartDate)")
                 selectedWeek = nil
+                // Reset visible range to full 26-week window
+                let visibleDomainLength: TimeInterval = 26 * 7 * 24 * 60 * 60
+                if let endDate = calendar.date(byAdding: .second, value: Int(visibleDomainLength), to: scrollPosition) {
+                    visibleRangeBinding = (scrollPosition, endDate)
+                }
             } else {
                 NSLog("[SLEEP] 📍 handleChartTap: Selecting week \(week.weekStartDate) - \(formatTime(week.avgBedtime)) to \(formatTime(week.avgWaketime))")
                 selectedWeek = week
+                // Update visible range to just the selected week for amounts calculation
+                if let weekEnd = calendar.date(byAdding: .day, value: 6, to: week.weekStartDate) {
+                    visibleRangeBinding = (week.weekStartDate, weekEnd)
+                    NSLog("[SLEEP] 📍 handleChartTap: Updated visibleRangeBinding to \(week.weekStartDate) - \(weekEnd)")
+                }
             }
         } else {
             NSLog("[SLEEP] ⚠️ handleChartTap: No closest week found")

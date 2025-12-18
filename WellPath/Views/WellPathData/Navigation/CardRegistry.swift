@@ -74,8 +74,6 @@ enum CardRegistry {
         // MARK: - Protein Cards
         case "DISP_PROTEIN_GRAMS":
             ProteinAmountCard(color: color, pillar: pillar)
-        case "DISP_PROTEIN_TIMING":
-            ProteinTimingCard(color: color, pillar: pillar)
         case "DISP_PROTEIN_TYPE":
             ProteinTypeCard(color: color, pillar: pillar)
         case "DISP_PROTEIN_RATIO":
@@ -84,32 +82,24 @@ enum CardRegistry {
         // MARK: - Vegetable Cards
         case "DISP_VEGETABLES_SERVINGS":
             VegetablesServingsCard(color: color, pillar: pillar)
-        case "DISP_VEGETABLES_TIMING":
-            VegetablesTimingCard(color: color, pillar: pillar)
         case "DISP_VEGETABLES_TYPE":
             VegetablesTypeCard(color: color, pillar: pillar)
 
         // MARK: - Legume Cards
         case "DISP_LEGUMES_SERVINGS":
             LegumesServingsCard(color: color, pillar: pillar)
-        case "DISP_LEGUMES_TIMING":
-            LegumesTimingCard(color: color, pillar: pillar)
         case "DISP_LEGUMES_TYPE":
             LegumesTypeCard(color: color, pillar: pillar)
 
         // MARK: - Fruit Cards
         case "DISP_FRUITS_SERVINGS":
             FruitsServingsCard(color: color, pillar: pillar)
-        case "DISP_FRUITS_TIMING":
-            FruitsTimingCard(color: color, pillar: pillar)
         case "DISP_FRUITS_TYPE":
             FruitsTypeCard(color: color, pillar: pillar)
 
         // MARK: - Whole Grain Cards
         case "DISP_WHOLE_GRAINS_SERVINGS":
             WholeGrainsServingsCard(color: color, pillar: pillar)
-        case "DISP_WHOLE_GRAINS_TIMING":
-            WholeGrainsTimingCard(color: color, pillar: pillar)
         case "DISP_WHOLE_GRAINS_TYPE":
             WholeGrainsTypeCard(color: color, pillar: pillar)
 
@@ -133,6 +123,16 @@ enum CardRegistry {
         case "CARD_STEPS", "DISP_STEPS":
             StepsCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_STEPS")
 
+        // MARK: - Workout Duration Cards
+        case "CARD_CARDIO_DURATION", "DISP_CARDIO_DURATION":
+            CardioDurationCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "CARD_STRENGTH_DURATION", "DISP_STRENGTH_DURATION":
+            StrengthDurationCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "CARD_HIIT_DURATION", "DISP_HIIT_DURATION":
+            HIITDurationCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "CARD_MOBILITY_DURATION", "DISP_MOBILITY_DURATION":
+            MobilityDurationCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+
         // MARK: - Default (Generic Card)
         default:
             GenericMetricCard(metricId: metricId, color: color, pillar: pillar)
@@ -145,19 +145,19 @@ enum CardRegistry {
     static func hasCustomCard(for metricId: String) -> Bool {
         switch metricId {
         // Protein
-        case "DISP_PROTEIN_GRAMS", "DISP_PROTEIN_TIMING", "DISP_PROTEIN_TYPE", "DISP_PROTEIN_RATIO":
+        case "DISP_PROTEIN_GRAMS", "DISP_PROTEIN_TYPE", "DISP_PROTEIN_RATIO":
             return true
         // Vegetables
-        case "DISP_VEGETABLES_SERVINGS", "DISP_VEGETABLES_TIMING", "DISP_VEGETABLES_TYPE":
+        case "DISP_VEGETABLES_SERVINGS", "DISP_VEGETABLES_TYPE":
             return true
         // Legumes
-        case "DISP_LEGUMES_SERVINGS", "DISP_LEGUMES_TIMING", "DISP_LEGUMES_TYPE":
+        case "DISP_LEGUMES_SERVINGS", "DISP_LEGUMES_TYPE":
             return true
         // Fruits
-        case "DISP_FRUITS_SERVINGS", "DISP_FRUITS_TIMING", "DISP_FRUITS_TYPE":
+        case "DISP_FRUITS_SERVINGS", "DISP_FRUITS_TYPE":
             return true
         // Whole Grains
-        case "DISP_WHOLE_GRAINS_SERVINGS", "DISP_WHOLE_GRAINS_TIMING", "DISP_WHOLE_GRAINS_TYPE":
+        case "DISP_WHOLE_GRAINS_SERVINGS", "DISP_WHOLE_GRAINS_TYPE":
             return true
         // Sleep Analysis
         case "DISP_SLEEP_STAGES", "DISP_SLEEP_AMOUNTS", "DISP_SLEEP_PERCENTAGES", "DISP_SLEEP_COMPARISONS":
@@ -168,6 +168,12 @@ enum CardRegistry {
             return true
         // Steps
         case "DISP_STEPS", "CARD_STEPS":
+            return true
+        // Workout Duration
+        case "DISP_CARDIO_DURATION", "CARD_CARDIO_DURATION",
+             "DISP_STRENGTH_DURATION", "CARD_STRENGTH_DURATION",
+             "DISP_HIIT_DURATION", "CARD_HIIT_DURATION",
+             "DISP_MOBILITY_DURATION", "CARD_MOBILITY_DURATION":
             return true
         default:
             return false

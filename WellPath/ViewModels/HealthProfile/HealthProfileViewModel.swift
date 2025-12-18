@@ -342,6 +342,92 @@ class HealthProfileViewModel: ObservableObject {
         await loadQuestionsForGroup(group)
     }
 
+    /// Load ALL questions for a section (flattened navigation)
+    func selectSection(_ section: SurveySection) async {
+        currentSection = section
+        await loadQuestionsForSection(section)
+    }
+
+    private func loadQuestionsForSection(_ section: SurveySection) async {
+        isLoading = true
+
+        do {
+            // Get all group IDs in this section
+            let allGroupIds = section.categories.flatMap { $0.groups.map { $0.groupId } }
+
+            guard !allGroupIds.isEmpty else {
+                questions = []
+                isLoading = false
+                return
+            }
+
+            // Fetch ALL questions for all groups in this section
+            var loadedQuestions: [SurveyQuestion] = try await supabase
+                .from("survey_questions_base")
+                .select()
+                .in("group_id", values: allGroupIds)
+                .eq("is_active", value: true)
+                .order("section_order")
+                .order("category_order")
+                .order("group_order")
+                .order("group_question_order")
+                .execute()
+                .value
+
+            // Fetch options for all questions
+            let questionNumbers = loadedQuestions.map { $0.questionNumber }
+            let options = try await service.fetchResponseOptions(forQuestionNumbers: questionNumbers)
+            let optionsByQuestion = Dictionary(grouping: options) { $0.questionNumber }
+
+            // Also fetch conditions for these questions
+            let questionConditions = try await service.fetchConditions(forQuestionNumbers: questionNumbers)
+            for condition in questionConditions {
+                if conditions[condition.questionNumber] == nil {
+                    conditions[condition.questionNumber] = []
+                }
+                if !conditions[condition.questionNumber]!.contains(where: { $0.id == condition.id }) {
+                    conditions[condition.questionNumber]!.append(condition)
+                }
+            }
+
+            // Map options to questions and resolve UUID-based responses
+            for i in 0..<loadedQuestions.count {
+                loadedQuestions[i].options = optionsByQuestion[loadedQuestions[i].questionNumber]?.sorted { $0.questionResponseOrder < $1.questionResponseOrder } ?? []
+
+                // Update responses to use optionId strings if we have UUID-based responses
+                let qNum = loadedQuestions[i].questionNumber
+                if var response = responses[qNum] {
+                    var updatedOptionIds = Set<String>()
+                    var updatedOptionTexts = response.selectedOptionTexts
+                    for selectedId in response.selectedOptionIds {
+                        if let uuid = UUID(uuidString: selectedId) {
+                            if let option = loadedQuestions[i].options.first(where: { $0.id == uuid }) {
+                                updatedOptionIds.insert(option.optionId)
+                                updatedOptionTexts.insert(option.optionText.trimmingCharacters(in: .whitespacesAndNewlines))
+                            }
+                        } else {
+                            updatedOptionIds.insert(selectedId)
+                            if let option = loadedQuestions[i].options.first(where: { $0.optionId == selectedId }) {
+                                updatedOptionTexts.insert(option.optionText.trimmingCharacters(in: .whitespacesAndNewlines))
+                            }
+                        }
+                    }
+                    response.selectedOptionIds = updatedOptionIds
+                    response.selectedOptionTexts = updatedOptionTexts
+                    responses[qNum] = response
+                }
+            }
+
+            questions = loadedQuestions
+            currentQuestionIndex = findFirstUnansweredIndex()
+
+            isLoading = false
+        } catch {
+            self.error = error.localizedDescription
+            isLoading = false
+        }
+    }
+
     private func loadQuestionsForGroup(_ group: SurveyGroup) async {
         isLoading = true
 
@@ -466,8 +552,17 @@ class HealthProfileViewModel: ObservableObject {
                 guard let sourceResponse = responses[cond.sourceQuestionNumber] else {
                     return []  // Can't show "selected" if nothing selected
                 }
-                // Return only options whose text matches selected source options
-                // Different questions have different optionIds but same text
+
+                // Get the source question to access its options directly
+                if let sourceQuestion = questions.first(where: { $0.questionNumber == cond.sourceQuestionNumber }) {
+                    // Return source question's options that were selected
+                    return sourceQuestion.options.filter { option in
+                        sourceResponse.selectedOptionIds.contains(option.optionId) ||
+                        sourceResponse.selectedOptionTexts.contains(option.optionText.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                }
+
+                // Fallback: filter current question's options by text match
                 return question.options.filter { option in
                     let optionText = option.optionText.trimmingCharacters(in: .whitespacesAndNewlines)
                     return sourceResponse.selectedOptionTexts.contains(optionText) ||
@@ -476,10 +571,24 @@ class HealthProfileViewModel: ObservableObject {
 
             case .optionsFromNotSelected:
                 guard let sourceResponse = responses[cond.sourceQuestionNumber] else {
-                    return question.options  // Show ALL if source not answered yet
+                    // Get source question's options if source not answered
+                    if let sourceQuestion = questions.first(where: { $0.questionNumber == cond.sourceQuestionNumber }) {
+                        return sourceQuestion.options
+                    }
+                    return question.options
                 }
-                // Return options whose text was NOT selected in source
-                // Different questions have different optionIds but same text
+
+                // Get source question's unselected options
+                if let sourceQuestion = questions.first(where: { $0.questionNumber == cond.sourceQuestionNumber }) {
+                    return sourceQuestion.options.filter { option in
+                        let optionText = option.optionText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let textMatch = sourceResponse.selectedOptionTexts.contains(optionText)
+                        let idMatch = sourceResponse.selectedOptionIds.contains(option.optionId)
+                        return !textMatch && !idMatch
+                    }
+                }
+
+                // Fallback: filter current question's options
                 return question.options.filter { option in
                     let optionText = option.optionText.trimmingCharacters(in: .whitespacesAndNewlines)
                     let textMatch = sourceResponse.selectedOptionTexts.contains(optionText)
@@ -594,6 +703,31 @@ class HealthProfileViewModel: ObservableObject {
         return responses[question.questionNumber]?.freeText ?? ""
     }
 
+    /// Update "Other" text response
+    func updateOtherText(_ text: String) {
+        guard let question = currentQuestion else { return }
+        var response = responses[question.questionNumber] ?? QuestionResponse(questionNumber: question.questionNumber)
+        response.otherText = text
+        responses[question.questionNumber] = response
+    }
+
+    /// Get "Other" text for current question
+    var currentOtherText: String {
+        guard let question = currentQuestion else { return "" }
+        return responses[question.questionNumber]?.otherText ?? ""
+    }
+
+    /// Check if an "Other" option is selected for current question
+    var hasOtherOptionSelected: Bool {
+        guard let question = currentQuestion,
+              let response = responses[question.questionNumber] else { return false }
+
+        // Check if any selected option is an "Other" option
+        return question.options.contains { option in
+            option.isOtherOption && response.selectedOptionIds.contains(option.optionId)
+        }
+    }
+
     // MARK: - Save Responses
 
     /// Save the current question's response to the database
@@ -615,11 +749,17 @@ class HealthProfileViewModel: ObservableObject {
                     return
                 }
 
+                // If "Other" option, append the user's text
+                var responseText = option.optionText
+                if option.isOtherOption, let otherText = response.otherText, !otherText.isEmpty {
+                    responseText = "Other: \(otherText)"
+                }
+
                 let dbResponse = try await service.saveResponse(
                     patientId: patientId,
                     questionNumber: question.questionNumber,
                     responseOptionId: option.id,
-                    responseText: option.optionText,
+                    responseText: responseText,
                     responseValue: option.score
                 )
 
@@ -629,7 +769,7 @@ class HealthProfileViewModel: ObservableObject {
                 updatedResponse.databaseId = dbResponse.id
                 responses[question.questionNumber] = updatedResponse
 
-                print("Saved single-select: \(option.optionText)")
+                print("Saved single-select: \(responseText)")
 
             case .multiSelect, .multiSelectTrimmed:
                 // Save comma-separated option IDs

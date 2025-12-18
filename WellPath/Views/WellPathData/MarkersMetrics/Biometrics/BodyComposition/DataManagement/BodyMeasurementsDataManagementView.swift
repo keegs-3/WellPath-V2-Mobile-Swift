@@ -700,6 +700,9 @@ class BodyMeasurementsDataViewModel: ObservableObject {
 
             await loadData()
 
+            // Notify other views that biometric data changed
+            NotificationCenter.default.post(name: .biometricDataDidChange, object: nil)
+
         } catch {
             print("Error deleting entries: \(error)")
         }

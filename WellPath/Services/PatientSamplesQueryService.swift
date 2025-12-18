@@ -48,7 +48,9 @@ struct QuantitySampleResult: Codable {
     let quantityValue: Double?
     let quantityUnit: String?
     let quantityType: String?
-    let metadata: [String: String]?
+    let canonicalValue: Double?  // Converted value in canonical units (e.g., ml for water)
+    let canonicalUnit: String?
+    let metadata: [String: AnyJSON]?  // Use AnyJSON to handle mixed types (strings, bools, numbers)
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -58,7 +60,37 @@ struct QuantitySampleResult: Codable {
         case quantityValue = "quantity_value"
         case quantityUnit = "quantity_unit"
         case quantityType = "quantity_type"
+        case canonicalValue = "canonical_value"
+        case canonicalUnit = "canonical_unit"
         case metadata
+    }
+
+    /// Custom decoder to handle PostgreSQL NUMERIC types which are serialized as strings
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        aggregationDateString = try container.decodeIfPresent(String.self, forKey: .aggregationDateString)
+        startTime = try container.decode(Date.self, forKey: .startTime)
+        endTime = try container.decodeIfPresent(Date.self, forKey: .endTime)
+        quantityUnit = try container.decodeIfPresent(String.self, forKey: .quantityUnit)
+        quantityType = try container.decodeIfPresent(String.self, forKey: .quantityType)
+        canonicalUnit = try container.decodeIfPresent(String.self, forKey: .canonicalUnit)
+        metadata = try container.decodeIfPresent([String: AnyJSON].self, forKey: .metadata)
+
+        // Handle NUMERIC fields that may come as strings
+        quantityValue = Self.decodeDouble(from: container, forKey: .quantityValue)
+        canonicalValue = Self.decodeDouble(from: container, forKey: .canonicalValue)
+    }
+
+    /// Helper to decode Double from either string or number (PostgreSQL NUMERIC comes as string)
+    private static func decodeDouble(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Double? {
+        if let doubleVal = try? container.decode(Double.self, forKey: key) {
+            return doubleVal
+        }
+        if let stringVal = try? container.decode(String.self, forKey: key) {
+            return Double(stringVal)
+        }
+        return nil
     }
 
     /// Parse aggregation_date as a local date (noon to avoid DST issues)
@@ -130,10 +162,10 @@ struct DailyAggregatedValue {
 struct SleepSessionSummaryRow: Codable {
     let sleepDate: String
     let sessionCount: Int  // Number of sleep sessions (main + naps)
-    let sessionStart: Date
-    let sessionEnd: Date
-    let bedtime: Date
-    let waketime: Date
+    let sessionStart: Date?
+    let sessionEnd: Date?
+    let bedtime: Date?     // Can be NULL for some legacy data
+    let waketime: Date?    // Can be NULL for some legacy data
     let deepMinutes: Double
     let remMinutes: Double
     let lightMinutes: Double
@@ -185,10 +217,10 @@ struct SleepSessionSummaryRow: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         sleepDate = try container.decode(String.self, forKey: .sleepDate)
-        sessionStart = try container.decode(Date.self, forKey: .sessionStart)
-        sessionEnd = try container.decode(Date.self, forKey: .sessionEnd)
-        bedtime = try container.decode(Date.self, forKey: .bedtime)
-        waketime = try container.decode(Date.self, forKey: .waketime)
+        sessionStart = try container.decodeIfPresent(Date.self, forKey: .sessionStart)
+        sessionEnd = try container.decodeIfPresent(Date.self, forKey: .sessionEnd)
+        bedtime = try container.decodeIfPresent(Date.self, forKey: .bedtime)
+        waketime = try container.decodeIfPresent(Date.self, forKey: .waketime)
         bedtimeInRange = try container.decodeIfPresent(Bool.self, forKey: .bedtimeInRange)
         waketimeInRange = try container.decodeIfPresent(Bool.self, forKey: .waketimeInRange)
 
@@ -311,7 +343,7 @@ class PatientSamplesQueryService {
         let endStr = formatter.string(from: endDate)
         let results: [QuantitySampleResult] = try await supabase
             .from("patient_quantity_samples")
-            .select("id, aggregation_date, start_time, end_time, quantity_value, quantity_unit, quantity_type, metadata")
+            .select("id, aggregation_date, start_time, end_time, quantity_value, quantity_unit, quantity_type, canonical_value, canonical_unit, metadata")
             .eq("patient_id", value: userId)
             .eq("quantity_type", value: quantityType)
             .eq("is_primary", value: true)  // Only use primary samples for analysis
@@ -322,7 +354,9 @@ class PatientSamplesQueryService {
             .value
         var dailyTotals: [Date: (value: Double, count: Int)] = [:]
         for sample in results {
-            guard let date = sample.aggregationDate, let value = sample.quantityValue else { continue }
+            // Use canonical_value for consistent units (e.g., ml for water regardless of input unit)
+            guard let date = sample.aggregationDate,
+                  let value = sample.canonicalValue ?? sample.quantityValue else { continue }
             let current = dailyTotals[date] ?? (0, 0)
             dailyTotals[date] = (current.value + value, current.count + 1)
         }
@@ -373,15 +407,25 @@ class PatientSamplesQueryService {
         let startStr = formatter.string(from: startDate)
         let endStr = formatter.string(from: endDate)
 
-        return try await supabase
-            .from("patient_sleep_sessions_summary")
-            .select("*")
-            .eq("patient_id", value: userId)
-            .gte("sleep_date", value: startStr)
-            .lte("sleep_date", value: endStr)
-            .order("sleep_date", ascending: false)
-            .execute()
-            .value
+        print("🔍 fetchSleepSessionSummaries: userId=\(userId), range=\(startStr) to \(endStr)")
+
+        do {
+            let decoded: [SleepSessionSummaryRow] = try await supabase
+                .from("patient_sleep_sessions_summary")
+                .select("*")
+                .eq("patient_id", value: userId)
+                .gte("sleep_date", value: startStr)
+                .lte("sleep_date", value: endStr)
+                .order("sleep_date", ascending: false)
+                .execute()
+                .value
+
+            print("✅ fetchSleepSessionSummaries: decoded \(decoded.count) rows")
+            return decoded
+        } catch {
+            print("❌ fetchSleepSessionSummaries FAILED: \(error)")
+            throw error
+        }
     }
 
     /// Fetch raw sleep stage samples with actual start/end times for each stage transition
@@ -395,7 +439,10 @@ class PatientSamplesQueryService {
         formatter.formatOptions = [.withFullDate]
         let startStr = formatter.string(from: startDate)
         let endStr = formatter.string(from: endDate)
-        return try await supabase
+
+        NSLog("[SLEEP STAGES] 🔍 fetchRawSleepStages: userId=\(userId), range=\(startStr) to \(endStr)")
+
+        let results: [SleepStageSampleResult] = try await supabase
             .from("patient_category_samples")
             .select("id, sleep_session_id, aggregation_date, category_value, start_time, end_time")
             .eq("patient_id", value: userId)
@@ -406,6 +453,13 @@ class PatientSamplesQueryService {
             .order("start_time", ascending: true)
             .execute()
             .value
+
+        NSLog("[SLEEP STAGES] ✅ fetchRawSleepStages: decoded \(results.count) rows")
+        if let first = results.first {
+            NSLog("[SLEEP STAGES] First row: categoryValue=\(first.categoryValue ?? "nil"), startTime=\(first.startTime)")
+        }
+
+        return results
     }
 
     /// Fetch daily sleep duration using pre-computed database view
@@ -512,8 +566,10 @@ class PatientSamplesQueryService {
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
         return summaries.compactMap { row -> (date: Date, bedtime: Date, waketime: Date)? in
-            guard let date = dateFormatter.date(from: row.sleepDate) else { return nil }
-            return (date: date, bedtime: row.bedtime, waketime: row.waketime)
+            guard let date = dateFormatter.date(from: row.sleepDate),
+                  let bedtime = row.bedtime,
+                  let waketime = row.waketime else { return nil }
+            return (date: date, bedtime: bedtime, waketime: waketime)
         }.sorted { $0.date < $1.date }
     }
 
@@ -550,11 +606,21 @@ class PatientSamplesQueryService {
             let avgTimeAsleep = weekSessions.reduce(0.0) { $0 + $1.totalSleepMinutes } / count * 60
 
             // Average bedtime/waketime using offset from 6PM for proper overnight averaging
-            let avgBedtimeOffsetMins = weekSessions.map { calculateOffsetFromSixPM($0.bedtime) }.reduce(0, +) / weekSessions.count
-            let avgWaketimeOffsetMins = weekSessions.map { calculateOffsetFromSixPM($0.waketime) }.reduce(0, +) / weekSessions.count
+            // Filter sessions with valid bedtime/waketime
+            let sessionsWithTiming = weekSessions.filter { $0.bedtime != nil && $0.waketime != nil }
+            let avgBedtime: Date
+            let avgWaketime: Date
 
-            let avgBedtime = offsetToTime(avgBedtimeOffsetMins, calendar: calendar)
-            let avgWaketime = offsetToTime(avgWaketimeOffsetMins, calendar: calendar)
+            if !sessionsWithTiming.isEmpty {
+                let avgBedtimeOffsetMins = sessionsWithTiming.compactMap { $0.bedtime }.map { calculateOffsetFromSixPM($0) }.reduce(0, +) / sessionsWithTiming.count
+                let avgWaketimeOffsetMins = sessionsWithTiming.compactMap { $0.waketime }.map { calculateOffsetFromSixPM($0) }.reduce(0, +) / sessionsWithTiming.count
+                avgBedtime = offsetToTime(avgBedtimeOffsetMins, calendar: calendar)
+                avgWaketime = offsetToTime(avgWaketimeOffsetMins, calendar: calendar)
+            } else {
+                // Default to 11 PM bedtime, 7 AM waketime if no timing data
+                avgBedtime = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: weekStart) ?? weekStart
+                avgWaketime = calendar.date(bySettingHour: 7, minute: 0, second: 0, of: weekStart) ?? weekStart
+            }
 
             results.append(WeeklyAverage(
                 weekStartDate: weekStart,
@@ -601,11 +667,21 @@ class PatientSamplesQueryService {
             let avgTimeAsleep = monthSessions.reduce(0.0) { $0 + $1.totalSleepMinutes } / count * 60
 
             // Average bedtime/waketime using offset from 6PM for proper overnight averaging
-            let avgBedtimeOffsetMins = monthSessions.map { calculateOffsetFromSixPM($0.bedtime) }.reduce(0, +) / monthSessions.count
-            let avgWaketimeOffsetMins = monthSessions.map { calculateOffsetFromSixPM($0.waketime) }.reduce(0, +) / monthSessions.count
+            // Filter sessions with valid bedtime/waketime
+            let sessionsWithTiming = monthSessions.filter { $0.bedtime != nil && $0.waketime != nil }
+            let avgBedtime: Date
+            let avgWaketime: Date
 
-            let avgBedtime = offsetToTime(avgBedtimeOffsetMins, calendar: calendar)
-            let avgWaketime = offsetToTime(avgWaketimeOffsetMins, calendar: calendar)
+            if !sessionsWithTiming.isEmpty {
+                let avgBedtimeOffsetMins = sessionsWithTiming.compactMap { $0.bedtime }.map { calculateOffsetFromSixPM($0) }.reduce(0, +) / sessionsWithTiming.count
+                let avgWaketimeOffsetMins = sessionsWithTiming.compactMap { $0.waketime }.map { calculateOffsetFromSixPM($0) }.reduce(0, +) / sessionsWithTiming.count
+                avgBedtime = offsetToTime(avgBedtimeOffsetMins, calendar: calendar)
+                avgWaketime = offsetToTime(avgWaketimeOffsetMins, calendar: calendar)
+            } else {
+                // Default to 11 PM bedtime, 7 AM waketime if no timing data
+                avgBedtime = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: monthStart) ?? monthStart
+                avgWaketime = calendar.date(bySettingHour: 7, minute: 0, second: 0, of: monthStart) ?? monthStart
+            }
 
             results.append(MonthlyAverage(
                 monthStartDate: monthStart,
@@ -651,10 +727,6 @@ class PatientSamplesQueryService {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
         switch period {
-        case .hour:
-            let startOfHour = calendar.date(from: calendar.dateComponents([.year, .month, .day, .hour], from: date))!
-            let endOfHour = calendar.date(byAdding: .hour, value: 1, to: startOfHour)!
-            return (startOfHour, endOfHour)
         case .day:
             return (startOfDay, startOfDay)
         case .week:

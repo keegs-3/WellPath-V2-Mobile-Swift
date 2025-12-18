@@ -3,10 +3,51 @@
 //  WellPath
 //
 //  Entry form for logging alcohol consumption to patient_samples
+//  Also writes calories sample based on drink type's typical_calories
 //
 
 import SwiftUI
 import Supabase
+
+// MARK: - Reference Option with Metadata
+
+/// Extended reference option that includes metadata for calorie/alcohol info
+struct AlcoholReferenceOption: Codable, Identifiable {
+    let id: UUID
+    let displayName: String
+    let referenceKey: String
+    let metadata: AlcoholTypeMetadata?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+        case referenceKey = "reference_key"
+        case metadata
+    }
+}
+
+struct AlcoholTypeMetadata: Codable {
+    let typicalCalories: String?
+    let typicalAlcoholG: String?
+    let typicalServingSize: String?
+    let typicalAbv: String?
+
+    enum CodingKeys: String, CodingKey {
+        case typicalCalories = "typical_calories"
+        case typicalAlcoholG = "typical_alcohol_g"
+        case typicalServingSize = "typical_serving_size"
+        case typicalAbv = "typical_abv"
+    }
+
+    /// Get calories per drink as Double, defaulting to 0 if not available
+    var caloriesPerDrink: Double {
+        guard let caloriesStr = typicalCalories,
+              let calories = Double(caloriesStr) else {
+            return 0
+        }
+        return calories
+    }
+}
 
 struct AlcoholEntryView: View {
     @Environment(\.dismiss) var dismiss
@@ -14,7 +55,7 @@ struct AlcoholEntryView: View {
     @State private var drinkCount: Int = 1
     @State private var drinkCountText: String = "1"
     @State private var selectedType: String = ""
-    @State private var alcoholTypes: [ReferenceOption] = []
+    @State private var alcoholTypes: [AlcoholReferenceOption] = []
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -112,7 +153,7 @@ struct AlcoholEntryView: View {
                     Section {
                         Picker("Type", selection: $selectedType) {
                             Text("Select Type").tag("")
-                            ForEach(alcoholTypes, id: \.id) { option in
+                            ForEach(alcoholTypes) { option in
                                 Text(option.displayName).tag(option.referenceKey)
                             }
                         }
@@ -165,10 +206,10 @@ struct AlcoholEntryView: View {
         isLoading = true
 
         do {
-            // Load alcohol types from sample_category_types_reference
-            let typesResponse: [ReferenceOption] = try await supabase
+            // Load alcohol types from sample_category_types_reference with metadata
+            let typesResponse: [AlcoholReferenceOption] = try await supabase
                 .from("sample_category_types_reference")
-                .select("id, display_name, reference_key")
+                .select("id, display_name, reference_key, metadata")
                 .eq("reference_category", value: "alcohol_types")
                 .eq("is_active", value: true)
                 .order("display_order")
@@ -197,6 +238,7 @@ struct AlcoholEntryView: View {
         do {
             let userId = try await supabase.auth.session.user.id
             let deviceTimezone = TimeZone.current.identifier
+            let eventId = UUID()  // Shared event instance for both samples
 
             // Build metadata with alcohol type
             var metadata: [String: AnyJSON] = [:]
@@ -204,8 +246,8 @@ struct AlcoholEntryView: View {
                 metadata[AlcoholMetadataKeys.alcoholType] = .string(selectedType)
             }
 
-            // Create quantity sample using the proper write model
-            let sample = QuantitySampleWrite.create(
+            // Create quantity sample for alcohol drinks
+            let alcoholSample = QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.alcoholDrinks,
                 value: Double(drinkCount),
@@ -214,13 +256,46 @@ struct AlcoholEntryView: View {
                 source: .wellpathInput,
                 timezone: deviceTimezone,
                 metadata: metadata.isEmpty ? nil : metadata,
-                eventInstanceId: UUID()
+                eventInstanceId: eventId
             )
 
+            // Insert alcohol sample
             try await supabase
                 .from("patient_quantity_samples")
-                .insert(sample)
+                .insert(alcoholSample)
                 .execute()
+
+            // Also write calories sample if the selected type has typical_calories
+            if let selectedOption = alcoholTypes.first(where: { $0.referenceKey == selectedType }),
+               let caloriesPerDrink = selectedOption.metadata?.caloriesPerDrink,
+               caloriesPerDrink > 0 {
+                // Calculate total calories (calories per drink × number of drinks)
+                let totalCalories = caloriesPerDrink * Double(drinkCount)
+
+                // Add source info to calories metadata
+                let caloriesMetadata: [String: AnyJSON] = [
+                    "source_type": .string("alcohol"),
+                    "alcohol_type": .string(selectedType),
+                    "drink_count": .double(Double(drinkCount))
+                ]
+
+                let calorieSample = QuantitySampleWrite.create(
+                    patientId: userId,
+                    quantityType: QuantityTypes.calorieIntake,
+                    value: totalCalories,
+                    unit: "kilocalorie",
+                    timestamp: selectedDateTime,
+                    source: .wellpathInput,
+                    timezone: deviceTimezone,
+                    metadata: caloriesMetadata,
+                    eventInstanceId: eventId
+                )
+
+                try await supabase
+                    .from("patient_quantity_samples")
+                    .insert(calorieSample)
+                    .execute()
+            }
 
             await MainActor.run { dismiss() }
 

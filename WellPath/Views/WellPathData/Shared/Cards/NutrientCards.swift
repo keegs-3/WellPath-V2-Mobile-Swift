@@ -59,45 +59,6 @@ struct NutrientServingsCard: View {
     }
 }
 
-// MARK: - Timing Card
-
-struct NutrientTimingCard: View {
-    let config: NutrientScreenConfig
-    let color: Color
-    let pillar: String
-
-    var body: some View {
-        MetricCardView(
-            title: "\(config.title) Timing",
-            color: color,
-            metricId: config.metricId.replacingOccurrences(of: "SERVINGS", with: "TIMING"),
-            pillar: pillar
-        ) {
-            NutrientTimingMiniCardGeneric(nutrientType: config.nutrientType, color: color)
-        } fullScreen: {
-            // Route to proper view with toolbar components
-            timingView
-        }
-    }
-
-    @ViewBuilder
-    private var timingView: some View {
-        switch config.nutrientType {
-        case .legumes:
-            LegumesTimingView(color: color)
-        case .vegetables:
-            VegetablesTimingView(color: color)
-        case .fruits:
-            FruitsTimingView(color: color)
-        case .wholeGrains:
-            WholeGrainsTimingView(color: color)
-        default:
-            NutrientTimingTimelineView(nutrientType: config.nutrientType, color: color, showAbout: .constant(false))
-                .metricScreenBackground(color: color)
-        }
-    }
-}
-
 // MARK: - Type Card
 
 struct NutrientTypeCard: View {
@@ -148,7 +109,6 @@ struct NutrientTypeCard: View {
     ScrollView {
         VStack(spacing: 12) {
             NutrientServingsCard(config: .vegetables, color: .green, pillar: "Healthful Nutrition")
-            NutrientTimingCard(config: .vegetables, color: .green, pillar: "Healthful Nutrition")
             NutrientTypeCard(config: .vegetables, color: .green, pillar: "Healthful Nutrition")
         }
         .padding()

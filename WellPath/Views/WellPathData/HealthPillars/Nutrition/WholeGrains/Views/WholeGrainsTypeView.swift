@@ -53,10 +53,10 @@ struct WholeGrainsTypeView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            WholeGrainsEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            MetricDataManagementView(config: MetricDataConfig.wholeGrains(color: color))
+            NutritionDataManagementView(color: color, initialCategory: .wholeGrains)
         }
         .sheet(isPresented: $showAboutModal) {
             MetricEducationModal(viewId: metricId, metricName: metricName, color: color, isPresented: $showAboutModal)

@@ -271,13 +271,35 @@ struct QuantityTypes {
     static let legumesServings = "legumes_servings"
     static let wholeGrainsServings = "whole_grains_servings"
     static let fruitsServings = "fruits_servings"
+    static let nutsSeedsServings = "nuts_seeds_servings"
     static let hydrationOunces = "hydration_ounces"
+    static let waterMl = "water_ml"
+    static let carbGrams = "carbs_grams"
+    static let fiberGrams = "fiber_grams"
+    static let sugarGrams = "sugar_grams"
+    static let fatGrams = "fat_grams"
+    static let saturatedFatGrams = "saturated_fat_grams"
+    static let cholesterolMg = "cholesterol_mg"
+    static let sodiumMg = "sodium_mg"
+    static let caffeineMg = "caffeine_mg"
+    static let calorieIntake = "calorie_intake"
 
     // Movement
     static let steps = "steps"
     static let strengthDuration = "strength_duration"
     static let cardioDuration = "cardio_duration"
     static let yogaDuration = "yoga_duration"
+    static let hiitDuration = "hiit_duration"
+    static let flexibilityDuration = "flexibility_duration"
+
+    // Activity (from HealthKit)
+    static let activeCalories = "active_calories"
+    static let basalCalories = "basal_calories"
+    static let exerciseTime = "exercise_time"
+    static let standTime = "stand_time"
+    static let distanceWalkingRunning = "distance_walking_running"
+    static let distanceCycling = "distance_cycling"
+    static let flightsClimbed = "flights_climbed"
 
     // Physical / Biometrics
     static let weight = "bodyweight"
@@ -285,17 +307,24 @@ struct QuantityTypes {
     static let heartRate = "heart_rate"
     static let waistCircumference = "waist_circumference"
     static let hipCircumference = "hip_circumference"
+    static let waistToHipRatio = "waist_to_hip_ratio"
     static let bloodPressureSystolic = "blood_pressure_systolic"
     static let bloodPressureDiastolic = "blood_pressure_diastolic"
     static let restingHeartRate = "resting_heart_rate"
+    static let walkingHeartRate = "walking_heart_rate"
     static let hrv = "hrv"
     static let vo2Max = "vo2_max"
     static let bodyFatPercent = "body_fat_percent"
+    static let leanBodyMass = "lean_body_mass"
     static let gripStrength = "grip_strength"
     static let appendicularSkeletalMuscleMass = "appendicular_skeletal_muscle_mass"
     static let visceralFatPercent = "visceral_fat_percent"
     static let asmi = "asmi"
     static let bmi = "bmi"
+    static let oxygenSaturation = "oxygen_saturation"
+    static let respiratoryRate = "respiratory_rate"
+    static let bodyTemperature = "body_temperature"
+    static let bloodGlucose = "blood_glucose"
 
     // Mental
     static let meditationDuration = "meditation_duration"
@@ -320,6 +349,7 @@ struct QuantityTypes {
 struct CategoryTypes {
     static let sleepPeriodTypes = "sleep_period_types"
     static let menstrualFlow = "menstrual_flow"
+    static let mindfulSession = "mindful_session"
 }
 
 /// Sleep period type keys (matching HealthKit and sample_category_types_reference)

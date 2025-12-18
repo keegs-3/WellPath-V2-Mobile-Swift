@@ -8,6 +8,13 @@
 
 import SwiftUI
 
+// MARK: - Data Change Notifications
+
+extension Notification.Name {
+    /// Posted when biometric data changes (entry added, edited, or deleted)
+    static let biometricDataDidChange = Notification.Name("biometricDataDidChange")
+}
+
 struct BiometricMiniCard: View {
     let metricId: String
     let color: Color
@@ -32,8 +39,32 @@ struct BiometricMiniCard: View {
         return loader.unit ?? ""
     }
 
+    /// Smart date display: Today, Yesterday, day name (if this week), or date
     private var formattedDate: String {
         guard let date = loader.lastUpdated else { return "" }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Check if today
+        if calendar.isDateInToday(date) {
+            return "Today"
+        }
+
+        // Check if yesterday
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+
+        // Check if within the current week (Monday to Sunday)
+        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        if date >= startOfWeek {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE"  // Full day name
+            return formatter.string(from: date)
+        }
+
+        // Otherwise show the date
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
         return formatter.string(from: date)
@@ -98,8 +129,11 @@ struct BiometricMiniCard: View {
             // Sparkline
             BiometricSparkline(dataPoints: loader.sparklinePoints, color: color)
         }
-        .task {
-            await loader.loadValue(for: metricId)
+        .onAppear {
+            Task { await loader.loadValue(for: metricId) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .biometricDataDidChange)) { _ in
+            Task { await loader.loadValue(for: metricId) }
         }
     }
 

@@ -36,6 +36,12 @@ struct HealthKitAuthorizationView: View {
             // Status indicator
             statusSection
 
+            // Sync progress card (when authorized)
+            if healthKitManager.authorizationStatus == .authorized {
+                HealthKitSyncProgressCard()
+                    .padding(.horizontal)
+            }
+
             // Data types we'll access
             VStack(alignment: .leading, spacing: 16) {
                 Text("We'll access:")

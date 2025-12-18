@@ -217,7 +217,7 @@ struct BodyWeightEntryView: View {
                     patientId: userId,
                     quantityType: QuantityTypes.bmi,
                     value: bmiValue,
-                    unit: "kg/m²",
+                    unit: "kilograms_per_square_meter",  // Must match units_base.unit_id
                     timestamp: selectedDateTime,
                     source: .wellpathInput,
                     timezone: deviceTimezone,

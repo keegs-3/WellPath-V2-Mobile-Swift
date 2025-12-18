@@ -305,42 +305,47 @@ class AlcoholTypeViewModel: ObservableObject {
     }
 
     /// Discovers type aggregations from the database
+    /// Queries sample_category_types_reference for alcohol type options
     func discoverTypeAggregations() async {
         do {
-            struct AggMetric: Codable {
-                let aggId: String
+            struct TypeReference: Codable {
+                let referenceKey: String
                 let displayName: String
+                let displayOrder: Int?
 
                 enum CodingKeys: String, CodingKey {
-                    case aggId = "agg_id"
+                    case referenceKey = "reference_key"
                     case displayName = "display_name"
+                    case displayOrder = "display_order"
                 }
             }
 
-            // Query for type aggregations matching pattern: AGG_ALCOHOL_TYPE_*
-            let results: [AggMetric] = try await supabase
-                .from("aggregation_metrics")
-                .select("agg_id, display_name")
-                .like("agg_id", pattern: "AGG_ALCOHOL_TYPE_%")
+            // Query sample_category_types_reference for alcohol type options
+            let results: [TypeReference] = try await supabase
+                .from("sample_category_types_reference")
+                .select("reference_key, display_name, display_order")
+                .eq("reference_category", value: "alcohol_types")
+                .eq("is_active", value: true)
+                .order("display_order")
                 .execute()
                 .value
 
-            print("🍷 Discovered \(results.count) alcohol type aggregations")
+            print("🍷 Discovered \(results.count) alcohol type options from sample_category_types_reference")
 
-            // Sort by display name, but put "Other" last
+            // Sort by display order, but put "Other" last
             let sortedResults = results.sorted { a, b in
-                let aIsOther = a.aggId.contains("OTHER")
-                let bIsOther = b.aggId.contains("OTHER")
+                let aIsOther = a.referenceKey.lowercased() == "other"
+                let bIsOther = b.referenceKey.lowercased() == "other"
 
                 if aIsOther && !bIsOther { return false }
                 if !aIsOther && bIsOther { return true }
-                return a.displayName < b.displayName
+                return (a.displayOrder ?? 99) < (b.displayOrder ?? 99)
             }
 
             // Assign gradient colors based on position
             let colorCount = Double(sortedResults.count)
-            typeAggregations = sortedResults.enumerated().map { index, agg in
-                let isOther = agg.aggId.contains("OTHER")
+            typeAggregations = sortedResults.enumerated().map { index, ref in
+                let isOther = ref.referenceKey.lowercased() == "other"
 
                 let color: Color
                 if isOther {
@@ -352,9 +357,12 @@ class AlcoholTypeViewModel: ObservableObject {
                     color = baseColor.opacity(opacity)
                 }
 
+                // Construct aggId for compatibility with existing display logic
+                let aggId = "AGG_ALCOHOL_TYPE_\(ref.referenceKey.uppercased())"
+
                 return AlcoholTypeAggregation(
-                    aggId: agg.aggId,
-                    displayName: agg.displayName,
+                    aggId: aggId,
+                    displayName: ref.displayName,
                     color: color
                 )
             }
@@ -433,18 +441,6 @@ class AlcoholTypeViewModel: ObservableObject {
         utcCalendar.timeZone = TimeZone(identifier: "UTC")!
 
         switch period {
-        case .hour:
-            let hourComponents = calendar.dateComponents([.year, .month, .day, .hour], from: date)
-            var utcComponents = DateComponents()
-            utcComponents.year = hourComponents.year
-            utcComponents.month = hourComponents.month
-            utcComponents.day = hourComponents.day
-            utcComponents.hour = hourComponents.hour
-            utcComponents.minute = 0
-            utcComponents.second = 0
-            utcComponents.timeZone = TimeZone(identifier: "UTC")
-            return utcCalendar.date(from: utcComponents)!
-
         case .day:
             let localComponents = calendar.dateComponents([.year, .month, .day], from: date)
             var utcComponents = DateComponents()

@@ -175,10 +175,11 @@ struct MetricsUIConfig {
         if lowercased.contains("protein") { return "fish.fill" }
         if lowercased.contains("legume") { return "leaf.fill" }
         if lowercased.contains("grain") { return "basket.fill" }
+        if lowercased.contains("nuts") || lowercased.contains("seeds") { return "seal.fill" }
         if lowercased.contains("fiber") { return "laurel.leading" }
         if lowercased.contains("fat") { return "heart.fill" }
         if lowercased.contains("sugar") { return "cube.fill" }
-        if lowercased.contains("hydration") || lowercased.contains("water") { return "drop.fill" }
+        if lowercased.contains("hydration") || lowercased.contains("water") { return "waterbottle.fill" }
         if lowercased.contains("meal timing") { return "clock.fill" }
         if lowercased.contains("meal quality") { return "hand.thumbsup.fill" }
 

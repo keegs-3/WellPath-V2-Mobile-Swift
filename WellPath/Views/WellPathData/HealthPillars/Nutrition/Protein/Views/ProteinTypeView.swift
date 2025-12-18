@@ -263,10 +263,10 @@ struct ProteinTypeView: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            ProteinEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            ProteinDataManagementView(color: color)
+            NutritionDataManagementView(color: color, initialCategory: .protein)
         }
         .sheet(isPresented: $showScoringExplanation) {
             scoringExplanationModal

@@ -164,6 +164,8 @@ class BiomarkerChartScrollManager: ObservableObject {
                 bucketStart = calendar.dateInterval(of: .weekOfYear, for: sample.sampleTime)?.start ?? sample.sampleTime
             case .month:
                 bucketStart = calendar.dateInterval(of: .month, for: sample.sampleTime)?.start ?? sample.sampleTime
+            case .quarter:
+                bucketStart = calendar.dateInterval(of: .quarter, for: sample.sampleTime)?.start ?? sample.sampleTime
             default:
                 bucketStart = sample.sampleTime
             }
@@ -194,7 +196,11 @@ class BiomarkerChartScrollManager: ObservableObject {
 
         while currentDate <= endDate {
             timeline.append(BiomarkerChartPoint(date: currentDate, value: 0, sample: nil))
-            currentDate = calendar.date(byAdding: calendarComponent, value: 1, to: currentDate) ?? endDate
+            guard let nextDate = calendar.date(byAdding: calendarComponent, value: 1, to: currentDate),
+                  nextDate > currentDate else {
+                break  // Prevent infinite loop if date addition fails
+            }
+            currentDate = nextDate
         }
 
         return timeline

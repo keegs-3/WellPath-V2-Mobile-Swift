@@ -39,6 +39,8 @@ struct BiometricMetricCard: View {
         switch metric.metricId {
         case "DISP_BLOOD_PRESSURE":
             BloodPressureMiniCard(color: color)
+        case "DISP_HEART_RATE":
+            HeartRateMiniCard(color: color)
         default:
             BiometricMiniCard(metric: metric, color: color, icon: icon)
         }

@@ -29,14 +29,17 @@ struct TrackedMetricsEntryView: View {
                 }
 
                 Section("Nutrition") {
-                    NavigationLink("Log Protein") {
-                        Text("Protein Entry - TODO")
+                    NavigationLink("Log Food") {
+                        FoodEntryView()
                     }
-                    NavigationLink("Log Meal") {
-                        Text("Meal Entry")
+                    NavigationLink("Log Protein") {
+                        ProteinEntryView()
                     }
                     NavigationLink("Log Water") {
-                        Text("Water Entry")
+                        WaterEntryView()
+                    }
+                    NavigationLink("Log Caffeine") {
+                        CaffeineEntryView()
                     }
                 }
             }

@@ -424,6 +424,26 @@ struct MeasurementDataPoint: Identifiable {
     let date: Date
     let waist: Double
     let hip: Double
+    let waistIsDerived: Bool  // True if waist value was carried forward from previous reading
+    let hipIsDerived: Bool    // True if hip value was carried forward from previous reading
+
+    /// True if the ratio uses at least one derived (carried forward) value
+    var isDerivedRatio: Bool {
+        waistIsDerived || hipIsDerived
+    }
+
+    /// True if this point has at least one actual measurement (not just carried forward values)
+    var hasActualMeasurement: Bool {
+        !waistIsDerived || !hipIsDerived
+    }
+
+    init(date: Date, waist: Double, hip: Double, waistIsDerived: Bool = false, hipIsDerived: Bool = false) {
+        self.date = date
+        self.waist = waist
+        self.hip = hip
+        self.waistIsDerived = waistIsDerived
+        self.hipIsDerived = hipIsDerived
+    }
 }
 
 // MARK: - Measurements Chart Scroll Manager
@@ -431,32 +451,48 @@ struct MeasurementDataPoint: Identifiable {
 @MainActor
 class MeasurementsChartScrollManager: ObservableObject {
     @Published var chartData: [MeasurementDataPoint] = []
+    @Published var isLoading = true  // Initial load state
     @Published var isLoadingOlder = false
     @Published var isLoadingNewer = false
+    @Published var optimalScrollPosition: Date?  // Calculated based on actual data
 
-    private var oldestDate: Date
-    private var newestDate: Date
+    // Chart display range (stable, doesn't change during scroll)
+    private var chartOldestDate: Date
+    private var chartNewestDate: Date
+    // Data loading boundary (tracks how far back we've loaded)
+    private var loadedOldestDate: Date
     private var selectedPeriod: TimePeriod
+
+    /// The date range for the chart's X axis - remains stable to prevent jumping
+    var chartDateRange: ClosedRange<Date> {
+        chartOldestDate...chartNewestDate
+    }
     private let supabase = SupabaseManager.shared.client
 
     init(period: TimePeriod) {
         self.selectedPeriod = period
 
         let now = Date()
-        self.newestDate = Calendar.current.date(byAdding: .month, value: 1, to: now) ?? now
-
+        // Set chart display range (stable) and initial load boundary
         switch period {
         case .day:
-            self.oldestDate = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
         case .week:
-            self.oldestDate = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .weekOfYear, value: 2, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: now) ?? now
         case .month:
-            self.oldestDate = Calendar.current.date(byAdding: .month, value: -12, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .month, value: 1, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .month, value: -12, to: now) ?? now
         case .sixMonth:
-            self.oldestDate = Calendar.current.date(byAdding: .month, value: -24, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .month, value: 2, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .month, value: -24, to: now) ?? now
         case .year:
-            self.oldestDate = Calendar.current.date(byAdding: .year, value: -5, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .month, value: 3, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .year, value: -5, to: now) ?? now
         }
+        // Data loading boundary starts at chart oldest - can extend further back on scroll
+        self.loadedOldestDate = chartOldestDate
 
         Task { await loadInitialData() }
     }
@@ -465,23 +501,72 @@ class MeasurementsChartScrollManager: ObservableObject {
         self.selectedPeriod = period
 
         let now = Date()
-        self.newestDate = Calendar.current.date(byAdding: .month, value: 1, to: now) ?? now
-
+        // Reset chart display range (stable) for new period
         switch period {
         case .day:
-            self.oldestDate = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
         case .week:
-            self.oldestDate = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .weekOfYear, value: 2, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .weekOfYear, value: -12, to: now) ?? now
         case .month:
-            self.oldestDate = Calendar.current.date(byAdding: .month, value: -12, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .month, value: 1, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .month, value: -12, to: now) ?? now
         case .sixMonth:
-            self.oldestDate = Calendar.current.date(byAdding: .month, value: -24, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .month, value: 2, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .month, value: -24, to: now) ?? now
         case .year:
-            self.oldestDate = Calendar.current.date(byAdding: .year, value: -5, to: now) ?? now
+            self.chartNewestDate = Calendar.current.date(byAdding: .month, value: 3, to: now) ?? now
+            self.chartOldestDate = Calendar.current.date(byAdding: .year, value: -5, to: now) ?? now
+        }
+        // Reset data loading boundary to match chart range
+        self.loadedOldestDate = chartOldestDate
+
+        isLoading = true
+        chartData.removeAll()
+        optimalScrollPosition = nil
+        Task { await loadInitialData() }
+    }
+
+    /// Refreshes all chart data - call when data may have changed (e.g., after deletion)
+    func refresh() {
+        Task {
+            chartData.removeAll()
+            optimalScrollPosition = nil
+            await loadInitialData()
+        }
+    }
+
+    /// Calculate optimal scroll position so the most recent data is visible at ~70% from left
+    private func calculateOptimalScrollPosition() {
+        // Find the most recent data point with actual values
+        let dataWithValues = chartData.filter { $0.waist > 0 && $0.hip > 0 }
+        guard let mostRecentDataPoint = dataWithValues.sorted(by: { $0.date > $1.date }).first else {
+            // No data with values - use default position relative to now
+            let now = Date()
+            let visibleDuration = selectedPeriod.numberOfBars
+            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
+            optimalScrollPosition = Calendar.current.date(
+                byAdding: selectedPeriod.calendarComponent,
+                value: -offsetFromEnd,
+                to: now
+            ) ?? now
+            return
         }
 
-        chartData.removeAll()
-        Task { await loadInitialData() }
+        let calendar = Calendar.current
+        let visibleDuration = selectedPeriod.numberOfBars
+
+        // Position so most recent data is at ~70% from left edge (30% from right)
+        // This shows the data clearly while leaving room for potential future entries
+        let offsetFromData = Int(Double(visibleDuration) * 0.7)
+        optimalScrollPosition = calendar.date(
+            byAdding: selectedPeriod.calendarComponent,
+            value: -offsetFromData,
+            to: mostRecentDataPoint.date
+        ) ?? mostRecentDataPoint.date
+
+        print("📊 Calculated optimal scroll: mostRecentData=\(mostRecentDataPoint.date), scrollPosition=\(optimalScrollPosition!)")
     }
 
     func loadOlderData() {
@@ -493,22 +578,26 @@ class MeasurementsChartScrollManager: ObservableObject {
             let loadAmount = -selectedPeriod.loadChunkSize
 
             let tenYearsAgo = calendar.date(byAdding: .year, value: -10, to: Date()) ?? Date()
-            guard oldestDate > tenYearsAgo else {
+            guard loadedOldestDate > tenYearsAgo else {
                 isLoadingOlder = false
                 return
             }
 
-            let newOldestDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: loadAmount, to: oldestDate) ?? oldestDate
+            let newOldestDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: loadAmount, to: loadedOldestDate) ?? loadedOldestDate
             let cappedOldestDate = max(newOldestDate, tenYearsAgo)
 
-            await loadDataRange(from: cappedOldestDate, to: oldestDate)
-            oldestDate = cappedOldestDate
+            await loadDataRange(from: cappedOldestDate, to: loadedOldestDate)
+            // Only update the data loading boundary, NOT the chart display range
+            // This is the key fix - chartDateRange stays stable during scroll
+            loadedOldestDate = cappedOldestDate
             isLoadingOlder = false
         }
     }
 
     private func loadInitialData() async {
-        await loadDataRange(from: oldestDate, to: newestDate)
+        await loadDataRange(from: chartOldestDate, to: chartNewestDate)
+        calculateOptimalScrollPosition()
+        isLoading = false
     }
 
     private func loadDataRange(from startDate: Date, to endDate: Date) async {
@@ -562,8 +651,6 @@ class MeasurementsChartScrollManager: ObservableObject {
             // D: hourly, W/M: daily, 6M: weekly, Y: monthly
             let aggregationGranularity: Calendar.Component = {
                 switch selectedPeriod {
-                case .hour:
-                    return .minute
                 case .day:
                     return .hour
                 case .week, .month:
@@ -617,30 +704,49 @@ class MeasurementsChartScrollManager: ObservableObject {
                 }
             }
 
-            // Calculate averages for each bucket and create data points
-            var aggregatedPoints: [MeasurementDataPoint] = []
-            var lastKnownWaistAvg: Double?
-            var lastKnownHipAvg: Double?
-
-            for bucketStart in bucketData.keys.sorted() {
-                guard let data = bucketData[bucketStart] else { continue }
-
-                // Calculate averages if we have values
-                if !data.waistValues.isEmpty {
-                    lastKnownWaistAvg = data.waistValues.reduce(0, +) / Double(data.waistValues.count)
-                }
-                if !data.hipValues.isEmpty {
-                    lastKnownHipAvg = data.hipValues.reduce(0, +) / Double(data.hipValues.count)
-                }
-
-                // Only create a data point if we have both waist and hip (current or carried forward)
-                let hasNewData = !data.waistValues.isEmpty || !data.hipValues.isEmpty
-                if hasNewData, let waist = lastKnownWaistAvg, let hip = lastKnownHipAvg {
-                    aggregatedPoints.append(MeasurementDataPoint(date: bucketStart, waist: waist, hip: hip))
-                }
+            // Calculate averages for buckets with data
+            var bucketAverages: [Date: (waist: Double?, hip: Double?)] = [:]
+            for (bucketStart, data) in bucketData {
+                let waistAvg = data.waistValues.isEmpty ? nil : data.waistValues.reduce(0, +) / Double(data.waistValues.count)
+                let hipAvg = data.hipValues.isEmpty ? nil : data.hipValues.reduce(0, +) / Double(data.hipValues.count)
+                bucketAverages[bucketStart] = (waist: waistAvg, hip: hipAvg)
             }
 
-            print("📊 Measurements: Fetched \(results.count) raw samples → \(aggregatedPoints.count) aggregated points (\(selectedPeriod.rawValue) view)")
+            // Create data points only for buckets with actual measurements
+            // Carry forward values for derived calculations, but only when at least one measurement exists
+            var aggregatedPoints: [MeasurementDataPoint] = []
+            var lastKnownWaist: Double?
+            var lastKnownHip: Double?
+
+            for (bucketDate, averages) in bucketAverages.sorted(by: { $0.key < $1.key }) {
+                let hasActualWaist = averages.waist != nil
+                let hasActualHip = averages.hip != nil
+
+                // Skip buckets with no measurements at all
+                guard hasActualWaist || hasActualHip else { continue }
+
+                // Update last known values
+                if let waist = averages.waist {
+                    lastKnownWaist = waist
+                }
+                if let hip = averages.hip {
+                    lastKnownHip = hip
+                }
+
+                // Create data point with actual or derived values
+                let waistValue = averages.waist ?? lastKnownWaist ?? 0
+                let hipValue = averages.hip ?? lastKnownHip ?? 0
+
+                aggregatedPoints.append(MeasurementDataPoint(
+                    date: bucketDate,
+                    waist: waistValue,
+                    hip: hipValue,
+                    waistIsDerived: !hasActualWaist,
+                    hipIsDerived: !hasActualHip
+                ))
+            }
+
+            print("📊 Measurements: Fetched \(results.count) raw samples → \(aggregatedPoints.count) data points (\(selectedPeriod.rawValue) view)")
 
             return aggregatedPoints
 

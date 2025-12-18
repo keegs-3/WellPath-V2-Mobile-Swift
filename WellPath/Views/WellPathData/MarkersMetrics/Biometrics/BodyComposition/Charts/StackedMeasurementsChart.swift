@@ -33,10 +33,12 @@ struct StackedMeasurementsChart: View {
     // Shared scroll position for linked scrolling
     @State private var scrollPosition: Date
     @State private var selectedPointDate: Date?
+    @State private var hasSetInitialPosition = false  // Prevents scroll position from being reset after user scrolls
 
     // Colors for the two measurement lines
     private let waistColor = Color.cyan
     private let hipColor = Color.cyan.opacity(0.5)
+    private let derivedRatioColor = Color.orange  // Different color for derived ratios
 
     private var displayUnitString: String {
         selectedUnit == .cm ? "cm" : "in"
@@ -52,6 +54,11 @@ struct StackedMeasurementsChart: View {
 
     private var dataPointsWithValues: [MeasurementDataPoint] {
         scrollManager.chartData.filter { $0.waist > 0 && $0.hip > 0 }
+    }
+
+    /// Data points with actual (non-derived) ratios
+    private var actualRatioPoints: [MeasurementDataPoint] {
+        scrollManager.chartData.filter { $0.waist > 0 && $0.hip > 0 && !$0.isDerivedRatio }
     }
 
     init(color: Color, selectedUnit: Binding<HeightDisplayUnit2>, selectedPeriod: Binding<TimePeriod>, scrollManager: MeasurementsChartScrollManager, showAbout: Binding<Bool>? = nil) {
@@ -99,95 +106,146 @@ struct StackedMeasurementsChart: View {
             .padding(.horizontal)
             .padding(.top, 12)
 
-            // Row 3: WAIST/HIP labels, AVG label, values | info button
-            HStack(alignment: .top, spacing: 12) {
-                // Left side: Labels, AVG, and values stacked vertically
-                VStack(alignment: .leading, spacing: 4) {
-                    // Row 1: WAIST and HIP labels with dots
-                    HStack(spacing: 16) {
-                        HStack(spacing: 4) {
-                            Circle().fill(waistColor).frame(width: 8, height: 8)
-                            Text("WAIST")
+            // Show loading state while data is loading OR until scroll position is set
+            // This prevents the chart from showing with the wrong scroll position
+            if scrollManager.isLoading || !hasSetInitialPosition {
+                VStack(spacing: 16) {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Loading data...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .frame(height: 400)  // Placeholder height for charts
+            } else {
+                // Row 3: WAIST/HIP labels, AVG label, values | info button
+                HStack(alignment: .top, spacing: 12) {
+                    // Left side: Labels, AVG, and values stacked vertically
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Row 1: WAIST, HIP, and DERIVED labels with indicators
+                        HStack(spacing: 12) {
+                            HStack(spacing: 4) {
+                                Circle().fill(waistColor).frame(width: 8, height: 8)
+                                Text("WAIST")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 4) {
+                                RoundedRectangle(cornerRadius: 2).fill(hipColor).frame(width: 8, height: 8)
+                                Text("HIP")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            // Show derived indicator only if we have derived ratios
+                            if scrollManager.chartData.contains(where: { $0.isDerivedRatio }) {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .strokeBorder(derivedRatioColor, lineWidth: 2)
+                                        .frame(width: 8, height: 8)
+                                    Text("IMPLIED")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+
+                        // Row 2: AVG label (only when no selection)
+                        if selectedPoint == nil {
+                            Text("AVG")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        HStack(spacing: 4) {
-                            RoundedRectangle(cornerRadius: 2).fill(hipColor).frame(width: 8, height: 8)
-                            Text("HIP")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+
+                        // Row 3: Values (with derived indicators)
+                        HStack(spacing: 16) {
+                            if let point = selectedPoint {
+                                // Waist value with derived indicator
+                                HStack(spacing: 2) {
+                                    Text(String(format: "%.0f", convertValue(point.waist)))
+                                        .font(.system(size: 28, weight: .regular))
+                                        .foregroundColor(point.waistIsDerived ? waistColor.opacity(0.5) : .primary)
+                                    if point.waistIsDerived {
+                                        Text("*")
+                                            .font(.system(size: 16, weight: .light))
+                                            .foregroundColor(derivedRatioColor)
+                                    }
+                                }
+                                // Hip value with derived indicator
+                                HStack(spacing: 2) {
+                                    Text(String(format: "%.0f", convertValue(point.hip)))
+                                        .font(.system(size: 28, weight: .regular))
+                                        .foregroundColor(point.hipIsDerived ? hipColor.opacity(0.5) : .primary)
+                                    if point.hipIsDerived {
+                                        Text("*")
+                                            .font(.system(size: 16, weight: .light))
+                                            .foregroundColor(derivedRatioColor)
+                                    }
+                                }
+                            } else {
+                                Text(waistRangeString)
+                                    .font(.system(size: 28, weight: .regular))
+                                Text(hipRangeString)
+                                    .font(.system(size: 28, weight: .regular))
+                            }
                         }
                     }
 
-                    // Row 2: AVG label (only when no selection)
-                    if selectedPoint == nil {
-                        Text("AVG")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    Spacer()
 
-                    // Row 3: Values
-                    HStack(spacing: 16) {
-                        if let point = selectedPoint {
-                            Text(String(format: "%.0f", convertValue(point.waist)))
-                                .font(.system(size: 28, weight: .regular))
-                            Text(String(format: "%.0f", convertValue(point.hip)))
-                                .font(.system(size: 28, weight: .regular))
-                        } else {
-                            Text(waistRangeString)
-                                .font(.system(size: 28, weight: .regular))
-                            Text(hipRangeString)
-                                .font(.system(size: 28, weight: .regular))
+                    // Right side: Info button (top-aligned with labels)
+                    if let showAboutBinding = showAbout {
+                        Button(action: {
+                            withAnimation { showAboutBinding.wrappedValue = true }
+                        }) {
+                            Image(systemName: "info.circle")
+                                .font(.title3)
+                                .foregroundColor(color)
                         }
                     }
                 }
-
-                Spacer()
-
-                // Right side: Info button (top-aligned with labels)
-                if let showAboutBinding = showAbout {
-                    Button(action: {
-                        withAnimation { showAboutBinding.wrappedValue = true }
-                    }) {
-                        Image(systemName: "info.circle")
-                            .font(.title3)
-                            .foregroundColor(color)
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.top, 8)
-
-            // Row 4: Date range
-            Text(selectedPoint != nil ? formatSelectedDate(selectedPoint!.date) : visibleDateRangeString())
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
-                .padding(.top, 4)
+                .padding(.top, 8)
 
-            // Row 5: Waist/Hip chart
-            measurementsChart
-                .padding(.top, 16)
+                // Row 4: Date range
+                Text(selectedPoint != nil ? formatSelectedDate(selectedPoint!.date) : visibleDateRangeString())
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
 
-            // Row 6 & 7: Ratio label + value + chart
-            ratioChart
-                .padding(.top, 24)
-                .padding(.bottom, 80)  // Extra padding to avoid tab bar cutoff
+                // Row 5: Waist/Hip chart
+                measurementsChart
+                    .padding(.top, 16)
+
+                // Row 6 & 7: Ratio label + value + chart
+                ratioChart
+                    .padding(.top, 24)
+                    .padding(.bottom, 80)  // Extra padding to avoid tab bar cutoff
+            }
         }
         .background(Color(uiColor: .systemBackground))
         .onChange(of: selectedPeriod) { _, newPeriod in
             scrollManager.updatePeriod(newPeriod)
             selectedPointDate = nil
-
-            let now = Date()
-            let visibleDuration = newPeriod.numberOfBars
-            let offsetFromEnd = Int(Double(visibleDuration) * 0.9)
-            scrollPosition = Calendar.current.date(
-                byAdding: newPeriod.calendarComponent,
-                value: -offsetFromEnd,
-                to: now
-            ) ?? now
+            hasSetInitialPosition = false  // Reset flag when period changes
+        }
+        // When loading finishes, scroll to optimal position (most recent data) - only once
+        .onChange(of: scrollManager.isLoading) { wasLoading, isLoading in
+            if wasLoading && !isLoading && !hasSetInitialPosition,
+               let optimalPosition = scrollManager.optimalScrollPosition {
+                scrollPosition = optimalPosition
+                hasSetInitialPosition = true
+            }
+        }
+        // Also handle case where optimalScrollPosition updates after isLoading already became false
+        .onChange(of: scrollManager.optimalScrollPosition) { _, newPosition in
+            if !scrollManager.isLoading && !hasSetInitialPosition, let pos = newPosition {
+                scrollPosition = pos
+                hasSetInitialPosition = true
+            }
         }
     }
 
@@ -195,11 +253,10 @@ struct StackedMeasurementsChart: View {
 
     private var measurementsChart: some View {
         Chart {
-            // Waist series - separate from Hip
-            ForEach(scrollManager.chartData.filter { $0.waist > 0 && $0.hip > 0 }) { dataPoint in
+            // Waist series - shows all waist values, uses different styling for derived
+            // First pass: Lines for actual waist measurements only
+            ForEach(scrollManager.chartData.filter { $0.waist > 0 && !$0.waistIsDerived }) { dataPoint in
                 let waistVal = convertValue(dataPoint.waist)
-                let isSelected = selectedPointDate != nil &&
-                    Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
 
                 LineMark(
                     x: .value("Date", dataPoint.date),
@@ -209,21 +266,40 @@ struct StackedMeasurementsChart: View {
                 .foregroundStyle(waistColor)
                 .interpolationMethod(.catmullRom)
                 .lineStyle(StrokeStyle(lineWidth: 2))
+            }
+
+            // Waist points - all points, different styling for derived
+            ForEach(scrollManager.chartData.filter { $0.waist > 0 }) { dataPoint in
+                let waistVal = convertValue(dataPoint.waist)
+                let isSelected = selectedPointDate != nil &&
+                    Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
+                let isDerived = dataPoint.waistIsDerived
+
+                // Dashed line for derived waist values
+                if isDerived {
+                    LineMark(
+                        x: .value("Date", dataPoint.date),
+                        y: .value("Value", waistVal),
+                        series: .value("Type", "WaistDerived")
+                    )
+                    .foregroundStyle(waistColor.opacity(0.4))
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
 
                 PointMark(
                     x: .value("Date", dataPoint.date),
                     y: .value("Value", waistVal)
                 )
-                .foregroundStyle(waistColor)
+                .foregroundStyle(isDerived ? waistColor.opacity(0.4) : waistColor)
                 .symbolSize(isSelected ? 150 : 60)
-                .symbol(.circle)
+                .symbol(isDerived ? .asterisk : .circle)
             }
 
-            // Hip series - separate from Waist
-            ForEach(scrollManager.chartData.filter { $0.waist > 0 && $0.hip > 0 }) { dataPoint in
+            // Hip series - shows all hip values, uses different styling for derived
+            // First pass: Lines for actual hip measurements only
+            ForEach(scrollManager.chartData.filter { $0.hip > 0 && !$0.hipIsDerived }) { dataPoint in
                 let hipVal = convertValue(dataPoint.hip)
-                let isSelected = selectedPointDate != nil &&
-                    Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
 
                 LineMark(
                     x: .value("Date", dataPoint.date),
@@ -233,14 +309,34 @@ struct StackedMeasurementsChart: View {
                 .foregroundStyle(hipColor)
                 .interpolationMethod(.catmullRom)
                 .lineStyle(StrokeStyle(lineWidth: 2))
+            }
+
+            // Hip points - all points, different styling for derived
+            ForEach(scrollManager.chartData.filter { $0.hip > 0 }) { dataPoint in
+                let hipVal = convertValue(dataPoint.hip)
+                let isSelected = selectedPointDate != nil &&
+                    Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
+                let isDerived = dataPoint.hipIsDerived
+
+                // Dashed line for derived hip values
+                if isDerived {
+                    LineMark(
+                        x: .value("Date", dataPoint.date),
+                        y: .value("Value", hipVal),
+                        series: .value("Type", "HipDerived")
+                    )
+                    .foregroundStyle(hipColor.opacity(0.4))
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
 
                 PointMark(
                     x: .value("Date", dataPoint.date),
                     y: .value("Value", hipVal)
                 )
-                .foregroundStyle(hipColor)
+                .foregroundStyle(isDerived ? hipColor.opacity(0.4) : hipColor)
                 .symbolSize(isSelected ? 150 : 60)
-                .symbol(.square)
+                .symbol(isDerived ? .asterisk : .square)
 
                 // Connecting line between hip and waist - ONLY when selected
                 if isSelected {
@@ -256,7 +352,7 @@ struct StackedMeasurementsChart: View {
             }
         }
         .chartYScale(domain: measurementsYDomain)
-        .chartXScale(domain: chartXDomain)
+        .chartXScale(domain: scrollManager.chartDateRange)
         .frame(height: 200)
         .chartScrollableAxes(.horizontal)
         .chartScrollPosition(x: $scrollPosition)
@@ -314,8 +410,16 @@ struct StackedMeasurementsChart: View {
                 if let point = selectedPoint, point.waist > 0, point.hip > 0 {
                     // Selected point ratio (aggregated for the period)
                     let ratio = point.waist / point.hip
-                    Text(String(format: "%.2f", ratio))
-                        .font(.system(size: 28, weight: .regular))
+                    HStack(spacing: 4) {
+                        Text(String(format: "%.2f", ratio))
+                            .font(.system(size: 28, weight: .regular))
+                            .foregroundColor(point.isDerivedRatio ? derivedRatioColor : .primary)
+                        if point.isDerivedRatio {
+                            Text("*")
+                                .font(.system(size: 16, weight: .light))
+                                .foregroundColor(derivedRatioColor)
+                        }
+                    }
                 } else {
                     // Average ratio across visible range
                     Text(ratioRangeString)
@@ -327,29 +431,51 @@ struct StackedMeasurementsChart: View {
             Chart {
                 // All periods use aggregated data from scrollManager
                 // D: hourly avg, W/M: daily avg, 6M: weekly avg, Y: monthly avg
-                ForEach(scrollManager.chartData) { dataPoint in
-                    // Invisible placeholder to maintain x-axis even with sparse data
-                    PointMark(
+
+                // First pass: Draw lines connecting non-derived points
+                ForEach(scrollManager.chartData.filter { !$0.isDerivedRatio && $0.waist > 0 && $0.hip > 0 }) { dataPoint in
+                    let ratio = dataPoint.waist / dataPoint.hip
+
+                    // Solid trend line for actual ratio points (linear to avoid parabola artifacts)
+                    LineMark(
                         x: .value("Date", dataPoint.date),
-                        y: .value("Value", 0)
+                        y: .value("Ratio", ratio)
                     )
-                    .opacity(0)
+                    .foregroundStyle(color.opacity(0.6))
+                    .interpolationMethod(.linear)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                }
 
-                    if dataPoint.waist > 0 && dataPoint.hip > 0 {
-                        let ratio = dataPoint.waist / dataPoint.hip
-                        let isSelected = selectedPointDate != nil &&
-                            Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
+                // Second pass: Draw all points (both actual and derived)
+                ForEach(scrollManager.chartData.filter { $0.waist > 0 && $0.hip > 0 }) { dataPoint in
+                    let ratio = dataPoint.waist / dataPoint.hip
+                    let isSelected = selectedPointDate != nil &&
+                        Calendar.current.isDate(dataPoint.date, equalTo: selectedPointDate!, toGranularity: getDateGranularity())
+                    let isDerived = dataPoint.isDerivedRatio
 
-                        // Trend line connecting ratio points
+                    // For derived ratios: dashed line connecting to previous point
+                    if isDerived {
                         LineMark(
                             x: .value("Date", dataPoint.date),
                             y: .value("Ratio", ratio)
                         )
-                        .foregroundStyle(color.opacity(0.6))
-                        .interpolationMethod(.catmullRom)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        .foregroundStyle(derivedRatioColor.opacity(0.5))
+                        .interpolationMethod(.linear)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    }
 
-                        // Diamond point for each ratio value
+                    // Point mark - filled diamond for actual, hollow circle for derived
+                    if isDerived {
+                        // Hollow circle for derived ratios
+                        PointMark(
+                            x: .value("Date", dataPoint.date),
+                            y: .value("Ratio", ratio)
+                        )
+                        .foregroundStyle(derivedRatioColor)
+                        .symbolSize(isSelected ? 150 : 60)
+                        .symbol(.circle)
+                    } else {
+                        // Filled diamond for actual ratios
                         PointMark(
                             x: .value("Date", dataPoint.date),
                             y: .value("Ratio", ratio)
@@ -361,7 +487,7 @@ struct StackedMeasurementsChart: View {
                 }
             }
             .chartYScale(domain: ratioYDomain)
-            .chartXScale(domain: chartXDomain)
+            .chartXScale(domain: scrollManager.chartDateRange)
             .frame(height: 120)
             .chartScrollableAxes(.horizontal)
             .chartScrollPosition(x: $scrollPosition)
@@ -444,36 +570,6 @@ struct StackedMeasurementsChart: View {
         return scrollManager.chartData.filter { dataPoint in
             dataPoint.date >= scrollPosition && dataPoint.date <= endDate
         }
-    }
-
-    /// X-axis domain spanning the full visible time range (not just where data exists)
-    private var chartXDomain: ClosedRange<Date> {
-        let calendar = Calendar.current
-        let now = Date()
-
-        // Calculate the full range for the selected period
-        let start: Date
-        let end: Date
-
-        switch selectedPeriod {
-        case .day:
-            start = calendar.date(byAdding: .day, value: -1, to: now) ?? now
-            end = now
-        case .week:
-            start = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-            end = now
-        case .month:
-            start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
-            end = now
-        case .sixMonth:
-            start = calendar.date(byAdding: .month, value: -6, to: now) ?? now
-            end = now
-        case .year:
-            start = calendar.date(byAdding: .year, value: -1, to: now) ?? now
-            end = now
-        }
-
-        return start...end
     }
 
     private var measurementsYDomain: ClosedRange<Double> {
@@ -585,9 +681,8 @@ struct StackedMeasurementsChart: View {
 
     private func handleTap(at x: CGFloat, using proxy: ChartProxy) {
         if let tappedDate: Date = proxy.value(atX: x) {
-            // Find closest data point (works for all periods since data is now aggregated)
-            let closest = scrollManager.chartData
-                .filter { $0.waist > 0 && $0.hip > 0 }
+            // Find closest data point (includes both actual and derived points)
+            let closest = dataPointsWithValues
                 .min(by: {
                     abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
                 })
@@ -604,15 +699,18 @@ struct StackedMeasurementsChart: View {
     }
 
     private func handleChartScrolling(position: Date) {
+        // Re-enabled: loadOlderData now only updates loadedOldestDate, not chartDateRange
+        // This means the chart's X-axis domain stays stable during scroll
         guard !scrollManager.chartData.isEmpty else { return }
 
         let calendar = Calendar.current
         let component = selectedPeriod.calendarComponent
 
-        if let oldestDate = scrollManager.chartData.last?.date {
-            let diff = calendar.dateComponents([component], from: oldestDate, to: position)
+        if let oldestDataPoint = scrollManager.chartData.min(by: { $0.date < $1.date }) {
+            let diff = calendar.dateComponents([component], from: oldestDataPoint.date, to: position)
             let units = abs(diff.value(for: component) ?? 0)
 
+            // Load more data when scrolled near the oldest data point
             if units < 5 && !scrollManager.isLoadingOlder {
                 scrollManager.loadOlderData()
             }

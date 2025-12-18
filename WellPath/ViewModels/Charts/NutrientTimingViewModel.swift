@@ -12,15 +12,17 @@ import Supabase
 /// Defines a nutrient type for timing analysis
 enum NutrientTimingType: String, CaseIterable {
     case protein = "PROTEIN"
+    case fats = "FATS"
     case legumes = "LEGUMES"
     case vegetables = "VEGETABLES"
     case wholeGrains = "WHOLE_GRAINS"
     case fruits = "FRUITS"
+    case nutsSeeds = "NUTS_SEEDS"
 
     /// The unit suffix used in aggregation IDs
     var unitSuffix: String {
         switch self {
-        case .protein:
+        case .protein, .fats:
             return "GRAMS"
         default:
             return "SERVINGS"
@@ -30,7 +32,7 @@ enum NutrientTimingType: String, CaseIterable {
     /// Display label for the unit
     var unitLabel: String {
         switch self {
-        case .protein:
+        case .protein, .fats:
             return "g"
         default:
             return "servings"
@@ -40,7 +42,7 @@ enum NutrientTimingType: String, CaseIterable {
     /// Full unit name for display
     var unitName: String {
         switch self {
-        case .protein:
+        case .protein, .fats:
             return "grams"
         default:
             return "servings"
@@ -52,6 +54,8 @@ enum NutrientTimingType: String, CaseIterable {
         switch self {
         case .protein:
             return "Protein"
+        case .fats:
+            return "Fats"
         case .legumes:
             return "Legumes"
         case .vegetables:
@@ -60,6 +64,8 @@ enum NutrientTimingType: String, CaseIterable {
             return "Whole Grains"
         case .fruits:
             return "Fruits"
+        case .nutsSeeds:
+            return "Nuts & Seeds"
         }
     }
 
@@ -73,6 +79,8 @@ enum NutrientTimingType: String, CaseIterable {
         switch self {
         case .protein:
             return "protein_grams"
+        case .fats:
+            return "fat_grams"
         case .legumes:
             return "legumes_servings"
         case .vegetables:
@@ -81,28 +89,56 @@ enum NutrientTimingType: String, CaseIterable {
             return "whole_grains_servings"
         case .fruits:
             return "fruits_servings"
+        case .nutsSeeds:
+            return "nuts_seeds_servings"
         }
     }
 
     /// The metadata key for type breakdown (e.g., "protein_type")
+    /// Note: Uses plural form to match database trigger output (e.g., "vegetables_types")
     var typeMetadataKey: String {
         switch self {
         case .protein:
             return "protein_type"
+        case .fats:
+            return "fat_type"
         case .legumes:
-            return "legumes_type"
+            return "legumes_types"
         case .vegetables:
-            return "vegetables_type"
+            return "vegetables_types"
         case .wholeGrains:
-            return "whole_grains_type"
+            return "whole_grains_types"
         case .fruits:
-            return "fruits_type"
+            return "fruits_types"
+        case .nutsSeeds:
+            return "nuts_seeds_types"
         }
     }
 
-    /// The metadata key for food timing 
+    /// The metadata key for food timing
     var mealMetadataKey: String {
         return "food_timing"
+    }
+
+    /// The reference_category for type lookup in sample_category_types_reference
+    /// Note: Some categories use singular form (fat_types) while others use plural (vegetables_types)
+    var typeReferenceCategory: String {
+        switch self {
+        case .protein:
+            return "protein_types"
+        case .fats:
+            return "fat_types"  // singular "fat" - matches database
+        case .legumes:
+            return "legumes_types"
+        case .vegetables:
+            return "vegetables_types"
+        case .wholeGrains:
+            return "whole_grains_types"
+        case .fruits:
+            return "fruits_types"
+        case .nutsSeeds:
+            return "nuts_seeds_types"
+        }
     }
 }
 
@@ -399,8 +435,6 @@ class NutrientTimingViewModel: ObservableObject {
 
             let oldestDate: Date
             switch period {
-            case .hour:
-                oldestDate = calendar.date(byAdding: .hour, value: -3, to: now) ?? now
             case .day:
                 oldestDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
             case .week:

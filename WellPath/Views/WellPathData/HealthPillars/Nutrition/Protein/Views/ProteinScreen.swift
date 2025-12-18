@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Card-based layout for Protein metric.
-//  Shows 4 cards: Amount, Timing, Type, Ratio.
+//  Shows 3 cards: Amount, Type, Ratio.
 //  Cards are reusable components defined in Cards/ folder.
 //
 
@@ -25,9 +25,11 @@ struct ProteinScreen: View {
             VStack(spacing: 12) {
                 // Reusable card components
                 ProteinAmountCard(color: color, pillar: pillar)
-                ProteinTimingCard(color: color, pillar: pillar)
                 ProteinTypeCard(color: color, pillar: pillar)
                 ProteinRatioCard(color: color, pillar: pillar)
+
+                // Baseline questions (shows if not yet answered)
+                TourQuestionsSection(screenId: "SCREEN_PROTEIN", color: color)
             }
             .padding()
             .padding(.bottom, 24)
@@ -44,16 +46,7 @@ struct ProteinScreen: View {
                 }
             }
 
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                FavoriteButton(
-                    itemType: .screen,
-                    itemId: "SCREEN_PROTEIN",
-                    displayName: "Protein",
-                    pillar: pillar,
-                    cardId: nil,
-                    sectionId: "NAV_NUTRITION"
-                )
-
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     showingEntryForm = true
                 } label: {
@@ -62,10 +55,10 @@ struct ProteinScreen: View {
             }
         }
         .sheet(isPresented: $showingEntryForm) {
-            ProteinEntryView()
+            FoodEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
-            ProteinDataManagementView(color: color)
+            NutritionDataManagementView(color: color, initialCategory: .protein)
         }
     }
 }

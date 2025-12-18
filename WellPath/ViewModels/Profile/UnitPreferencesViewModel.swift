@@ -73,14 +73,58 @@ enum TemperatureDisplayUnit: String, CaseIterable, Identifiable {
 }
 
 enum LiquidDisplayUnit: String, CaseIterable, Identifiable {
-    case ml = "ml"
-    case oz = "oz"
+    case fluidOunce = "fl_oz"
+    case milliliter = "ml"
+    case cup = "cups"
+    case glass = "glasses"
+    case liter = "L"
+    case gallon = "gal"
 
     var id: String { rawValue }
+
+    /// Short label for chart display
+    var shortLabel: String {
+        switch self {
+        case .fluidOunce: return "fl oz"
+        case .milliliter: return "mL"
+        case .cup: return "cups"
+        case .glass: return "glasses"
+        case .liter: return "L"
+        case .gallon: return "gal"
+        }
+    }
+
+    /// Full display name for settings/lists
     var displayName: String {
         switch self {
-        case .ml: return "Milliliters (ml)"
-        case .oz: return "Fluid Ounces (oz)"
+        case .fluidOunce: return "Fluid Ounces (fl oz)"
+        case .milliliter: return "Milliliters (mL)"
+        case .cup: return "Cups"
+        case .glass: return "Glasses"
+        case .liter: return "Liters (L)"
+        case .gallon: return "Gallons (gal)"
+        }
+    }
+
+    /// Conversion factor from mL (canonical unit) to this unit
+    /// Usage: displayValue = mlValue / mlPerUnit
+    var mlPerUnit: Double {
+        switch self {
+        case .milliliter: return 1.0
+        case .fluidOunce: return 29.5735
+        case .cup: return 236.588      // 1 US cup = 236.588 mL
+        case .glass: return 236.588    // 1 glass = 8 fl oz = 236.588 mL
+        case .liter: return 1000.0
+        case .gallon: return 3785.41   // 1 US gallon = 3785.41 mL
+        }
+    }
+
+    /// For backwards compatibility with existing DB values
+    static func fromLegacy(_ rawValue: String) -> LiquidDisplayUnit {
+        switch rawValue {
+        case "ml": return .milliliter
+        case "oz": return .fluidOunce
+        default: return LiquidDisplayUnit(rawValue: rawValue) ?? .milliliter
         }
     }
 }
@@ -93,7 +137,7 @@ class UnitPreferencesViewModel: ObservableObject {
     @Published var heightUnit: HeightDisplayUnit2 = .cm
     @Published var distanceUnit: DistanceDisplayUnit = .km
     @Published var temperatureUnit: TemperatureDisplayUnit = .c
-    @Published var liquidUnit: LiquidDisplayUnit = .ml
+    @Published var liquidUnit: LiquidDisplayUnit = .milliliter
 
     @Published var isLoading = false
     @Published var isSaving = false
@@ -150,8 +194,8 @@ class UnitPreferencesViewModel: ObservableObject {
                 if let t = prefs.temperatureUnit, let unit = TemperatureDisplayUnit(rawValue: t) {
                     temperatureUnit = unit
                 }
-                if let l = prefs.liquidUnit, let unit = LiquidDisplayUnit(rawValue: l) {
-                    liquidUnit = unit
+                if let l = prefs.liquidUnit {
+                    liquidUnit = LiquidDisplayUnit.fromLegacy(l)
                 }
                 print("✅ Loaded unit preferences")
             } else {

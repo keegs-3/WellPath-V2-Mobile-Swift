@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Supabase
 
 extension MealTimingViewModel {
     /// Loads data for a specific period using direct patient_quantity_samples queries
@@ -22,10 +23,6 @@ extension MealTimingViewModel {
             // Calculate period start and end
             let (periodStart, periodEnd): (Date, Date) = {
                 switch period {
-                case .hour:
-                    let start = calendar.dateInterval(of: .hour, for: date)?.start ?? date
-                    let end = calendar.date(byAdding: .hour, value: 1, to: start) ?? start
-                    return (start, end)
                 case .day:
                     let start = calendar.startOfDay(for: date)
                     let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
@@ -53,7 +50,7 @@ extension MealTimingViewModel {
                 let startTime: Date
                 let mealType: String?
                 let quantityValue: Double?
-                let metadata: [String: String]?
+                let metadata: [String: AnyJSON]?
 
                 enum CodingKeys: String, CodingKey {
                     case eventInstanceId = "event_instance_id"
@@ -80,7 +77,12 @@ extension MealTimingViewModel {
             var mealTotals: [String: Double] = [:]
             var uniqueEvents = Set<String>()
             for entry in entries {
-                let mealType = entry.metadata?["meal_type"] ?? "unassigned"
+                // Extract meal_type from AnyJSON metadata
+                var mealType = "unassigned"
+                if let metadata = entry.metadata,
+                   case .string(let type) = metadata["meal_type"] {
+                    mealType = type
+                }
                 let value = entry.quantityValue ?? 0
                 mealTotals[mealType, default: 0] += value
                 if let id = entry.eventInstanceId?.uuidString {

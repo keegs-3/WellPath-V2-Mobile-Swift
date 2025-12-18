@@ -48,7 +48,7 @@ private struct QuantitySampleRow: Codable {
     let quantityUnit: String?
     let startTime: Date
     let source: String?
-    let metadata: [String: String]?
+    let metadata: [String: AnyJSON]?
     let createdAt: String?
     let updatedAt: String?
 
@@ -359,7 +359,13 @@ class BiometricsService: ObservableObject {
                     unit: sample.quantityUnit ?? "",
                     recordedAt: dateFormatter.string(from: sample.startTime),
                     source: sample.source,
-                    notes: sample.metadata?["notes"],
+                    notes: {
+                        if let metadata = sample.metadata,
+                           case .string(let notes) = metadata["notes"] {
+                            return notes
+                        }
+                        return nil
+                    }(),
                     createdAt: sample.createdAt,
                     updatedAt: sample.updatedAt
                 )

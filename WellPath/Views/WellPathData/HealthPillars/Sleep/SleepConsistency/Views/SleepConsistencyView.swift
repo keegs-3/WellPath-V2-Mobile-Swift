@@ -31,7 +31,18 @@ struct SleepConsistencyView: View {
         self.pillar = pillar
         self.color = color
         self.sectionId = sectionId
-        _scrollPosition = State(initialValue: Date())
+
+        // Initialize scroll position correctly for default period (week)
+        // For W view: visibleBoundary at noon tomorrow, scroll = boundary - 7 days
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let visibleLength: TimeInterval = 7 * 24 * 60 * 60  // 7 days in seconds
+
+        // W view: visible boundary at noon tomorrow
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        let visibleBoundary = calendar.date(byAdding: .hour, value: 12, to: tomorrow) ?? today
+        let initialScroll = visibleBoundary.addingTimeInterval(-visibleLength)
+        _scrollPosition = State(initialValue: initialScroll)
     }
 
     private var screenIcon: String {

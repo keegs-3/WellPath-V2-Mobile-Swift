@@ -357,8 +357,10 @@ final class CachedDataProvider {
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
         return summaries.compactMap { row -> (date: Date, bedtime: Date, waketime: Date)? in
-            guard let date = dateFormatter.date(from: row.sleepDate) else { return nil }
-            return (date: date, bedtime: row.bedtime, waketime: row.waketime)
+            guard let date = dateFormatter.date(from: row.sleepDate),
+                  let bedtime = row.bedtime,
+                  let waketime = row.waketime else { return nil }
+            return (date: date, bedtime: bedtime, waketime: waketime)
         }.sorted { $0.date < $1.date }
     }
 }

@@ -1169,6 +1169,20 @@ struct CategoryCardsListView: View {
             FruitsScreen(pillar: pillar, color: color)
         case "CAT_WHOLE_GRAINS":
             WholeGrainsScreen(pillar: pillar, color: color)
+        case "CAT_FATS":
+            FatsScreen(pillar: pillar, color: color)
+        case "CAT_FIBER":
+            FiberScreen(pillar: pillar, color: color)
+        case "CAT_CAFFEINE":
+            CaffeineScreen(pillar: pillar, color: color)
+        case "CAT_HYDRATION":
+            WaterScreen(pillar: pillar, color: color)
+        case "CAT_NUTS_SEEDS":
+            NutsSeedsScreen(pillar: pillar, color: color)
+        case "CAT_MEAL_PATTERNS":
+            MealPatternsScreen(pillar: pillar, color: color)
+        case "CAT_ULTRA_PROCESSED":
+            UltraProcessedScreen(pillar: pillar, color: color)
 
         // Sleep Analysis - show cards for subcategories (Stages, Amounts, Percentages, Comparisons)
         case "CAT_SLEEP_ANALYSIS":
@@ -1443,8 +1457,6 @@ struct ViewRouter {
         // Protein views
         case "DISP_PROTEIN_GRAMS":
             ProteinAmountView(color: color)
-        case "DISP_PROTEIN_TIMING":
-            ProteinTimingView(color: color)
         case "DISP_PROTEIN_TYPE":
             ProteinTypeView(color: color)
         case "DISP_PROTEIN_RATIO":
@@ -1455,32 +1467,66 @@ struct ViewRouter {
             VegetablesServingsView(color: color)
         case "DISP_VEGETABLES_TYPE":
             VegetablesTypeView(color: color)
-        case "DISP_VEGETABLES_TIMING":
-            VegetablesTimingView(color: color)
 
         // Legume views
         case "DISP_LEGUMES_SERVINGS":
             LegumesServingsView(color: color)
         case "DISP_LEGUMES_TYPE":
             LegumesTypeView(color: color)
-        case "DISP_LEGUMES_TIMING":
-            LegumesTimingView(color: color)
 
         // Fruit views
         case "DISP_FRUITS_SERVINGS":
             FruitsServingsView(color: color)
         case "DISP_FRUITS_TYPE":
             FruitsTypeView(color: color)
-        case "DISP_FRUITS_TIMING":
-            FruitsTimingView(color: color)
 
         // Whole Grain views
         case "DISP_WHOLE_GRAINS_SERVINGS":
             WholeGrainsServingsView(color: color)
         case "DISP_WHOLE_GRAINS_TYPE":
             WholeGrainsTypeView(color: color)
-        case "DISP_WHOLE_GRAINS_TIMING":
-            WholeGrainsTimingView(color: color)
+
+        // Fats views
+        case "DISP_FATS_GRAMS":
+            FatsAmountView(color: color)
+        case "DISP_FATS_TYPE":
+            FatsTypeView(color: color)
+
+        // Fiber views
+        case "DISP_FIBER_GRAMS":
+            FiberAmountView(color: color)
+
+        // Caffeine views
+        case "DISP_CAFFEINE_MG":
+            CaffeineAmountView(color: color)
+        case "DISP_CAFFEINE_TYPE":
+            CaffeineTypeView(color: color)
+
+        // Water/Hydration views
+        case "DISP_WATER_ML":
+            WaterAmountView(color: color)
+        case "DISP_WATER_TIMING":
+            WaterTimingView(color: color)
+
+        // Nuts & Seeds views
+        case "DISP_NUTS_SEEDS_SERVINGS":
+            NutsSeedsServingsView(color: color)
+        case "DISP_NUTS_SEEDS_TYPE":
+            NutsSeedsTypeView(color: color)
+
+        // Ultra-Processed views
+        case "DISP_ULTRA_PROCESSED_SERVINGS":
+            UltraProcessedServingsView(color: color)
+
+        // Meal Patterns views
+        case "DISP_MEAL_TYPE":
+            MealTypeView(color: color)
+        case "DISP_WHOLE_FOOD_MEALS":
+            WholeFoodMealsView(color: color)
+        case "DISP_PLANT_BASED_MEALS":
+            PlantBasedMealsView(color: color)
+        case "DISP_HOMEMADE_MEALS":
+            HomemadeMealsView(color: color)
 
         // Sleep views - each routes to its own full view (database-driven viewId)
         case "DISP_SLEEP_STAGES":
@@ -1499,6 +1545,16 @@ struct ViewRouter {
         // Steps view
         case "DISP_STEPS":
             StepsScreen(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_MOVEMENT")
+
+        // Workout duration views
+        case "DISP_CARDIO_DURATION":
+            CardioScreen(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "DISP_STRENGTH_DURATION":
+            StrengthScreen(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "DISP_HIIT_DURATION":
+            HIITScreen(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "DISP_MOBILITY_DURATION":
+            MobilityScreen(pillar: pillar, color: color, sectionId: sectionId ?? "NAV_MOVEMENT")
 
         // Alcohol views
         case "DISP_ALCOHOL_QUANTITY":
