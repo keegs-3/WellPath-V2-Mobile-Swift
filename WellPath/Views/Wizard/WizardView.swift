@@ -265,7 +265,7 @@ struct WizardView: View {
     private func destinationView(for category: WizardCategory) -> some View {
         switch category.id {
         case "CAT_PROTEIN":
-            ProteinBaselineView(color: .green)
+            ProteinWizardView()
         default:
             // Placeholder for categories not yet implemented
             Text("Coming soon: \(category.displayName)")

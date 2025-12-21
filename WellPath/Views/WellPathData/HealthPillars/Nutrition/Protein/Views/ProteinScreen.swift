@@ -63,7 +63,7 @@ struct ProteinScreen: View {
             NutritionDataManagementView(color: color, initialCategory: .protein)
         }
         .sheet(isPresented: $showingBaseline) {
-            ProteinBaselineView(color: color)
+            ProteinWizardView()
         }
     }
 }
