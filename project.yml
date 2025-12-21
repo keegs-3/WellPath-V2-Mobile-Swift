@@ -1,6 +1,6 @@
 name: WellPath
 options:
-  bundleIdPrefix: com.wellpath
+  bundleIdPrefix: com.keegandolan
   deploymentTarget:
     iOS: "17.0"
   developmentLanguage: en
@@ -29,8 +29,8 @@ targets:
         CFBundleInfoDictionaryVersion: "6.0"
         CFBundleName: $(PRODUCT_NAME)
         CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
-        CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.01"
+        CFBundleVersion: "2"
         LSRequiresIPhoneOS: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
@@ -45,7 +45,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: WellPath
-        PRODUCT_BUNDLE_IDENTIFIER: com.wellpath.WellPath
+        PRODUCT_BUNDLE_IDENTIFIER: com.keegandolan.WellPath
         DEVELOPMENT_TEAM: ""
         INFOPLIST_FILE: WellPath/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

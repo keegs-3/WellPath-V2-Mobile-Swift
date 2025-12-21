@@ -231,6 +231,8 @@ struct FoodEntryView: View {
                     quickLogView
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle(selectedFood == nil ? "Log Food" : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

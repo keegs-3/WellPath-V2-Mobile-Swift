@@ -66,9 +66,9 @@ struct ProteinTypeMiniCard: View {
                     Spacer()
 
                     VStack(alignment: .trailing, spacing: 4) {
-                        tierIndicator(label: "T1", percentage: tier1Percentage, color: MetricsUIConfig.tierGood)
-                        tierIndicator(label: "T2", percentage: tier2Percentage, color: MetricsUIConfig.tierMedium)
-                        tierIndicator(label: "T3", percentage: tier3Percentage, color: MetricsUIConfig.tierPoor)
+                        tierIndicator(label: tierName(for: "PROTEIN_TIER_1"), percentage: tier1Percentage, color: MetricsUIConfig.tierGood)
+                        tierIndicator(label: tierName(for: "PROTEIN_TIER_2"), percentage: tier2Percentage, color: MetricsUIConfig.tierMedium)
+                        tierIndicator(label: tierName(for: "PROTEIN_TIER_3"), percentage: tier3Percentage, color: MetricsUIConfig.tierPoor)
                     }
                 }
             } else {
@@ -89,9 +89,10 @@ struct ProteinTypeMiniCard: View {
 
     private var scoreColor: Color {
         let score = viewModel.calculateTypeScore()
-        if score >= 85 { return MetricsUIConfig.tierGood }
-        else if score >= 70 { return MetricsUIConfig.tierMedium }
-        else { return MetricsUIConfig.tierPoor }
+        if score >= 85 { return Color.green }
+        else if score >= 70 { return Color.blue }
+        else if score >= 55 { return Color.orange }
+        else { return Color.red }
     }
 
     private var tier1Percentage: Double {
@@ -104,6 +105,20 @@ struct ProteinTypeMiniCard: View {
 
     private var tier3Percentage: Double {
         tierPercentage(for: "PROTEIN_TIER_3")
+    }
+
+    private func tierName(for tierId: String) -> String {
+        guard let tierConfig = viewModel.tierConfig,
+              let tier = tierConfig.tiers.first(where: { $0.tierId == tierId }) else {
+            // Fallback to tier names if config not loaded
+            switch tierId {
+            case "PROTEIN_TIER_1": return "Best"
+            case "PROTEIN_TIER_2": return "Good"
+            case "PROTEIN_TIER_3": return "Limit"
+            default: return "?"
+            }
+        }
+        return tier.tierName
     }
 
     private func tierPercentage(for tierId: String) -> Double {
@@ -123,7 +138,7 @@ struct ProteinTypeMiniCard: View {
             Text(label)
                 .font(.caption2)
                 .foregroundColor(.secondary)
-                .frame(width: 20, alignment: .trailing)
+                .frame(width: 32, alignment: .trailing)
 
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2)

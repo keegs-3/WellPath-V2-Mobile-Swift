@@ -120,6 +120,7 @@ struct TourQuestion: Identifiable, Codable {
     let targetScreenId: String?
     let displayOrderInScreen: Int?
     let isRequired: Bool
+    let baselineType: String?  // Links to patient_baseline_samples.baseline_type
     let options: [TourQuestionOption]
 
     enum CodingKeys: String, CodingKey {
@@ -130,7 +131,13 @@ struct TourQuestion: Identifiable, Codable {
         case targetScreenId = "target_screen_id"
         case displayOrderInScreen = "display_order_in_screen"
         case isRequired = "is_required"
+        case baselineType = "baseline_type"
         case options = "survey_response_options"
+    }
+
+    /// Whether this question generates a baseline value
+    var isBaselineQuestion: Bool {
+        baselineType != nil
     }
 
     var questionType: QuestionType {

@@ -13,6 +13,9 @@ struct NutritionTourHubView: View {
     @StateObject private var viewModel = NutritionTourHubViewModel()
     @Environment(\.dismiss) private var dismiss
 
+    // Use same display config as WellPathDataListView
+    private var displayConfig: DisplayConfigurationService { DisplayConfigurationService.shared }
+
     let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12)
@@ -133,10 +136,30 @@ struct NutritionTourHubView: View {
 
     // MARK: - Destination Views
 
+    /// Map screen names to category IDs for color lookup
+    private func categoryId(for screenName: String) -> String {
+        switch screenName {
+        case "ProteinScreen": return "CAT_PROTEIN"
+        case "VegetablesScreen": return "CAT_VEGETABLES"
+        case "FruitsScreen": return "CAT_FRUITS"
+        case "LegumesScreen": return "CAT_LEGUMES"
+        case "WholeGrainsScreen": return "CAT_WHOLE_GRAINS"
+        case "NutsSeedsScreen": return "CAT_NUTS_SEEDS"
+        case "FatsScreen": return "CAT_FATS"
+        case "WaterScreen": return "CAT_HYDRATION"
+        case "CaffeineScreen": return "CAT_CAFFEINE"
+        case "MealPatternsScreen": return "CAT_MEAL_PATTERNS"
+        case "UltraProcessedScreen": return "CAT_ULTRA_PROCESSED"
+        case "FiberScreen": return "CAT_FIBER"
+        default: return "CAT_PROTEIN"
+        }
+    }
+
     @ViewBuilder
     private func destinationView(for screen: TourScreen) -> some View {
         let pillar = "Healthful Nutrition"
-        let color = Color.green
+        // Use same color source as WellPathDataListView
+        let color = displayConfig.cardCategoryColor(for: categoryId(for: screen.iosViewName))
 
         switch screen.iosViewName {
         case "ProteinScreen":
@@ -150,17 +173,17 @@ struct NutritionTourHubView: View {
         case "WholeGrainsScreen":
             WholeGrainsScreen(pillar: pillar, color: color)
         case "NutsSeedsScreen":
-            NutsSeedsScreen(pillar: pillar, color: .brown)
+            NutsSeedsScreen(pillar: pillar, color: color)
         case "FatsScreen":
-            FatsScreen(pillar: pillar, color: .orange)
+            FatsScreen(pillar: pillar, color: color)
         case "WaterScreen":
-            WaterScreen(pillar: pillar, color: .cyan)
+            WaterScreen(pillar: pillar, color: color)
         case "CaffeineScreen":
-            CaffeineScreen(pillar: pillar, color: .brown)
+            CaffeineScreen(pillar: pillar, color: color)
         case "MealPatternsScreen":
-            MealPatternsScreen(pillar: pillar, color: .indigo)
+            MealPatternsScreen(pillar: pillar, color: color)
         case "UltraProcessedScreen":
-            UltraProcessedScreen(pillar: pillar, color: .red)
+            UltraProcessedScreen(pillar: pillar, color: color)
         default:
             Text("Screen not found: \(screen.iosViewName)")
         }

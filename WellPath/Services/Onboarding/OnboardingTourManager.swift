@@ -221,10 +221,11 @@ class OnboardingTourManager: ObservableObject {
                     target_screen_id,
                     display_order_in_screen,
                     is_required,
+                    baseline_type,
                     survey_response_options(
                         option_id:id,
                         option_text,
-                        option_order
+                        option_order:question_response_order
                     )
                 """)
                 .eq("target_screen_id", value: screenId)
@@ -286,10 +287,11 @@ class OnboardingTourManager: ObservableObject {
                     target_screen_id,
                     display_order_in_screen,
                     is_required,
+                    baseline_type,
                     survey_response_options(
                         option_id:id,
                         option_text,
-                        option_order
+                        option_order:question_response_order
                     )
                 """)
                 .eq("target_screen_id", value: screen.screenId)
