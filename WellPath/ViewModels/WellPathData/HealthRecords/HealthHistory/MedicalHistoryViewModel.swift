@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 @MainActor
 class MedicalHistoryViewModel: ObservableObject {
@@ -21,7 +22,6 @@ class MedicalHistoryViewModel: ObservableObject {
 
     // MARK: - Services
 
-    private let surveyService = SurveyService.shared
     private let supabase = SupabaseManager.shared.client
 
     // MARK: - Computed Properties
@@ -42,8 +42,8 @@ class MedicalHistoryViewModel: ObservableObject {
         error = nil
 
         do {
-            async let personalTask = surveyService.fetchPersonalConditions(patientId: userId)
-            async let familyTask = surveyService.fetchFamilyConditions(patientId: userId)
+            async let personalTask = fetchPersonalConditions(userId: userId)
+            async let familyTask = fetchFamilyConditions(userId: userId)
 
             let (personal, family) = try await (personalTask, familyTask)
 
@@ -58,6 +58,30 @@ class MedicalHistoryViewModel: ObservableObject {
         isLoading = false
     }
 
+    private func fetchPersonalConditions(userId: UUID) async throws -> [PatientCondition] {
+        try await supabase
+            .from("patient_conditions")
+            .select()
+            .eq("patient_id", value: userId.uuidString)
+            .eq("history_type", value: "personal")
+            .eq("is_active", value: true)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    private func fetchFamilyConditions(userId: UUID) async throws -> [PatientCondition] {
+        try await supabase
+            .from("patient_conditions")
+            .select()
+            .eq("patient_id", value: userId.uuidString)
+            .eq("history_type", value: "family")
+            .eq("is_active", value: true)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
     func loadScreenings() async {
         guard let userId = try? await supabase.auth.session.user.id else {
             error = "Not logged in"
@@ -68,8 +92,8 @@ class MedicalHistoryViewModel: ObservableObject {
         error = nil
 
         do {
-            async let screeningsTask = surveyService.fetchScreenings(patientId: userId)
-            async let typesTask = surveyService.fetchScreeningTypes()
+            async let screeningsTask = fetchScreenings(userId: userId)
+            async let typesTask = fetchScreeningTypes()
 
             let (fetchedScreenings, fetchedTypes) = try await (screeningsTask, typesTask)
 
@@ -82,6 +106,27 @@ class MedicalHistoryViewModel: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    private func fetchScreenings(userId: UUID) async throws -> [PatientScreening] {
+        try await supabase
+            .from("patient_screenings")
+            .select()
+            .eq("patient_id", value: userId.uuidString)
+            .eq("is_active", value: true)
+            .order("screening_date", ascending: false)
+            .execute()
+            .value
+    }
+
+    private func fetchScreeningTypes() async throws -> [ScreeningType] {
+        try await supabase
+            .from("screening_types")
+            .select()
+            .eq("is_active", value: true)
+            .order("screening_name")
+            .execute()
+            .value
     }
 
     // MARK: - Condition CRUD
@@ -98,16 +143,37 @@ class MedicalHistoryViewModel: ObservableObject {
         guard let userId = try? await supabase.auth.session.user.id else { return }
 
         do {
-            let newCondition = try await surveyService.addCondition(
-                patientId: userId,
-                conditionId: conditionId,
-                conditionName: conditionName,
-                conditionCategory: conditionCategory,
-                historyType: historyType,
-                familyMemberRelationship: familyMemberRelationship,
-                diagnosisDate: diagnosisDate,
-                notes: notes
-            )
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withFullDate]
+
+            var record: [String: AnyJSON] = [
+                "patient_id": .string(userId.uuidString),
+                "condition_id": .string(conditionId),
+                "condition_name": .string(conditionName),
+                "history_type": .string(historyType),
+                "is_active": .bool(true)
+            ]
+
+            if let category = conditionCategory {
+                record["condition_category"] = .string(category)
+            }
+            if let relationship = familyMemberRelationship {
+                record["family_member_relationship"] = .string(relationship)
+            }
+            if let date = diagnosisDate {
+                record["diagnosis_date"] = .string(dateFormatter.string(from: date))
+            }
+            if let notes = notes {
+                record["notes"] = .string(notes)
+            }
+
+            let newCondition: PatientCondition = try await supabase
+                .from("patient_conditions")
+                .insert(record)
+                .select()
+                .single()
+                .execute()
+                .value
 
             if historyType == "personal" {
                 personalConditions.append(newCondition)
@@ -127,12 +193,28 @@ class MedicalHistoryViewModel: ObservableObject {
         notes: String?
     ) async {
         do {
-            let updated = try await surveyService.updateCondition(
-                conditionId: conditionId,
-                severity: severity,
-                status: status,
-                notes: notes
-            )
+            var updates: [String: AnyJSON] = [
+                "updated_at": .string(ISO8601DateFormatter().string(from: Date()))
+            ]
+
+            if let severity = severity {
+                updates["severity"] = .string(severity)
+            }
+            if let status = status {
+                updates["status"] = .string(status)
+            }
+            if let notes = notes {
+                updates["notes"] = .string(notes)
+            }
+
+            let updated: PatientCondition = try await supabase
+                .from("patient_conditions")
+                .update(updates)
+                .eq("id", value: conditionId.uuidString)
+                .select()
+                .single()
+                .execute()
+                .value
 
             // Update local state
             if let index = personalConditions.firstIndex(where: { $0.id == conditionId }) {
@@ -148,7 +230,11 @@ class MedicalHistoryViewModel: ObservableObject {
 
     func deleteCondition(conditionId: UUID) async {
         do {
-            try await surveyService.deleteCondition(conditionId: conditionId)
+            try await supabase
+                .from("patient_conditions")
+                .update(["is_active": false])
+                .eq("id", value: conditionId.uuidString)
+                .execute()
 
             // Remove from local state
             personalConditions.removeAll { $0.id == conditionId }
@@ -172,15 +258,37 @@ class MedicalHistoryViewModel: ObservableObject {
         guard let userId = try? await supabase.auth.session.user.id else { return }
 
         do {
-            let screening = try await surveyService.upsertScreening(
-                patientId: userId,
-                screeningTypeId: screeningTypeId,
-                screeningStatus: screeningStatus,
-                screeningDate: screeningDate,
-                nextDueDate: nextDueDate,
-                resultSummary: resultSummary,
-                notes: notes
-            )
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withFullDate]
+
+            var record: [String: AnyJSON] = [
+                "patient_id": .string(userId.uuidString),
+                "screening_type_id": .string(screeningTypeId),
+                "screening_status": .string(screeningStatus),
+                "data_source": .string("manual"),
+                "is_active": .bool(true)
+            ]
+
+            if let date = screeningDate {
+                record["screening_date"] = .string(dateFormatter.string(from: date))
+            }
+            if let dueDate = nextDueDate {
+                record["next_due_date"] = .string(dateFormatter.string(from: dueDate))
+            }
+            if let summary = resultSummary {
+                record["result_summary"] = .string(summary)
+            }
+            if let notes = notes {
+                record["notes"] = .string(notes)
+            }
+
+            let screening: PatientScreening = try await supabase
+                .from("patient_screenings")
+                .upsert(record, onConflict: "patient_id,screening_type_id")
+                .select()
+                .single()
+                .execute()
+                .value
 
             if let index = screenings.firstIndex(where: { $0.id == screening.id }) {
                 screenings[index] = screening
@@ -195,7 +303,12 @@ class MedicalHistoryViewModel: ObservableObject {
 
     func deleteScreening(screeningId: UUID) async {
         do {
-            try await surveyService.deleteScreening(screeningId: screeningId)
+            try await supabase
+                .from("patient_screenings")
+                .update(["is_active": false])
+                .eq("id", value: screeningId.uuidString)
+                .execute()
+
             screenings.removeAll { $0.id == screeningId }
         } catch {
             print("MedicalHistoryViewModel: Error deleting screening - \(error)")

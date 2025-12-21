@@ -22,7 +22,6 @@ class ConditionsViewModel: ObservableObject {
     @Published var error: Error?
 
     private let supabase = SupabaseManager.shared.client
-    private let surveyService = SurveyService.shared
 
     // MARK: - Load All Data
 
@@ -35,9 +34,8 @@ class ConditionsViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // Load conditions in parallel
-            async let personalTask = surveyService.fetchPersonalConditions(patientId: userId)
-            async let familyTask = surveyService.fetchFamilyConditions(patientId: userId)
+            async let personalTask = fetchPersonalConditions(userId: userId)
+            async let familyTask = fetchFamilyConditions(userId: userId)
             async let limitationsTask = fetchLimitations(userId: userId)
 
             let (personal, family, limits) = try await (personalTask, familyTask, limitationsTask)
@@ -50,6 +48,32 @@ class ConditionsViewModel: ObservableObject {
             self.error = error
             print("Error loading conditions data: \(error)")
         }
+    }
+
+    // MARK: - Fetch Conditions
+
+    private func fetchPersonalConditions(userId: UUID) async throws -> [PatientCondition] {
+        try await supabase
+            .from("patient_conditions")
+            .select()
+            .eq("patient_id", value: userId.uuidString)
+            .eq("history_type", value: "personal")
+            .eq("is_active", value: true)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    private func fetchFamilyConditions(userId: UUID) async throws -> [PatientCondition] {
+        try await supabase
+            .from("patient_conditions")
+            .select()
+            .eq("patient_id", value: userId.uuidString)
+            .eq("history_type", value: "family")
+            .eq("is_active", value: true)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
     }
 
     // MARK: - Limitations CRUD
@@ -145,7 +169,7 @@ class ConditionsViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Condition Management (delegated to SurveyService)
+    // MARK: - Condition Management
 
     func addCondition(
         conditionId: String,
@@ -159,16 +183,34 @@ class ConditionsViewModel: ObservableObject {
         guard let userId = try? await supabase.auth.session.user.id else { return }
 
         do {
-            _ = try await surveyService.addCondition(
-                patientId: userId,
-                conditionId: conditionId,
-                conditionName: conditionName,
-                conditionCategory: conditionCategory,
-                historyType: historyType,
-                familyMemberRelationship: familyMemberRelationship,
-                diagnosisDate: diagnosisDate,
-                notes: notes
-            )
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withFullDate]
+
+            var record: [String: AnyJSON] = [
+                "patient_id": .string(userId.uuidString),
+                "condition_id": .string(conditionId),
+                "condition_name": .string(conditionName),
+                "history_type": .string(historyType),
+                "is_active": .bool(true)
+            ]
+
+            if let category = conditionCategory {
+                record["condition_category"] = .string(category)
+            }
+            if let relationship = familyMemberRelationship {
+                record["family_member_relationship"] = .string(relationship)
+            }
+            if let date = diagnosisDate {
+                record["diagnosis_date"] = .string(dateFormatter.string(from: date))
+            }
+            if let notes = notes {
+                record["notes"] = .string(notes)
+            }
+
+            try await supabase
+                .from("patient_conditions")
+                .insert(record)
+                .execute()
 
             await loadAllData()
         } catch {
@@ -178,7 +220,12 @@ class ConditionsViewModel: ObservableObject {
 
     func deleteCondition(conditionId: UUID) async {
         do {
-            try await surveyService.deleteCondition(conditionId: conditionId)
+            try await supabase
+                .from("patient_conditions")
+                .update(["is_active": false])
+                .eq("id", value: conditionId.uuidString)
+                .execute()
+
             await loadAllData()
         } catch {
             print("Error deleting condition: \(error)")

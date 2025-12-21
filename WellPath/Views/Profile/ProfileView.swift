@@ -51,12 +51,6 @@ struct ProfileView: View {
                         .buttonStyle(PlainButtonStyle())
                         Divider().padding(.leading, 60)
 
-                        NavigationLink(destination: HealthProfileView()) {
-                            ProfileOptionRow(icon: "heart.text.square.fill", title: "Health Profile")
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        Divider().padding(.leading, 60)
-
                         NavigationLink(destination: ChangePasswordView()) {
                             ProfileOptionRow(icon: "lock.fill", title: "Change Password")
                         }
