@@ -75,8 +75,6 @@ struct NutrientScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Baseline questions (shows if not yet answered)
-                TourQuestionsSection(screenId: config.screenId, color: color)
 
                 // Reusable card components (defined in Cards/NutrientCards.swift)
                 NutrientServingsCard(config: config, color: color, pillar: pillar)

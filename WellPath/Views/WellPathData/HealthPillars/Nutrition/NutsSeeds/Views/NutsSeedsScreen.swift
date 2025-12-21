@@ -22,8 +22,6 @@ struct NutsSeedsScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Baseline questions (shows if not yet answered)
-                TourQuestionsSection(screenId: "SCREEN_NUTS_SEEDS", color: color)
 
                 // Reusable card components
                 NutsSeedsServingsCard(color: color, pillar: pillar)

@@ -22,8 +22,6 @@ struct WaterScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Baseline questions (shows if not yet answered)
-                TourQuestionsSection(screenId: "SCREEN_WATER", color: color)
 
                 // Reusable card components
                 WaterAmountCard(color: color, pillar: pillar)

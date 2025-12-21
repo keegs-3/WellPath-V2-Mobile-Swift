@@ -18,8 +18,6 @@ struct UltraProcessedScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Baseline questions (shows if not yet answered)
-                TourQuestionsSection(screenId: "SCREEN_ULTRA_PROCESSED", color: color)
 
                 // Reusable card component
                 UltraProcessedServingsCard(color: color, pillar: pillar)

@@ -22,8 +22,6 @@ struct FatsScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Baseline questions (shows if not yet answered)
-                TourQuestionsSection(screenId: "SCREEN_FATS", color: color)
 
                 // Reusable card components
                 FatsAmountCard(color: color, pillar: pillar)

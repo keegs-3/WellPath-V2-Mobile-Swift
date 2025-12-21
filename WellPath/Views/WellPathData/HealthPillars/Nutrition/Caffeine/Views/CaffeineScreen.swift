@@ -22,8 +22,6 @@ struct CaffeineScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Baseline questions (shows if not yet answered)
-                TourQuestionsSection(screenId: "SCREEN_CAFFEINE", color: color)
 
                 // Reusable card components
                 CaffeineAmountCard(color: color, pillar: pillar)

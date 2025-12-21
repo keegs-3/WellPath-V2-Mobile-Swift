@@ -10,7 +10,6 @@ import SwiftUI
 struct DashboardView: View {
     @StateObject private var scoreViewModel = WellPathScoreViewModel()
     @State private var showProfile = false
-    @State private var showOnboardingTour = false
 
     var body: some View {
         NavigationStack {
@@ -51,15 +50,6 @@ struct DashboardView: View {
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        showOnboardingTour = true
-                    }) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 18, weight: .semibold))
-                    }
-                }
-
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showProfile = true
@@ -72,17 +62,8 @@ struct DashboardView: View {
             .sheet(isPresented: $showProfile) {
                 ProfileView()
             }
-            .fullScreenCover(isPresented: $showOnboardingTour) {
-                OnboardingTourView()
-            }
             .task {
                 await scoreViewModel.loadWellPathScore()
-            }
-            .onAppear {
-                // Auto-open tour on first launch
-                if !OnboardingTourManager.hasCompletedTour() {
-                    showOnboardingTour = true
-                }
             }
         }
     }
