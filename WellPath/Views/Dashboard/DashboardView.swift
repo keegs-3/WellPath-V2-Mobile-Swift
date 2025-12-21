@@ -10,6 +10,11 @@ import SwiftUI
 struct DashboardView: View {
     @StateObject private var scoreViewModel = WellPathScoreViewModel()
     @State private var showProfile = false
+    @State private var showWizard = false
+
+    private var hasCompletedWizard: Bool {
+        UserDefaults.standard.bool(forKey: "wellpath_wizard_completed")
+    }
 
     var body: some View {
         NavigationStack {
@@ -50,6 +55,15 @@ struct DashboardView: View {
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showWizard = true
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                }
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showProfile = true
@@ -62,8 +76,17 @@ struct DashboardView: View {
             .sheet(isPresented: $showProfile) {
                 ProfileView()
             }
+            .fullScreenCover(isPresented: $showWizard) {
+                WizardView()
+            }
             .task {
                 await scoreViewModel.loadWellPathScore()
+            }
+            .onAppear {
+                // Show wizard on first launch
+                if !hasCompletedWizard {
+                    showWizard = true
+                }
             }
         }
     }

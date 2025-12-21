@@ -15,6 +15,7 @@ struct ProteinScreen: View {
 
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
@@ -40,10 +41,18 @@ struct ProteinScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -52,6 +61,9 @@ struct ProteinScreen: View {
         }
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color, initialCategory: .protein)
+        }
+        .sheet(isPresented: $showingBaseline) {
+            ProteinBaselineView(color: color)
         }
     }
 }
