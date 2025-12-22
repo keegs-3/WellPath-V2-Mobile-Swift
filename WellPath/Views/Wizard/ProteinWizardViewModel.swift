@@ -29,9 +29,17 @@ class ProteinWizardViewModel: ObservableObject {
     // Summary data
     @Published var savedBaselines: [String: Double] = [:]
     @Published var currentDailyAverage: Double?
+    @Published var proteinScore: Int?
+    @Published var scoreDisplayConfig: BehavioralScoreDisplay?
 
     // Patient biometrics for ratio calculation
     @Published var patientWeightKg: Double?
+
+    // Tier configuration from display_view_tiers
+    @Published var tierConfigs: [TierConfig] = []
+
+    // Scoring ranges from sample_scoring_ranges
+    @Published var ratioScoringRanges: [ScoringRange] = []
 
     // Wizard completion
     @Published var isComplete = false
@@ -41,12 +49,41 @@ class ProteinWizardViewModel: ObservableObject {
     let baselineViewId = "BASELINE_VIEW_PROTEIN"
     let categoryId = "CAT_PROTEIN"
 
-    // Tier score weights (for calculating type score from percentages)
-    let tierScoreWeights: [String: Double] = [
-        "protein_tier1_pct": 100,   // Tier 1 = 100 points
-        "protein_tier2_pct": 60,    // Tier 2 = 60 points
-        "protein_tier3_pct": 20     // Tier 3 = 20 points
-    ]
+    // MARK: - Config Models
+
+    struct TierConfig: Decodable {
+        let tierId: String
+        let targetPercentage: Double
+        let multiplier: Double
+
+        enum CodingKeys: String, CodingKey {
+            case tierId = "tier_id"
+            case targetPercentage = "target_percentage"
+            case multiplier
+        }
+    }
+
+    struct ScoringRange: Decodable {
+        let rangeName: String
+        let rangeNameBackend: String
+        let rangeLow: Double
+        let rangeHigh: Double
+        let scoreAtLow: Double
+        let scoreAtHigh: Double
+
+        enum CodingKeys: String, CodingKey {
+            case rangeName = "range_name"
+            case rangeNameBackend = "range_name_backend"
+            case rangeLow = "range_low"
+            case rangeHigh = "range_high"
+            case scoreAtLow = "score_at_low"
+            case scoreAtHigh = "score_at_high"
+        }
+
+        var isOptimal: Bool {
+            rangeNameBackend == "optimal" || rangeName == "OPTIMAL"
+        }
+    }
 
     // MARK: - Computed Properties
 
@@ -97,14 +134,31 @@ class ProteinWizardViewModel: ObservableObject {
     }
 
     /// Calculated type score from tier percentages (0-100)
+    /// Uses multipliers and targets from display_view_tiers
     var calculatedTypeScore: Double? {
-        guard tierPercentagesValid else { return nil }
+        guard tierPercentagesValid, !tierConfigs.isEmpty else { return nil }
         let best = baselineResponses["BQ_PROTEIN_TIER_BEST"] ?? 0
         let good = baselineResponses["BQ_PROTEIN_TIER_GOOD"] ?? 0
         let limit = baselineResponses["BQ_PROTEIN_TIER_LIMIT"] ?? 0
 
-        // Weighted average: (best% * 100 + good% * 60 + limit% * 20) / 100
-        return (best * 100 + good * 60 + limit * 20) / 100
+        // Get multipliers and targets from DB config
+        let t1Config = tierConfigs.first { $0.tierId == "PROTEIN_TIER_1" }
+        let t2Config = tierConfigs.first { $0.tierId == "PROTEIN_TIER_2" }
+        let t3Config = tierConfigs.first { $0.tierId == "PROTEIN_TIER_3" }
+
+        let t1Multiplier = t1Config?.multiplier ?? 1.0
+        let t2Multiplier = t2Config?.multiplier ?? 0.5
+        let t3Multiplier = t3Config?.multiplier ?? -1.0
+        let t3Target = t3Config?.targetPercentage ?? 5
+
+        // T1 and T2 contribute based on percentage * multiplier
+        // T3 only penalizes if over target percentage
+        let t1Contribution = best * t1Multiplier
+        let t2Contribution = good * t2Multiplier
+        let t3Penalty = max(0, limit - t3Target) * abs(t3Multiplier)
+
+        let score = t1Contribution + t2Contribution - t3Penalty
+        return max(0, min(100, score))
     }
 
     /// Calculated protein ratio (g/kg) from daily protein and weight
@@ -115,10 +169,20 @@ class ProteinWizardViewModel: ObservableObject {
         return dailyProtein / weight
     }
 
-    /// Whether ratio is in optimal range (1.2-1.6 g/kg)
+    /// Whether ratio is in optimal range (from sample_scoring_ranges)
     var ratioIsOptimal: Bool {
-        guard let ratio = calculatedRatio else { return false }
-        return ratio >= 1.2 && ratio <= 1.6
+        guard let ratio = calculatedRatio,
+              let optimalRange = ratioScoringRanges.first(where: { $0.isOptimal })
+        else { return false }
+        return ratio >= optimalRange.rangeLow && ratio <= optimalRange.rangeHigh
+    }
+
+    /// Optimal range text from DB (e.g. "1.2-1.6 g/kg")
+    var optimalRatioRangeText: String {
+        guard let optimalRange = ratioScoringRanges.first(where: { $0.isOptimal }) else {
+            return "optimal range"
+        }
+        return "\(String(format: "%.1f", optimalRange.rangeLow))-\(String(format: "%.1f", optimalRange.rangeHigh)) g/kg"
     }
 
     // MARK: - Lifecycle
@@ -132,8 +196,11 @@ class ProteinWizardViewModel: ObservableObject {
         async let baselinesTask: () = loadExistingBaselines()
         async let currentTask: () = loadCurrentData()
         async let weightTask: () = loadPatientWeight()
+        async let scoreConfigTask: () = loadScoreDisplayConfig()
+        async let tierConfigTask: () = loadTierConfigs()
+        async let ratioRangesTask: () = loadRatioScoringRanges()
 
-        _ = await (viewTask, questionsTask, baselinesTask, currentTask, weightTask)
+        _ = await (viewTask, questionsTask, baselinesTask, currentTask, weightTask, scoreConfigTask, tierConfigTask, ratioRangesTask)
 
         // Load subpages after view is loaded
         await loadSubpages()
@@ -334,6 +401,92 @@ class ProteinWizardViewModel: ObservableObject {
         }
     }
 
+    private func loadProteinScore() async {
+        do {
+            let client = SupabaseManager.shared.client
+            let userId = try await client.auth.session.user.id
+
+            struct ScoreData: Decodable {
+                let scoreValue: Double
+
+                enum CodingKeys: String, CodingKey {
+                    case scoreValue = "score_value"
+                }
+            }
+
+            // Query base table directly (view is slow due to JOIN)
+            let results: [ScoreData] = try await client
+                .from("patient_behavioral_scores")
+                .select("score_value")
+                .eq("patient_id", value: userId.uuidString)
+                .eq("score_type", value: "protein_score")
+                .eq("is_current", value: true)
+                .limit(1)
+                .execute()
+                .value
+
+            if let score = results.first {
+                proteinScore = Int(score.scoreValue)
+            }
+        } catch {
+            print("Error loading protein score: \(error)")
+        }
+    }
+
+    private func loadScoreDisplayConfig() async {
+        do {
+            let client = SupabaseManager.shared.client
+
+            let results: [BehavioralScoreDisplay] = try await client
+                .from("display_behavioral_scores")
+                .select()
+                .eq("score_id", value: "SCORE_PROTEIN")
+                .eq("is_active", value: true)
+                .limit(1)
+                .execute()
+                .value
+
+            scoreDisplayConfig = results.first
+        } catch {
+            print("Error loading score display config: \(error)")
+        }
+    }
+
+    private func loadTierConfigs() async {
+        do {
+            let client = SupabaseManager.shared.client
+
+            let results: [TierConfig] = try await client
+                .from("display_view_tiers")
+                .select("tier_id, target_percentage, multiplier")
+                .eq("view_id", value: "DISP_PROTEIN_TYPE")
+                .execute()
+                .value
+
+            tierConfigs = results
+        } catch {
+            print("Error loading tier configs: \(error)")
+        }
+    }
+
+    private func loadRatioScoringRanges() async {
+        do {
+            let client = SupabaseManager.shared.client
+
+            let results: [ScoringRange] = try await client
+                .from("sample_scoring_ranges")
+                .select("range_name, range_name_backend, range_low, range_high, score_at_low, score_at_high")
+                .eq("quantity_type", value: "daily_protein_ratio")
+                .order("range_low")
+                .execute()
+                .value
+
+            ratioScoringRanges = results
+        } catch {
+            print("Error loading ratio scoring ranges: \(error)")
+        }
+    }
+
     // MARK: - Response Handler
 
     func setValue(_ value: Double?, for question: BaselineQuestion) {
@@ -434,6 +587,9 @@ class ProteinWizardViewModel: ObservableObject {
                     "p_score_type": AnyJSON.string("protein_score")
                 ]
             ).execute().value
+
+            // Load the calculated score for display
+            await loadProteinScore()
 
             isSaving = false
             return true

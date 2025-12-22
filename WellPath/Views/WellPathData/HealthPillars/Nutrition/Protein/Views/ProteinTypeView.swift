@@ -441,34 +441,46 @@ struct ProteinTypeView: View {
         return result
     }
 
-    // Render tier overview with colored tier indicators
+    // Render tier overview with colored tier indicators (uses DB config)
     @ViewBuilder
     private func renderTierOverview(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            let lines = text.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            // Use tier config from database for names
+            if let tierConfig = viewModel.tierConfig {
+                ForEach(tierConfig.tiers) { tier in
+                    tierOverviewRow(
+                        tierName: tier.tierName,
+                        description: tier.tierDescription,
+                        color: getTierColor(tier.tierId)
+                    )
+                }
+            } else {
+                // Fallback: parse markdown if tier config not loaded
+                let lines = text.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
 
-            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                let cleaned = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "**", with: "")
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    let cleaned = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .replacingOccurrences(of: "**", with: "")
 
-                if cleaned.starts(with: "Tier 1") {
-                    tierOverviewRow(
-                        tierName: "Tier 1 - Best Sources",
-                        description: getDescriptionAfterTier(from: lines, startIndex: index),
-                        color: MetricsUIConfig.tierGood
-                    )
-                } else if cleaned.starts(with: "Tier 2") {
-                    tierOverviewRow(
-                        tierName: "Tier 2 - Good Sources",
-                        description: getDescriptionAfterTier(from: lines, startIndex: index),
-                        color: MetricsUIConfig.tierMedium
-                    )
-                } else if cleaned.starts(with: "Tier 3") {
-                    tierOverviewRow(
-                        tierName: "Tier 3 - Limit Intake",
-                        description: getDescriptionAfterTier(from: lines, startIndex: index),
-                        color: MetricsUIConfig.tierPoor
-                    )
+                    if cleaned.starts(with: "Tier 1") {
+                        tierOverviewRow(
+                            tierName: "Tier 1",
+                            description: getDescriptionAfterTier(from: lines, startIndex: index),
+                            color: MetricsUIConfig.tierGood
+                        )
+                    } else if cleaned.starts(with: "Tier 2") {
+                        tierOverviewRow(
+                            tierName: "Tier 2",
+                            description: getDescriptionAfterTier(from: lines, startIndex: index),
+                            color: MetricsUIConfig.tierMedium
+                        )
+                    } else if cleaned.starts(with: "Tier 3") {
+                        tierOverviewRow(
+                            tierName: "Tier 3",
+                            description: getDescriptionAfterTier(from: lines, startIndex: index),
+                            color: MetricsUIConfig.tierPoor
+                        )
+                    }
                 }
             }
         }
@@ -647,7 +659,7 @@ struct ProteinTypeView: View {
         }
     }
 
-    // Render target percentages with visual indicators
+    // Render target percentages with visual indicators (uses DB config)
     @ViewBuilder
     private func renderTargetPercentages(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -661,10 +673,22 @@ struct ProteinTypeView: View {
                     .foregroundColor(.secondary)
             }
 
-            // Target rows
-            targetPercentageRow(target: ">75%", tier: "Tier 1", sources: "plant proteins, fatty fish", color: MetricsUIConfig.tierGood)
-            targetPercentageRow(target: "~20%", tier: "Tier 2", sources: "eggs, lean protein, dairy", color: MetricsUIConfig.tierMedium)
-            targetPercentageRow(target: "<5%", tier: "Tier 3", sources: "red/processed meat", color: MetricsUIConfig.tierPoor)
+            // Use tier config from database for target percentages
+            if let tierConfig = viewModel.tierConfig {
+                ForEach(tierConfig.tiers) { tier in
+                    targetPercentageRow(
+                        target: formatTargetPercentage(tier.targetPercentage, tierId: tier.tierId),
+                        tier: tier.tierName,
+                        sources: tier.tierDescription,
+                        color: getTierColor(tier.tierId)
+                    )
+                }
+            } else {
+                // Fallback with tier names matching database
+                targetPercentageRow(target: ">75%", tier: "Tier 1", sources: "plant proteins, fatty fish", color: MetricsUIConfig.tierGood)
+                targetPercentageRow(target: "~20%", tier: "Tier 2", sources: "eggs, lean protein, dairy", color: MetricsUIConfig.tierMedium)
+                targetPercentageRow(target: "<5%", tier: "Tier 3", sources: "red/processed meat", color: MetricsUIConfig.tierPoor)
+            }
 
             // Show closing paragraph
             if let lastLine = lines.last, lastLine.contains("Aim to") {
@@ -673,6 +697,18 @@ struct ProteinTypeView: View {
                     .foregroundColor(.secondary)
                     .padding(.top, 8)
             }
+        }
+    }
+
+    private func formatTargetPercentage(_ percentage: Int, tierId: String) -> String {
+        // Format based on tier type
+        switch tierId {
+        case "PROTEIN_TIER_1":
+            return ">\(percentage)%"
+        case "PROTEIN_TIER_3":
+            return "<\(percentage)%"
+        default:
+            return "~\(percentage)%"
         }
     }
 
@@ -926,16 +962,8 @@ struct SimpleTierCard: View {
     }
 
     private var targetPercentage: Double {
-        switch tier.tierId {
-        case "PROTEIN_TIER_1":
-            return 75.0
-        case "PROTEIN_TIER_2":
-            return 20.0
-        case "PROTEIN_TIER_3":
-            return 5.0
-        default:
-            return 0.0
-        }
+        // Use database value from tier config
+        Double(tier.targetPercentage)
     }
 
     /// Calculate marker position for target text alignment

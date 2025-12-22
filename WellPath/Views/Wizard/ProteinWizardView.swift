@@ -100,6 +100,10 @@ struct ProteinWizardView: View {
             questionsSubpage(subpage)
         case "summary_card":
             summaryCardSubpage(subpage)
+        case "score_explanation":
+            scoreExplanationSubpage(subpage)
+        case "score_display":
+            scoreDisplaySubpage(subpage)
         case "next_steps":
             nextStepsSubpage(subpage)
         default:
@@ -287,15 +291,16 @@ struct ProteinWizardView: View {
                 }
 
                 if viewModel.ratioIsOptimal {
-                    Text("In optimal range (1.2-1.6 g/kg)")
+                    Text("In optimal range (\(viewModel.optimalRatioRangeText))")
                         .font(.caption)
                         .foregroundColor(.green)
-                } else if ratio < 1.2 {
-                    Text("Below optimal (target: 1.2-1.6 g/kg)")
+                } else if let optimalRange = viewModel.ratioScoringRanges.first(where: { $0.isOptimal }),
+                          ratio < optimalRange.rangeLow {
+                    Text("Below optimal (target: \(viewModel.optimalRatioRangeText))")
                         .font(.caption)
                         .foregroundColor(.orange)
                 } else {
-                    Text("Above optimal (target: 1.2-1.6 g/kg)")
+                    Text("Above optimal (target: \(viewModel.optimalRatioRangeText))")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
@@ -314,69 +319,241 @@ struct ProteinWizardView: View {
         .cornerRadius(12)
     }
 
-    // MARK: - Summary Card Subpage
+    // MARK: - Summary Card Subpage (Baselines Only)
 
     private func summaryCardSubpage(_ subpage: BaselineViewSubpage) -> some View {
         VStack(spacing: 20) {
-            // Amount Baseline
-            baselineSummaryRow(
-                icon: "chart.bar.fill",
-                title: "Daily Amount",
-                value: viewModel.savedBaselines["daily_protein_g"],
-                unit: "g",
-                subtitle: "Your typical daily protein intake"
-            )
-
-            // Type Score Baseline
-            baselineSummaryRow(
-                icon: "star.fill",
-                title: "Type Score",
-                value: viewModel.savedBaselines["protein_type_score"],
-                unit: "/ 100",
-                subtitle: "Based on your protein source mix"
-            )
-
-            // Ratio Baseline
-            if let ratio = viewModel.savedBaselines["daily_protein_ratio"] {
-                baselineSummaryRow(
-                    icon: "scalemass.fill",
-                    title: "Protein Ratio",
-                    value: ratio,
-                    unit: "g/kg",
-                    subtitle: viewModel.ratioIsOptimal ? "In optimal range!" : "Target: 1.2-1.6 g/kg"
-                )
-            } else {
-                HStack {
-                    Image(systemName: "scalemass.fill")
-                        .foregroundColor(.secondary)
-                    Text("Ratio baseline requires weight data")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding()
-                .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                .cornerRadius(12)
-            }
-
-            // Success message
-            VStack(spacing: 12) {
+            // Success header
+            VStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 40))
+                    .font(.system(size: 48))
                     .foregroundColor(.green)
 
                 Text("Baselines Saved!")
-                    .font(.headline)
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
 
-                Text("Your baselines will appear on the Protein screen. As you track, you'll see how your intake compares.")
+            // Baseline values
+            VStack(spacing: 12) {
+                // Amount Baseline
+                baselineSummaryRow(
+                    icon: "chart.bar.fill",
+                    title: "Daily Amount",
+                    value: viewModel.savedBaselines["daily_protein_g"],
+                    unit: "g",
+                    subtitle: "Your typical daily intake"
+                )
+
+                // Type Score Baseline
+                baselineSummaryRow(
+                    icon: "star.fill",
+                    title: "Type Score",
+                    value: viewModel.savedBaselines["protein_type_score"],
+                    unit: "/ 100",
+                    subtitle: "Quality of your protein sources"
+                )
+
+                // Ratio Baseline
+                if let ratio = viewModel.savedBaselines["daily_protein_ratio"] {
+                    baselineSummaryRow(
+                        icon: "scalemass.fill",
+                        title: "Protein Ratio",
+                        value: ratio,
+                        unit: "g/kg",
+                        subtitle: viewModel.ratioIsOptimal ? "In optimal range!" : "Target: \(viewModel.optimalRatioRangeText)"
+                    )
+                }
+            }
+
+            // Next info
+            Text("Next, let's see how your score is calculated...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+        }
+    }
+
+    // MARK: - Score Explanation Subpage
+
+    private func scoreExplanationSubpage(_ subpage: BaselineViewSubpage) -> some View {
+        VStack(spacing: 24) {
+            // Icon
+            Image(systemName: subpage.icon ?? "chart.pie.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.white)
+
+            // How score is calculated
+            if let explanation = viewModel.scoreDisplayConfig?.scoringExplanation {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("How It's Calculated")
+                        .font(.headline)
+
+                    Text(explanation)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .cornerRadius(12)
+            }
+
+            // Score ranges
+            if let rangeText = viewModel.scoreDisplayConfig?.optimalRangeText {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Score Ranges")
+                        .font(.headline)
+
+                    // Parse the range text (format: "80-100: Excellent | 60-79: Good...")
+                    ForEach(parseScoreRanges(rangeText), id: \.range) { item in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(item.color)
+                                .frame(width: 12, height: 12)
+                            Text(item.range)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text(item.label)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .cornerRadius(12)
+            }
+
+            // Threshold explanation
+            if let thresholdText = viewModel.scoreDisplayConfig?.thresholdExplanation {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "calendar")
+                            .foregroundColor(viewModel.pillarColor)
+                        Text("Unlocking Tracked Scores")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    Text(thresholdText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    private func parseScoreRanges(_ text: String) -> [(range: String, label: String, color: Color)] {
+        // Parse "80-100: Excellent protein habits | 60-79: Good..."
+        let parts = text.components(separatedBy: " | ")
+        return parts.compactMap { part in
+            let components = part.components(separatedBy: ": ")
+            guard components.count == 2 else { return nil }
+            let range = components[0].trimmingCharacters(in: .whitespaces)
+            let label = components[1].trimmingCharacters(in: .whitespaces)
+
+            let color: Color
+            if range.hasPrefix("80") { color = .green }
+            else if range.hasPrefix("60") { color = .yellow }
+            else if range.hasPrefix("40") { color = .orange }
+            else { color = .red }
+
+            return (range: range, label: label, color: color)
+        }
+    }
+
+    // MARK: - Score Display Subpage
+
+    private func scoreDisplaySubpage(_ subpage: BaselineViewSubpage) -> some View {
+        VStack(spacing: 24) {
+            // Score ring
+            if let score = viewModel.proteinScore {
+                VStack(spacing: 12) {
+                    ScoreRingView(
+                        score: Double(score),
+                        maxScore: 100,
+                        size: 160,
+                        lineWidth: 16,
+                        color: scoreColor(for: score)
+                    ) {
+                        AnyView(
+                            Text("\(score)")
+                                .font(.system(size: 48, weight: .bold))
+                                .foregroundColor(.primary)
+                        )
+                    }
+
+                    Text(scoreLabel(for: score))
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(scoreColor(for: score))
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .cornerRadius(16)
+            }
+
+            // Source indicator
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .foregroundColor(viewModel.pillarColor)
+                Text("Based on your baseline")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(20)
+
+            // What's next
+            VStack(alignment: .leading, spacing: 12) {
+                Text("What's Next?")
+                    .font(.headline)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    nextStepRow(icon: "plus.circle.fill", text: "Log your protein intake daily")
+                    nextStepRow(icon: "chart.line.uptrend.xyaxis", text: "Watch your score update over time")
+                    nextStepRow(icon: "target", text: "Aim for the optimal range")
+                }
             }
             .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .cornerRadius(12)
         }
+    }
+
+    private func nextStepRow(icon: String, text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(viewModel.pillarColor)
+                .frame(width: 24)
+            Text(text)
+                .font(.subheadline)
+        }
+    }
+
+    private func scoreColor(for score: Int) -> Color {
+        if score >= 80 { return .green }
+        else if score >= 60 { return .yellow }
+        else if score >= 40 { return .orange }
+        else { return .red }
+    }
+
+    private func scoreLabel(for score: Int) -> String {
+        if score >= 80 { return "Excellent" }
+        else if score >= 60 { return "Good" }
+        else if score >= 40 { return "Fair" }
+        else { return "Needs Improvement" }
     }
 
     private func baselineSummaryRow(icon: String, title: String, value: Double?, unit: String, subtitle: String) -> some View {

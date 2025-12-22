@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Card-based layout for Protein metric.
-//  Shows 3 cards: Amount, Type, Ratio.
+//  Shows score card at top, then 3 cards: Amount, Type, Ratio.
 //  Cards are reusable components defined in Cards/ folder.
 //
 
@@ -13,6 +13,7 @@ struct ProteinScreen: View {
     let pillar: String
     let color: Color
 
+    @StateObject private var scoreViewModel = ProteinScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -20,6 +21,15 @@ struct ProteinScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Protein Score Card - taps to detail
+                if scoreViewModel.hasScore {
+                    ProteinScoreCard(color: color, viewModel: scoreViewModel)
+                } else {
+                    ProteinScoreEmptyCard(color: color) {
+                        showingBaseline = true
+                    }
+                }
+
                 // Reusable card components
                 ProteinAmountCard(color: color, pillar: pillar)
                 ProteinTypeCard(color: color, pillar: pillar)
@@ -64,6 +74,9 @@ struct ProteinScreen: View {
         }
         .sheet(isPresented: $showingBaseline) {
             ProteinWizardView()
+        }
+        .task {
+            await scoreViewModel.loadData()
         }
     }
 }
