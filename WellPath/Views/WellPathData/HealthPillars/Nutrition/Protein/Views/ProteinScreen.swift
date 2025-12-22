@@ -22,7 +22,8 @@ struct ProteinScreen: View {
         ScrollView {
             VStack(spacing: 12) {
                 // Protein Score Card - taps to detail
-                if scoreViewModel.hasScore {
+                // Show card if user has baseline/tracked score OR has daily score
+                if scoreViewModel.hasScore || scoreViewModel.hasDailyScore {
                     ProteinScoreCard(color: color, viewModel: scoreViewModel)
                 } else {
                     ProteinScoreEmptyCard(color: color) {

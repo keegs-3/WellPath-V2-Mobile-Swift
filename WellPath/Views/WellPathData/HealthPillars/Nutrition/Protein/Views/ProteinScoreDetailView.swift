@@ -3,12 +3,33 @@
 //  WellPath
 //
 //  Detail view showing protein score with 3 tabs:
-//  - Today: Score pill + grams, tier %, ratio breakdown
-//  - History: Threshold progress + tappable day pills
-//  - Baseline: Baseline score + summary metrics
+//  - Today: Score pill + expandable summary card
+//  - History: Threshold progress + calendar, taps into day detail
+//  - Baseline: Score pill + expandable summary card
 //
 
 import SwiftUI
+
+// MARK: - Protein Summary Data
+
+struct ProteinSummaryData {
+    let grams: Double
+    let tier1Pct: Double
+    let tier2Pct: Double
+    let tier3Pct: Double
+    let ratio: Double
+    let weight: Double
+    let typeScore: Int?
+    let ratioScore: Int?
+    let overallScore: Int?
+
+    static let empty = ProteinSummaryData(
+        grams: 0, tier1Pct: 0, tier2Pct: 0, tier3Pct: 0,
+        ratio: 0, weight: 0, typeScore: nil, ratioScore: nil, overallScore: nil
+    )
+}
+
+// MARK: - Main Detail View
 
 struct ProteinScoreDetailView: View {
     @ObservedObject var viewModel: ProteinScoreViewModel
@@ -16,20 +37,17 @@ struct ProteinScoreDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: ScoreTab = .today
-    @State private var scoreHistory: [String: Int] = [:]  // dateString -> score
+    @State private var scoreHistory: [String: Int] = [:]
     @State private var isLoadingHistory = true
-    @State private var selectedHistoryEntry: DailyScoreEntry?
-    @State private var showingDayDetail = false
+    @State private var selectedHistoryDate: Date?
     @State private var displayedMonth: Date = Date()
 
     // Today's data
-    @State private var todayGrams: Double = 0
-    @State private var todayTier1Pct: Double = 0
-    @State private var todayTier2Pct: Double = 0
-    @State private var todayTier3Pct: Double = 0
-    @State private var todayRatio: Double = 0
-    @State private var patientWeight: Double = 0
+    @State private var todayData: ProteinSummaryData = .empty
     @State private var isLoadingToday = true
+
+    // Baseline data
+    @State private var baselineData: ProteinSummaryData = .empty
 
     @StateObject private var unitPrefs = UnitPreferencesViewModel()
 
@@ -39,16 +57,9 @@ struct ProteinScoreDetailView: View {
         case baseline = "Baseline"
     }
 
-    private var usePounds: Bool {
-        unitPrefs.weightUnit == .lb
-    }
-
-    private let kgToLb: Double = 2.2046
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Tab picker
                 Picker("Score View", selection: $selectedTab) {
                     ForEach(ScoreTab.allCases, id: \.self) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -73,20 +84,22 @@ struct ProteinScoreDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                    Button("Done") { dismiss() }
                 }
             }
             .task {
                 await unitPrefs.loadPreferences()
                 await loadTodayData()
+                await loadBaselineData()
                 await loadScoreHistory()
             }
-            .sheet(isPresented: $showingDayDetail) {
-                if let entry = selectedHistoryEntry {
-                    DayScoreDetailSheet(entry: entry, color: color)
-                }
+            .sheet(item: $selectedHistoryDate) { date in
+                ProteinDayDetailView(
+                    date: date,
+                    score: scoreHistory[dateString(for: date)],
+                    color: color,
+                    viewModel: viewModel
+                )
             }
         }
     }
@@ -96,7 +109,6 @@ struct ProteinScoreDetailView: View {
     private var todayTabContent: some View {
         VStack(spacing: 20) {
             if viewModel.hasDailyScore {
-                // Score pill at top
                 ScoreRingPill(
                     score: viewModel.dailyScoreValue,
                     iconName: "fish.fill",
@@ -105,27 +117,22 @@ struct ProteinScoreDetailView: View {
                 )
                 .padding(.top, 8)
 
-                // Score status
                 Text(scoreLabel(for: viewModel.dailyScoreValue))
                     .font(.headline)
                     .foregroundColor(scoreColor(for: viewModel.dailyScoreValue))
 
-                // Summary metrics card
                 if isLoadingToday {
-                    ProgressView()
-                        .padding(.vertical, 40)
+                    ProgressView().padding(.vertical, 40)
                 } else {
-                    todaySummaryCard
+                    ProteinSummaryCard(
+                        title: "Today's Protein",
+                        data: todayData,
+                        color: color,
+                        usePounds: unitPrefs.weightUnit == .lb,
+                        viewModel: viewModel
+                    )
                 }
 
-                // Component scores from DB
-                componentBreakdown(
-                    title: "Score Components",
-                    typeScore: viewModel.dailyTypeScore,
-                    ratioScore: viewModel.dailyRatioScore
-                )
-
-                // How It's Calculated
                 if let explanation = viewModel.scoringExplanation {
                     scoringExplanationSection(explanation)
                 }
@@ -136,138 +143,52 @@ struct ProteinScoreDetailView: View {
         .padding()
     }
 
-    private var todaySummaryCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Today's Protein")
-                    .font(.headline)
-                Spacer()
+    // MARK: - Baseline Tab
+
+    private var baselineTabContent: some View {
+        VStack(spacing: 20) {
+            ScoreRingPill(
+                score: viewModel.scoreValue,
+                iconName: "fish.fill",
+                label: "Baseline",
+                size: 90
+            )
+            .padding(.top, 8)
+
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .font(.body)
+                    .foregroundColor(color)
+                Text("Based on questionnaire")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemGroupedBackground))
+            .cornerRadius(20)
 
-            // Three metrics in a row
-            HStack(spacing: 0) {
-                // Amount
-                metricColumn(
-                    icon: "scalemass",
-                    value: "\(Int(todayGrams))",
-                    unit: "g",
-                    label: "Amount"
-                )
+            ProteinSummaryCard(
+                title: "Your Baseline",
+                data: baselineData,
+                color: color,
+                usePounds: unitPrefs.weightUnit == .lb,
+                viewModel: viewModel,
+                showIcon: true
+            )
 
-                Divider().frame(height: 55)
-
-                // Tier breakdown
-                tierColumn
-
-                Divider().frame(height: 55)
-
-                // Ratio
-                ratioColumn
+            if let explanation = viewModel.scoringExplanation {
+                scoringExplanationSection(explanation)
             }
         }
         .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(12)
-    }
-
-    private var tierColumn: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "chart.pie")
-                .font(.caption)
-                .foregroundColor(color.opacity(0.7))
-
-            VStack(spacing: 2) {
-                HStack(spacing: 4) {
-                    Circle().fill(MetricsUIConfig.tierGood).frame(width: 6, height: 6)
-                    Text("\(Int(todayTier1Pct))%")
-                        .font(.caption2)
-                }
-                HStack(spacing: 4) {
-                    Circle().fill(MetricsUIConfig.tierMedium).frame(width: 6, height: 6)
-                    Text("\(Int(todayTier2Pct))%")
-                        .font(.caption2)
-                }
-                HStack(spacing: 4) {
-                    Circle().fill(MetricsUIConfig.tierPoor).frame(width: 6, height: 6)
-                    Text("\(Int(todayTier3Pct))%")
-                        .font(.caption2)
-                }
-            }
-            .foregroundColor(.secondary)
-
-            Text("Tiers")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var ratioColumn: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "percent")
-                .font(.caption)
-                .foregroundColor(color.opacity(0.7))
-
-            if todayRatio > 0 {
-                let displayRatio = usePounds ? todayRatio / kgToLb : todayRatio
-                let unitLabel = usePounds ? "g/lb" : "g/kg"
-
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text(String(format: "%.1f", displayRatio))
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                    Text(unitLabel)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-
-                if patientWeight > 0 {
-                    let displayWeight = usePounds ? patientWeight * kgToLb : patientWeight
-                    let weightUnit = usePounds ? "lb" : "kg"
-                    Text("@ \(Int(displayWeight))\(weightUnit)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            } else {
-                Text("--")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
-            }
-
-            Text("Ratio")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var noDataTodayView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "calendar.badge.exclamationmark")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-
-            Text("No protein logged today")
-                .font(.headline)
-
-            Text("Log your meals to see today's protein breakdown")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
     }
 
     // MARK: - History Tab
 
     private var historyTabContent: some View {
         VStack(spacing: 20) {
-            // Threshold progress
             thresholdProgressSection
-
-            // Score history calendar (tappable days)
             scoreHistoryCalendar
         }
         .padding()
@@ -278,9 +199,7 @@ struct ProteinScoreDetailView: View {
             HStack {
                 Text(viewModel.isBaseline ? "Unlock Tracked Score" : "Tracking Complete")
                     .font(.headline)
-
                 Spacer()
-
                 if !viewModel.isBaseline {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
@@ -293,7 +212,6 @@ struct ProteinScoreDetailView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.gray.opacity(0.2))
                             .frame(height: 8)
-
                         RoundedRectangle(cornerRadius: 4)
                             .fill(viewModel.isBaseline ? color : .green)
                             .frame(width: geometry.size.width * min(viewModel.thresholdProgress, 1.0), height: 8)
@@ -305,9 +223,7 @@ struct ProteinScoreDetailView: View {
                     Text("\(viewModel.daysTracked) of \(viewModel.daysRequired) days")
                         .font(.subheadline)
                         .fontWeight(.medium)
-
                     Spacer()
-
                     Text("\(Int(min(viewModel.thresholdProgress, 1.0) * 100))%")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -340,16 +256,13 @@ struct ProteinScoreDetailView: View {
                 }
 
                 Spacer()
-
                 Text(monthYearString(for: displayedMonth))
                     .font(.headline)
-
                 Spacer()
 
                 Button {
                     withAnimation {
                         let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
-                        // Don't go beyond current month
                         if nextMonth <= Date() {
                             displayedMonth = nextMonth
                         }
@@ -387,8 +300,7 @@ struct ProteinScoreDetailView: View {
                         if let date = date {
                             calendarDayCell(for: date)
                         } else {
-                            Color.clear
-                                .frame(height: 44)
+                            Color.clear.frame(height: 44)
                         }
                     }
                 }
@@ -400,31 +312,22 @@ struct ProteinScoreDetailView: View {
     }
 
     private func calendarDayCell(for date: Date) -> some View {
-        let dateString = dateStringFormatter.string(from: date)
-        let score = scoreHistory[dateString]
+        let dateStr = dateString(for: date)
+        let score = scoreHistory[dateStr]
         let dayNumber = Calendar.current.component(.day, from: date)
-        let isToday = Calendar.current.isDateInToday(date)
         let isFuture = date > Date()
 
         return Button {
-            if let score = score {
-                selectedHistoryEntry = DailyScoreEntry(
-                    date: date,
-                    dateString: dateString,
-                    score: score,
-                    dayLabel: "\(dayNumber)"
-                )
-                showingDayDetail = true
+            if score != nil {
+                selectedHistoryDate = date
             }
         } label: {
             VStack(spacing: 2) {
                 if let score = score {
-                    // Day with score - show mini ring
                     ZStack {
                         Circle()
                             .stroke(Color.gray.opacity(0.15), lineWidth: 2)
                             .frame(width: 28, height: 28)
-
                         Circle()
                             .trim(from: 0, to: Double(score) / 100.0)
                             .stroke(
@@ -433,13 +336,11 @@ struct ProteinScoreDetailView: View {
                             )
                             .rotationEffect(.degrees(-90))
                             .frame(width: 28, height: 28)
-
                         Text("\(score)")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.primary)
                     }
                 } else {
-                    // Day without score
                     Text("\(dayNumber)")
                         .font(.caption)
                         .foregroundColor(isFuture ? .secondary.opacity(0.3) : .secondary)
@@ -452,278 +353,28 @@ struct ProteinScoreDetailView: View {
         .disabled(score == nil)
     }
 
-    private var dateStringFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }
-
-    private func monthYearString(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: date)
-    }
-
-    private func daysInMonth() -> [Date?] {
-        let calendar = Calendar.current
-        let startOfMonth = calendar.startOfMonth(for: displayedMonth)
-        let range = calendar.range(of: .day, in: .month, for: displayedMonth)!
-
-        // Get the weekday of the first day (0 = Sunday)
-        let firstWeekday = calendar.component(.weekday, from: startOfMonth) - 1
-
-        var days: [Date?] = []
-
-        // Add empty cells for days before the first
-        for _ in 0..<firstWeekday {
-            days.append(nil)
-        }
-
-        // Add the actual days
-        for day in range {
-            if let date = calendar.date(byAdding: .day, value: day - 1, to: startOfMonth) {
-                days.append(date)
-            }
-        }
-
-        return days
-    }
-
-    // MARK: - Baseline Tab
-
-    private var baselineTabContent: some View {
-        VStack(spacing: 20) {
-            // Score pill
-            ScoreRingPill(
-                score: viewModel.scoreValue,
-                iconName: "fish.fill",
-                label: "Baseline",
-                size: 90
-            )
-            .padding(.top, 8)
-
-            // Source badge
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text.fill")
-                    .font(.body)
-                    .foregroundColor(color)
-
-                Text("Based on questionnaire")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(20)
-
-            // Baseline summary card (like the old one)
-            baselineSummaryCard
-
-            // Component breakdown
-            componentBreakdown(
-                title: "Baseline Components",
-                typeScore: viewModel.typeScore,
-                ratioScore: viewModel.ratioScore
-            )
-
-            // How It's Calculated
-            if let explanation = viewModel.scoringExplanation {
-                scoringExplanationSection(explanation)
-            }
-        }
-        .padding()
-    }
-
-    private var baselineSummaryCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "flag.fill")
-                    .font(.headline)
-                    .foregroundColor(color)
-                Text("Your Baseline")
-                    .font(.headline)
-                Spacer()
-            }
-
-            HStack(spacing: 0) {
-                // Amount
-                metricColumn(
-                    icon: "scalemass",
-                    value: viewModel.baselines["daily_protein_g"] != nil ? "\(Int(viewModel.baselines["daily_protein_g"]!))" : "--",
-                    unit: "g",
-                    label: "Amount"
-                )
-
-                Divider().frame(height: 55)
-
-                // Type Score
-                VStack(spacing: 4) {
-                    Image(systemName: "chart.pie")
-                        .font(.caption)
-                        .foregroundColor(color.opacity(0.7))
-
-                    if let score = viewModel.typeScore {
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text("\(score)")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                                .foregroundColor(scoreColor(for: score))
-                            Text("/100")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("--")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("Type")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-
-                Divider().frame(height: 55)
-
-                // Ratio
-                VStack(spacing: 4) {
-                    Image(systemName: "percent")
-                        .font(.caption)
-                        .foregroundColor(color.opacity(0.7))
-
-                    if let ratio = viewModel.baselineRatioDisplay {
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(String(format: "%.2f", ratio))
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Text(viewModel.ratioUnitDisplay)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("--")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("Ratio")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(12)
-    }
-
     // MARK: - Shared Components
 
-    private func metricColumn(icon: String, value: String, unit: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color.opacity(0.7))
-
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                Text(unit)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Text(label)
-                .font(.caption)
+    private var noDataTodayView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .font(.system(size: 48))
                 .foregroundColor(.secondary)
+            Text("No protein logged today")
+                .font(.headline)
+            Text("Log your meals to see today's protein breakdown")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private func componentBreakdown(title: String, typeScore: Int?, ratioScore: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-
-            VStack(spacing: 0) {
-                ForEach(Array(viewModel.components.enumerated()), id: \.element.id) { index, component in
-                    let score: Int? = {
-                        if component.componentType == "protein_type_score" {
-                            return typeScore
-                        } else if component.componentType == "protein_ratio_score" {
-                            return ratioScore
-                        }
-                        return nil
-                    }()
-
-                    componentRow(component, score: score)
-
-                    if index < viewModel.components.count - 1 {
-                        Divider().padding(.horizontal)
-                    }
-                }
-            }
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
-        }
-    }
-
-    private func componentRow(_ component: BehavioralScoreComponent, score: Int?) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: component.iconName ?? "circle.fill")
-                .font(.title3)
-                .foregroundColor(color)
-                .frame(width: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(component.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-
-                    Spacer()
-
-                    if let score = score {
-                        Text("\(score)")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(scoreColor(for: score))
-                    } else {
-                        Text("--")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                HStack {
-                    if let description = component.description {
-                        Text(description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Text(component.weightPercentage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding()
+        .padding(.vertical, 60)
     }
 
     private func scoringExplanationSection(_ explanation: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("How It's Calculated")
                 .font(.headline)
-
             Text(explanation)
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -751,6 +402,34 @@ struct ProteinScoreDetailView: View {
         else { return "Needs Improvement" }
     }
 
+    private func monthYearString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date)
+    }
+
+    private func dateString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func daysInMonth() -> [Date?] {
+        let calendar = Calendar.current
+        let startOfMonth = calendar.startOfMonth(for: displayedMonth)
+        let range = calendar.range(of: .day, in: .month, for: displayedMonth)!
+        let firstWeekday = calendar.component(.weekday, from: startOfMonth) - 1
+
+        var days: [Date?] = []
+        for _ in 0..<firstWeekday { days.append(nil) }
+        for day in range {
+            if let date = calendar.date(byAdding: .day, value: day - 1, to: startOfMonth) {
+                days.append(date)
+            }
+        }
+        return days
+    }
+
     // MARK: - Data Loading
 
     private func loadTodayData() async {
@@ -763,7 +442,7 @@ struct ProteinScoreDetailView: View {
             dateFormatter.dateFormat = "yyyy-MM-dd"
             let todayString = dateFormatter.string(from: today)
 
-            // Load protein grams and tier data
+            // Load protein samples
             struct ProteinSample: Decodable {
                 let canonicalValue: Double
                 let proteinType: String?
@@ -780,7 +459,6 @@ struct ProteinScoreDetailView: View {
                 init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
                     canonicalValue = try container.decode(Double.self, forKey: .canonicalValue)
-
                     if let metadataContainer = try? container.nestedContainer(keyedBy: MetadataKeys.self, forKey: .metadata) {
                         proteinType = try? metadataContainer.decode(String.self, forKey: .proteinTypes)
                     } else {
@@ -799,89 +477,44 @@ struct ProteinScoreDetailView: View {
                 .execute()
                 .value
 
-            // Calculate totals
             var totalGrams: Double = 0
             var tier1Grams: Double = 0
             var tier2Grams: Double = 0
             var tier3Grams: Double = 0
 
-            // Get tier config (simplified - would need ProteinTypeDonutViewModel)
             for sample in samples {
                 totalGrams += sample.canonicalValue
-                // Simplified tier assignment - would need proper tier lookup
                 if let type = sample.proteinType {
-                    // Tier 1: fish, legumes, poultry
                     if ["fish", "legumes", "poultry", "eggs"].contains(where: { type.lowercased().contains($0) }) {
                         tier1Grams += sample.canonicalValue
-                    }
-                    // Tier 3: processed, red meat
-                    else if ["processed", "bacon", "sausage", "red_meat", "beef", "pork"].contains(where: { type.lowercased().contains($0) }) {
+                    } else if ["processed", "bacon", "sausage", "red_meat", "beef", "pork"].contains(where: { type.lowercased().contains($0) }) {
                         tier3Grams += sample.canonicalValue
-                    }
-                    // Tier 2: everything else
-                    else {
+                    } else {
                         tier2Grams += sample.canonicalValue
                     }
                 }
             }
 
-            todayGrams = totalGrams
+            let tier1Pct = totalGrams > 0 ? (tier1Grams / totalGrams) * 100 : 0
+            let tier2Pct = totalGrams > 0 ? (tier2Grams / totalGrams) * 100 : 0
+            let tier3Pct = totalGrams > 0 ? (tier3Grams / totalGrams) * 100 : 0
 
-            if totalGrams > 0 {
-                todayTier1Pct = (tier1Grams / totalGrams) * 100
-                todayTier2Pct = (tier2Grams / totalGrams) * 100
-                todayTier3Pct = (tier3Grams / totalGrams) * 100
-            }
+            // Load weight
+            let weight = await loadPatientWeight(userId: userId.uuidString)
 
-            // Load patient weight for ratio - try quantity samples first, then baseline
-            struct WeightSample: Decodable {
-                let canonicalValue: Double
+            let ratio = weight > 0 ? totalGrams / weight : 0
 
-                enum CodingKeys: String, CodingKey {
-                    case canonicalValue = "canonical_value"
-                }
-            }
-
-            var weight: Double = 0
-
-            // Try patient_quantity_samples first
-            let weightResults: [WeightSample] = try await client
-                .from("patient_quantity_samples")
-                .select("canonical_value")
-                .eq("patient_id", value: userId.uuidString)
-                .eq("quantity_type", value: "body_mass_kg")
-                .order("sample_date", ascending: false)
-                .limit(1)
-                .execute()
-                .value
-
-            if let w = weightResults.first?.canonicalValue, w > 0 {
-                weight = w
-            } else {
-                // Fallback to baseline samples
-                struct BaselineSample: Decodable {
-                    let value: Double
-                }
-
-                let baselineResults: [BaselineSample] = try await client
-                    .from("patient_baseline_samples")
-                    .select("value")
-                    .eq("patient_id", value: userId.uuidString)
-                    .eq("baseline_type", value: "body_mass_kg")
-                    .eq("is_current", value: true)
-                    .limit(1)
-                    .execute()
-                    .value
-
-                if let w = baselineResults.first?.value, w > 0 {
-                    weight = w
-                }
-            }
-
-            if weight > 0 {
-                patientWeight = weight
-                todayRatio = totalGrams / weight
-            }
+            todayData = ProteinSummaryData(
+                grams: totalGrams,
+                tier1Pct: tier1Pct,
+                tier2Pct: tier2Pct,
+                tier3Pct: tier3Pct,
+                ratio: ratio,
+                weight: weight,
+                typeScore: viewModel.dailyTypeScore,
+                ratioScore: viewModel.dailyRatioScore,
+                overallScore: viewModel.dailyScoreValue
+            )
 
             isLoadingToday = false
         } catch {
@@ -890,12 +523,76 @@ struct ProteinScoreDetailView: View {
         }
     }
 
+    private func loadBaselineData() async {
+        let grams = viewModel.baselines["daily_protein_g"] ?? 0
+        let ratioValue = viewModel.baselines["daily_protein_ratio"] ?? 0
+        let weight = viewModel.baselines["body_mass_kg"] ?? 0
+
+        baselineData = ProteinSummaryData(
+            grams: grams,
+            tier1Pct: 0, // Baseline doesn't have tier breakdown
+            tier2Pct: 0,
+            tier3Pct: 0,
+            ratio: ratioValue,
+            weight: weight,
+            typeScore: viewModel.typeScore,
+            ratioScore: viewModel.ratioScore,
+            overallScore: viewModel.scoreValue
+        )
+    }
+
+    private func loadPatientWeight(userId: String) async -> Double {
+        do {
+            let client = SupabaseManager.shared.client
+
+            struct WeightSample: Decodable {
+                let canonicalValue: Double
+                enum CodingKeys: String, CodingKey {
+                    case canonicalValue = "canonical_value"
+                }
+            }
+
+            let weightResults: [WeightSample] = try await client
+                .from("patient_quantity_samples")
+                .select("canonical_value")
+                .eq("patient_id", value: userId)
+                .eq("quantity_type", value: "body_mass_kg")
+                .order("start_time", ascending: false)
+                .limit(1)
+                .execute()
+                .value
+
+            if let w = weightResults.first?.canonicalValue, w > 0 {
+                return w
+            }
+
+            // Fallback to baseline
+            struct BaselineSample: Decodable {
+                let value: Double
+            }
+
+            let baselineResults: [BaselineSample] = try await client
+                .from("patient_baseline_samples")
+                .select("value")
+                .eq("patient_id", value: userId)
+                .eq("baseline_type", value: "body_mass_kg")
+                .eq("is_current", value: true)
+                .limit(1)
+                .execute()
+                .value
+
+            return baselineResults.first?.value ?? 0
+        } catch {
+            print("Error loading weight: \(error)")
+            return 0
+        }
+    }
+
     private func loadScoreHistory() async {
         do {
             let client = SupabaseManager.shared.client
             let userId = try await client.auth.session.user.id
 
-            // Load last 90 days of score history for calendar
             let calendar = Calendar.current
             let today = calendar.startOfDay(for: Date())
             guard let startDate = calendar.date(byAdding: .day, value: -90, to: today) else { return }
@@ -925,13 +622,11 @@ struct ProteinScoreDetailView: View {
                 .execute()
                 .value
 
-            // Populate dictionary: dateString -> score
             var historyDict: [String: Int] = [:]
             for result in results {
                 historyDict[result.aggregationDate] = Int(result.canonicalValue)
             }
             scoreHistory = historyDict
-
             isLoadingHistory = false
         } catch {
             print("Error loading score history: \(error)")
@@ -940,58 +635,318 @@ struct ProteinScoreDetailView: View {
     }
 }
 
-// MARK: - Supporting Types
+// MARK: - Expandable Summary Card
 
-struct DailyScoreEntry: Identifiable {
-    let id = UUID()
-    let date: Date
-    let dateString: String
-    let score: Int
-    let dayLabel: String
-}
-
-// MARK: - Day Score Detail Sheet
-
-struct DayScoreDetailSheet: View {
-    let entry: DailyScoreEntry
+struct ProteinSummaryCard: View {
+    let title: String
+    let data: ProteinSummaryData
     let color: Color
-    @Environment(\.dismiss) private var dismiss
+    let usePounds: Bool
+    let viewModel: ProteinScoreViewModel
+    var showIcon: Bool = false
 
-    @State private var grams: Double = 0
-    @State private var tier1Pct: Double = 0
-    @State private var tier2Pct: Double = 0
-    @State private var tier3Pct: Double = 0
-    @State private var ratio: Double = 0
-    @State private var typeScore: Int = 0
-    @State private var ratioScore: Int = 0
-    @State private var isLoading = true
+    @State private var isExpanded = false
 
-    @StateObject private var unitPrefs = UnitPreferencesViewModel()
     private let kgToLb: Double = 2.2046
 
-    private var usePounds: Bool {
-        unitPrefs.weightUnit == .lb
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    if showIcon {
+                        Image(systemName: "flag.fill")
+                            .font(.headline)
+                            .foregroundColor(color)
+                    }
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .padding()
+            }
+            .buttonStyle(.plain)
+
+            Divider().padding(.horizontal)
+
+            // Summary row (always visible)
+            HStack(spacing: 0) {
+                // Amount
+                summaryColumn(
+                    icon: "scalemass",
+                    value: "\(Int(data.grams))",
+                    unit: "g",
+                    label: "Amount"
+                )
+
+                Divider().frame(height: 55)
+
+                // Type
+                summaryColumn(
+                    icon: "chart.pie",
+                    value: data.typeScore != nil ? "\(data.typeScore!)" : "--",
+                    unit: "/100",
+                    label: "Type"
+                )
+
+                Divider().frame(height: 55)
+
+                // Ratio
+                ratioSummaryColumn
+            }
+            .padding(.vertical, 12)
+
+            // Expanded details
+            if isExpanded {
+                Divider().padding(.horizontal)
+
+                VStack(spacing: 16) {
+                    // Tier breakdown
+                    if data.tier1Pct > 0 || data.tier2Pct > 0 || data.tier3Pct > 0 {
+                        tierBreakdownSection
+                    }
+
+                    // Weight info
+                    if data.weight > 0 {
+                        weightInfoSection
+                    }
+
+                    // Component scores
+                    componentScoresSection
+                }
+                .padding()
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+    }
+
+    private func summaryColumn(icon: String, value: String, unit: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(color.opacity(0.7))
+
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Text(unit)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var ratioSummaryColumn: some View {
+        let displayRatio = usePounds ? data.ratio / kgToLb : data.ratio
+        let unitLabel = usePounds ? "g/lb" : "g/kg"
+
+        return VStack(spacing: 4) {
+            Image(systemName: "percent")
+                .font(.caption)
+                .foregroundColor(color.opacity(0.7))
+
+            if data.ratio > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(String(format: "%.1f", displayRatio))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    Text(unitLabel)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Text("--")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+            }
+
+            Text("Ratio")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var tierBreakdownSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Protein Type Breakdown")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            HStack(spacing: 16) {
+                tierRow(label: "Tier 1", pct: data.tier1Pct, color: MetricsUIConfig.tierGood, description: "Fish, legumes, poultry")
+                tierRow(label: "Tier 2", pct: data.tier2Pct, color: MetricsUIConfig.tierMedium, description: "Dairy, other")
+                tierRow(label: "Tier 3", pct: data.tier3Pct, color: MetricsUIConfig.tierPoor, description: "Red/processed meat")
+            }
+        }
+        .padding()
+        .background(Color(.tertiarySystemGroupedBackground))
+        .cornerRadius(8)
+    }
+
+    private func tierRow(label: String, pct: Double, color: Color, description: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(label)
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            Text("\(Int(pct))%")
+                .font(.headline)
+            Text(description)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var weightInfoSection: some View {
+        let displayWeight = usePounds ? data.weight * kgToLb : data.weight
+        let weightUnit = usePounds ? "lb" : "kg"
+
+        return HStack {
+            Image(systemName: "scalemass.fill")
+                .foregroundColor(color.opacity(0.7))
+            Text("Body Weight:")
+                .font(.subheadline)
+            Spacer()
+            Text("\(Int(displayWeight)) \(weightUnit)")
+                .font(.subheadline)
+                .fontWeight(.medium)
+        }
+        .padding()
+        .background(Color(.tertiarySystemGroupedBackground))
+        .cornerRadius(8)
+    }
+
+    private var componentScoresSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Score Components")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            ForEach(viewModel.components, id: \.id) { component in
+                HStack {
+                    Image(systemName: component.iconName ?? "circle.fill")
+                        .foregroundColor(color)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(component.displayName)
+                            .font(.subheadline)
+                        if let desc = component.description {
+                            Text(desc)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing) {
+                        let score: Int? = component.componentType == "protein_type_score" ? data.typeScore : data.ratioScore
+                        if let score = score {
+                            Text("\(score)")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(scoreColor(for: score))
+                        } else {
+                            Text("--")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Text(component.weightPercentage)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.tertiarySystemGroupedBackground))
+        .cornerRadius(8)
+    }
+
+    private func scoreColor(for score: Int) -> Color {
+        if score >= 80 { return .green }
+        else if score >= 60 { return .yellow }
+        else if score >= 40 { return .orange }
+        else { return .red }
+    }
+}
+
+// MARK: - Day Detail View (for History)
+
+struct ProteinDayDetailView: View {
+    let date: Date
+    let score: Int?
+    let color: Color
+    @ObservedObject var viewModel: ProteinScoreViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var dayData: ProteinSummaryData = .empty
+    @State private var isLoading = true
+    @StateObject private var unitPrefs = UnitPreferencesViewModel()
+
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
+    }
+
+    private var dateString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Score pill
                     ScoreRingPill(
-                        score: entry.score,
+                        score: score,
                         iconName: "fish.fill",
                         label: formattedDate,
                         size: 90
                     )
                     .padding(.top, 8)
 
+                    if let score = score {
+                        Text(scoreLabel(for: score))
+                            .font(.headline)
+                            .foregroundColor(scoreColor(for: score))
+                    }
+
                     if isLoading {
-                        ProgressView()
-                            .padding(.vertical, 40)
+                        ProgressView().padding(.vertical, 40)
                     } else {
-                        // Summary metrics
-                        daySummaryCard
+                        ProteinSummaryCard(
+                            title: "Protein Summary",
+                            data: dayData,
+                            color: color,
+                            usePounds: unitPrefs.weightUnit == .lb,
+                            viewModel: viewModel
+                        )
                     }
                 }
                 .padding()
@@ -1001,9 +956,7 @@ struct DayScoreDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                    Button("Done") { dismiss() }
                 }
             }
             .task {
@@ -1013,132 +966,18 @@ struct DayScoreDetailSheet: View {
         }
     }
 
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: entry.date)
+    private func scoreColor(for score: Int) -> Color {
+        if score >= 80 { return .green }
+        else if score >= 60 { return .yellow }
+        else if score >= 40 { return .orange }
+        else { return .red }
     }
 
-    private var daySummaryCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Protein Summary")
-                    .font(.headline)
-                Spacer()
-            }
-
-            HStack(spacing: 0) {
-                // Amount
-                VStack(spacing: 4) {
-                    Image(systemName: "scalemass")
-                        .font(.caption)
-                        .foregroundColor(color.opacity(0.7))
-
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(Int(grams))")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                        Text("g")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("Amount")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-
-                Divider().frame(height: 55)
-
-                // Tiers
-                VStack(spacing: 4) {
-                    Image(systemName: "chart.pie")
-                        .font(.caption)
-                        .foregroundColor(color.opacity(0.7))
-
-                    VStack(spacing: 2) {
-                        HStack(spacing: 4) {
-                            Circle().fill(MetricsUIConfig.tierGood).frame(width: 6, height: 6)
-                            Text("\(Int(tier1Pct))%").font(.caption2)
-                        }
-                        HStack(spacing: 4) {
-                            Circle().fill(MetricsUIConfig.tierMedium).frame(width: 6, height: 6)
-                            Text("\(Int(tier2Pct))%").font(.caption2)
-                        }
-                        HStack(spacing: 4) {
-                            Circle().fill(MetricsUIConfig.tierPoor).frame(width: 6, height: 6)
-                            Text("\(Int(tier3Pct))%").font(.caption2)
-                        }
-                    }
-                    .foregroundColor(.secondary)
-
-                    Text("Tiers")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-
-                Divider().frame(height: 55)
-
-                // Ratio
-                VStack(spacing: 4) {
-                    Image(systemName: "percent")
-                        .font(.caption)
-                        .foregroundColor(color.opacity(0.7))
-
-                    if ratio > 0 {
-                        let displayRatio = usePounds ? ratio / kgToLb : ratio
-                        let unitLabel = usePounds ? "g/lb" : "g/kg"
-
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(String(format: "%.1f", displayRatio))
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                            Text(unitLabel)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("--")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("Ratio")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-
-            // Component scores
-            Divider()
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Type Score")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(typeScore)")
-                        .font(.headline)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Ratio Score")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(ratioScore)")
-                        .font(.headline)
-                }
-            }
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(12)
+    private func scoreLabel(for score: Int) -> String {
+        if score >= 80 { return "Excellent" }
+        else if score >= 60 { return "Good" }
+        else if score >= 40 { return "Fair" }
+        else { return "Needs Improvement" }
     }
 
     private func loadDayData() async {
@@ -1146,7 +985,7 @@ struct DayScoreDetailSheet: View {
             let client = SupabaseManager.shared.client
             let userId = try await client.auth.session.user.id
 
-            // Load scores for this day
+            // Load scores
             struct ScoreSample: Decodable {
                 let quantityType: String
                 let canonicalValue: Double
@@ -1162,44 +1001,81 @@ struct DayScoreDetailSheet: View {
                 .select("quantity_type, canonical_value")
                 .eq("patient_id", value: userId.uuidString)
                 .in("quantity_type", values: ["protein_type_score", "protein_ratio_score"])
-                .eq("aggregation_date", value: entry.dateString)
+                .eq("aggregation_date", value: dateString)
                 .eq("source", value: "calculated")
                 .execute()
                 .value
 
-            for score in scores {
-                if score.quantityType == "protein_type_score" {
-                    typeScore = Int(score.canonicalValue)
-                } else if score.quantityType == "protein_ratio_score" {
-                    ratioScore = Int(score.canonicalValue)
+            var typeScore: Int?
+            var ratioScore: Int?
+            for s in scores {
+                if s.quantityType == "protein_type_score" {
+                    typeScore = Int(s.canonicalValue)
+                } else if s.quantityType == "protein_ratio_score" {
+                    ratioScore = Int(s.canonicalValue)
                 }
             }
 
-            // Load protein grams
+            // Load protein samples
             struct ProteinSample: Decodable {
                 let canonicalValue: Double
+                let proteinType: String?
 
                 enum CodingKeys: String, CodingKey {
                     case canonicalValue = "canonical_value"
+                    case metadata
+                }
+
+                enum MetadataKeys: String, CodingKey {
+                    case proteinTypes = "protein_types"
+                }
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    canonicalValue = try container.decode(Double.self, forKey: .canonicalValue)
+                    if let metadataContainer = try? container.nestedContainer(keyedBy: MetadataKeys.self, forKey: .metadata) {
+                        proteinType = try? metadataContainer.decode(String.self, forKey: .proteinTypes)
+                    } else {
+                        proteinType = nil
+                    }
                 }
             }
 
-            let proteinSamples: [ProteinSample] = try await client
+            let samples: [ProteinSample] = try await client
                 .from("patient_quantity_samples")
-                .select("canonical_value")
+                .select("canonical_value, metadata")
                 .eq("patient_id", value: userId.uuidString)
                 .eq("quantity_type", value: "protein_grams")
-                .eq("aggregation_date", value: entry.dateString)
+                .eq("aggregation_date", value: dateString)
                 .in("source", values: ["wellpath_input", "healthkit"])
                 .execute()
                 .value
 
-            grams = proteinSamples.reduce(0) { $0 + $1.canonicalValue }
+            var totalGrams: Double = 0
+            var tier1Grams: Double = 0
+            var tier2Grams: Double = 0
+            var tier3Grams: Double = 0
 
-            // Load weight for ratio
+            for sample in samples {
+                totalGrams += sample.canonicalValue
+                if let type = sample.proteinType {
+                    if ["fish", "legumes", "poultry", "eggs"].contains(where: { type.lowercased().contains($0) }) {
+                        tier1Grams += sample.canonicalValue
+                    } else if ["processed", "bacon", "sausage", "red_meat", "beef", "pork"].contains(where: { type.lowercased().contains($0) }) {
+                        tier3Grams += sample.canonicalValue
+                    } else {
+                        tier2Grams += sample.canonicalValue
+                    }
+                }
+            }
+
+            let tier1Pct = totalGrams > 0 ? (tier1Grams / totalGrams) * 100 : 0
+            let tier2Pct = totalGrams > 0 ? (tier2Grams / totalGrams) * 100 : 0
+            let tier3Pct = totalGrams > 0 ? (tier3Grams / totalGrams) * 100 : 0
+
+            // Load weight
             struct WeightSample: Decodable {
                 let canonicalValue: Double
-
                 enum CodingKeys: String, CodingKey {
                     case canonicalValue = "canonical_value"
                 }
@@ -1210,15 +1086,26 @@ struct DayScoreDetailSheet: View {
                 .select("canonical_value")
                 .eq("patient_id", value: userId.uuidString)
                 .eq("quantity_type", value: "body_mass_kg")
-                .lte("sample_date", value: entry.dateString)
-                .order("sample_date", ascending: false)
+                .lte("aggregation_date", value: dateString)
+                .order("start_time", ascending: false)
                 .limit(1)
                 .execute()
                 .value
 
-            if let weight = weightResults.first?.canonicalValue, weight > 0 {
-                ratio = grams / weight
-            }
+            let weight = weightResults.first?.canonicalValue ?? 0
+            let ratio = weight > 0 ? totalGrams / weight : 0
+
+            dayData = ProteinSummaryData(
+                grams: totalGrams,
+                tier1Pct: tier1Pct,
+                tier2Pct: tier2Pct,
+                tier3Pct: tier3Pct,
+                ratio: ratio,
+                weight: weight,
+                typeScore: typeScore,
+                ratioScore: ratioScore,
+                overallScore: score
+            )
 
             isLoading = false
         } catch {
@@ -1226,6 +1113,12 @@ struct DayScoreDetailSheet: View {
             isLoading = false
         }
     }
+}
+
+// MARK: - Date Extension for Sheet
+
+extension Date: @retroactive Identifiable {
+    public var id: TimeInterval { timeIntervalSince1970 }
 }
 
 // MARK: - Calendar Extension

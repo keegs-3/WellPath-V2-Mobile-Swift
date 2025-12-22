@@ -135,6 +135,7 @@ class EducationQAViewModel: ObservableObject {
     @Published var question: String = ""
     @Published var answer: String?
     @Published var isLoading = false
+    @Published var isLoadingHistory = false
     @Published var error: String?
     @Published var conversationHistory: [QAMessage] = []
     @Published var suggestedQuestions: [String] = []
@@ -154,6 +155,25 @@ class EducationQAViewModel: ObservableObject {
         self.viewId = viewId
         self.viewName = viewName
         self.suggestedQuestions = defaultQuestions
+    }
+
+    /// Load chat history and suggested questions on appear
+    func loadInitialData() async {
+        isLoadingHistory = true
+
+        // Load chat history from database
+        do {
+            let history = try await service.loadChatHistory(viewId: viewId)
+            self.conversationHistory = history
+        } catch {
+            print("Failed to load chat history: \(error)")
+            // Continue without history - not a critical error
+        }
+
+        isLoadingHistory = false
+
+        // Also load suggested questions
+        await loadSuggestedQuestions()
     }
 
     /// Load suggested questions from database (call on appear)
@@ -179,15 +199,35 @@ class EducationQAViewModel: ObservableObject {
         let userQuestion = question
         question = ""  // Clear input
 
-        // Add user message to history
-        conversationHistory.append(QAMessage(role: .user, content: userQuestion))
+        // Create user message
+        let userMessage = QAMessage(role: .user, content: userQuestion)
+        conversationHistory.append(userMessage)
+
+        // Save user message to database (fire and forget)
+        Task {
+            do {
+                _ = try await service.saveChatMessage(viewId: viewId, role: .user, content: userQuestion)
+            } catch {
+                print("Failed to save user message: \(error)")
+            }
+        }
 
         do {
             let response = try await service.askQuestion(viewId: viewId, question: userQuestion)
             answer = response.answer
 
             // Add assistant response to history
-            conversationHistory.append(QAMessage(role: .assistant, content: response.answer))
+            let assistantMessage = QAMessage(role: .assistant, content: response.answer)
+            conversationHistory.append(assistantMessage)
+
+            // Save assistant message to database (fire and forget)
+            Task {
+                do {
+                    _ = try await service.saveChatMessage(viewId: viewId, role: .assistant, content: response.answer)
+                } catch {
+                    print("Failed to save assistant message: \(error)")
+                }
+            }
 
         } catch {
             self.error = error.localizedDescription
@@ -202,19 +242,129 @@ class EducationQAViewModel: ObservableObject {
         conversationHistory.removeAll()
         answer = nil
         error = nil
+
+        // Clear from database (fire and forget)
+        Task {
+            do {
+                try await service.clearChatHistory(viewId: viewId)
+            } catch {
+                print("Failed to clear chat history: \(error)")
+            }
+        }
     }
 }
 
 // MARK: - Q&A Message
 
-struct QAMessage: Identifiable {
-    let id = UUID()
+struct QAMessage: Identifiable, Codable {
+    let id: UUID
     let role: QARole
     let content: String
-    let timestamp = Date()
+    let timestamp: Date
 
-    enum QARole {
+    enum QARole: String, Codable {
         case user
         case assistant
+    }
+
+    init(id: UUID = UUID(), role: QARole, content: String, timestamp: Date = Date()) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+    }
+}
+
+// MARK: - Chat History Persistence
+
+extension EducationService {
+    /// Load chat history for a specific view from database
+    func loadChatHistory(viewId: String) async throws -> [QAMessage] {
+        let patientId = try await supabase.auth.session.user.id
+
+        struct ChatHistoryRow: Decodable {
+            let id: UUID
+            let role: String
+            let content: String
+            let createdAt: Date
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case role
+                case content
+                case createdAt = "created_at"
+            }
+        }
+
+        let results: [ChatHistoryRow] = try await supabase
+            .from("patient_chat_history")
+            .select("id, role, content, created_at")
+            .eq("patient_id", value: patientId.uuidString)
+            .eq("view_id", value: viewId)
+            .order("created_at", ascending: true)
+            .execute()
+            .value
+
+        return results.map { row in
+            QAMessage(
+                id: row.id,
+                role: row.role == "user" ? .user : .assistant,
+                content: row.content,
+                timestamp: row.createdAt
+            )
+        }
+    }
+
+    /// Save a chat message to the database
+    func saveChatMessage(viewId: String, role: QAMessage.QARole, content: String) async throws -> UUID {
+        let patientId = try await supabase.auth.session.user.id
+
+        struct ChatInsert: Encodable {
+            let patientId: String
+            let viewId: String
+            let role: String
+            let content: String
+
+            enum CodingKeys: String, CodingKey {
+                case patientId = "patient_id"
+                case viewId = "view_id"
+                case role
+                case content
+            }
+        }
+
+        struct InsertedRow: Decodable {
+            let id: UUID
+        }
+
+        let inserted: [InsertedRow] = try await supabase
+            .from("patient_chat_history")
+            .insert(ChatInsert(
+                patientId: patientId.uuidString,
+                viewId: viewId,
+                role: role.rawValue,
+                content: content
+            ))
+            .select("id")
+            .execute()
+            .value
+
+        guard let id = inserted.first?.id else {
+            throw EducationError.apiError("Failed to save chat message")
+        }
+
+        return id
+    }
+
+    /// Clear chat history for a specific view
+    func clearChatHistory(viewId: String) async throws {
+        let patientId = try await supabase.auth.session.user.id
+
+        try await supabase
+            .from("patient_chat_history")
+            .delete()
+            .eq("patient_id", value: patientId.uuidString)
+            .eq("view_id", value: viewId)
+            .execute()
     }
 }

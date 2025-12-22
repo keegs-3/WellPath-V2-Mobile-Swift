@@ -16,6 +16,7 @@ struct EducationQAModal: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: EducationQAViewModel
     @FocusState private var isInputFocused: Bool
+    @State private var scrollProxy: ScrollViewProxy?
 
     init(viewId: String, viewName: String, color: Color) {
         self.viewId = viewId
@@ -26,39 +27,40 @@ struct EducationQAModal: View {
 
     var body: some View {
         NavigationStack {
-            mainContentView
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    inputView
-                }
-                .background(Color(uiColor: .systemGroupedBackground))
-                .navigationTitle("Ask About \(viewName)")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Close") {
-                            dismiss()
-                        }
-                    }
+            VStack(spacing: 0) {
+                mainContentView
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        if !viewModel.conversationHistory.isEmpty {
-                            Button("Clear") {
-                                viewModel.clearConversation()
-                            }
-                            .foregroundColor(.secondary)
-                        }
+                inputView
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Ask About \(viewName)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") {
+                        dismiss()
                     }
+                }
 
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") {
-                            isInputFocused = false
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !viewModel.conversationHistory.isEmpty {
+                        Button("Clear") {
+                            viewModel.clearConversation()
                         }
+                        .foregroundColor(.secondary)
                     }
                 }
-                .task {
-                    await viewModel.loadSuggestedQuestions()
+
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isInputFocused = false
+                    }
                 }
+            }
+            .task {
+                await viewModel.loadInitialData()
+            }
         }
     }
 
@@ -70,12 +72,27 @@ struct EducationQAModal: View {
             headerView
 
             // Conversation area (takes remaining space)
-            if viewModel.conversationHistory.isEmpty {
+            if viewModel.isLoadingHistory {
+                loadingHistoryView
+            } else if viewModel.conversationHistory.isEmpty {
                 emptyStateView
             } else {
                 conversationView
-                    .scrollDismissesKeyboard(.interactively)
             }
+        }
+    }
+
+    // MARK: - Loading History View
+
+    private var loadingHistoryView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Loading conversation...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
         }
     }
 
@@ -183,8 +200,24 @@ struct EducationQAModal: View {
                         ErrorBubble(error: error)
                             .id("error")
                     }
+
+                    // Bottom spacer for keyboard
+                    Color.clear
+                        .frame(height: 8)
+                        .id("bottom")
                 }
                 .padding()
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onAppear {
+                // Scroll to bottom when history loads
+                if let lastMessage = viewModel.conversationHistory.last {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
+                }
             }
             .onChange(of: viewModel.conversationHistory.count) { _, _ in
                 withAnimation {
@@ -197,6 +230,15 @@ struct EducationQAModal: View {
                 if isLoading {
                     withAnimation {
                         proxy.scrollTo("loading", anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: isInputFocused) { _, focused in
+                if focused, let lastMessage = viewModel.conversationHistory.last {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
                     }
                 }
             }
