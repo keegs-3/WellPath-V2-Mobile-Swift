@@ -228,10 +228,17 @@ class CategoryState: ObservableObject, Identifiable {
 // MARK: - Type Option (from database)
 
 /// Nested struct to decode usda_foods join response
+/// These fields are on usda_foods WellPath category entries, not on sample_category_types_reference
 private struct USDAFoodsJoin: Codable {
+    let exampleFoods: String?
+    let servingSize: String?
+    let servingTip: String?
     let servingGrams: Double?
 
     enum CodingKeys: String, CodingKey {
+        case exampleFoods = "example_foods"
+        case servingSize = "serving_size"
+        case servingTip = "serving_tip"
         case servingGrams = "serving_grams"
     }
 }
@@ -243,10 +250,7 @@ private struct TypeOptionResponse: Codable {
     let displayName: String
     let displayOrder: Int
     let metadata: TypeMetadata?
-    let exampleFoods: String?
-    let servingSize: String?
-    let servingTip: String?
-    // Nested array from join - may be empty if no usda_foods linked
+    // Nested array from join - contains serving info from usda_foods WellPath entries
     let usdaFoods: [USDAFoodsJoin]?
 
     enum CodingKeys: String, CodingKey {
@@ -255,24 +259,22 @@ private struct TypeOptionResponse: Codable {
         case displayName = "display_name"
         case displayOrder = "display_order"
         case metadata
-        case exampleFoods = "example_foods"
-        case servingSize = "serving_size"
-        case servingTip = "serving_tip"
         case usdaFoods = "usda_foods"
     }
 
-    /// Convert to simplified TypeOption, extracting serving_grams from join
+    /// Convert to simplified TypeOption, extracting serving info from usda_foods join
     func toTypeOption() -> TypeOption {
-        TypeOption(
+        let firstFood = usdaFoods?.first
+        return TypeOption(
             id: id,
             referenceKey: referenceKey,
             displayName: displayName,
             displayOrder: displayOrder,
             metadata: metadata,
-            exampleFoods: exampleFoods,
-            servingSize: servingSize,
-            servingTip: servingTip,
-            servingGrams: usdaFoods?.first?.servingGrams
+            exampleFoods: firstFood?.exampleFoods,
+            servingSize: firstFood?.servingSize,
+            servingTip: firstFood?.servingTip,
+            servingGrams: firstFood?.servingGrams
         )
     }
 }
@@ -1669,12 +1671,13 @@ struct QuickLogWizardView: View {
     private func loadTypeOptions() async {
         for category in NutrientCategory.allCases {
             do {
-                // Join with usda_foods to get serving_grams per food type
+                // Join with usda_foods to get serving info per food type
                 // usda_foods.category_reference_id -> sample_category_types_reference.id
                 // Use explicit FK name because usda_foods has multiple FKs to this table
+                // example_foods, serving_size, serving_tip, serving_grams are on usda_foods
                 let responses: [TypeOptionResponse] = try await supabase
                     .from("sample_category_types_reference")
-                    .select("id, reference_key, display_name, display_order, metadata, example_foods, serving_size, serving_tip, usda_foods!usda_foods_category_reference_id_fkey(serving_grams)")
+                    .select("id, reference_key, display_name, display_order, metadata, usda_foods!usda_foods_category_reference_id_fkey(example_foods, serving_size, serving_tip, serving_grams)")
                     .eq("reference_category", value: category.referenceCategory)
                     .order("display_order")
                     .execute()
