@@ -1671,9 +1671,10 @@ struct QuickLogWizardView: View {
             do {
                 // Join with usda_foods to get serving_grams per food type
                 // usda_foods.category_reference_id -> sample_category_types_reference.id
+                // Use explicit FK name because usda_foods has multiple FKs to this table
                 let responses: [TypeOptionResponse] = try await supabase
                     .from("sample_category_types_reference")
-                    .select("id, reference_key, display_name, display_order, metadata, example_foods, serving_size, serving_tip, usda_foods(serving_grams)")
+                    .select("id, reference_key, display_name, display_order, metadata, example_foods, serving_size, serving_tip, usda_foods!usda_foods_category_reference_id_fkey(serving_grams)")
                     .eq("reference_category", value: category.referenceCategory)
                     .order("display_order")
                     .execute()
