@@ -16,7 +16,7 @@ struct EducationQAModal: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: EducationQAViewModel
     @FocusState private var isInputFocused: Bool
-    @State private var scrollProxy: ScrollViewProxy?
+    @State private var keyboardHeight: CGFloat = 0
 
     init(viewId: String, viewName: String, color: Color) {
         self.viewId = viewId
@@ -27,40 +27,59 @@ struct EducationQAModal: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                mainContentView
+            mainContentView
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        inputView
 
-                inputView
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Ask About \(viewName)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") {
-                        dismiss()
-                    }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !viewModel.conversationHistory.isEmpty {
-                        Button("Clear") {
-                            viewModel.clearConversation()
+                        // Spacer for keyboard
+                        if keyboardHeight > 0 {
+                            Color.clear
+                                .frame(height: keyboardHeight)
                         }
-                        .foregroundColor(.secondary)
                     }
                 }
+                .background(Color(uiColor: .systemGroupedBackground))
+                .navigationTitle("Ask About \(viewName)")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Close") {
+                            dismiss()
+                        }
+                    }
 
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        isInputFocused = false
+                    ToolbarItem(placement: .topBarTrailing) {
+                        if !viewModel.conversationHistory.isEmpty {
+                            Button("Clear") {
+                                viewModel.clearConversation()
+                            }
+                            .foregroundColor(.secondary)
+                        }
+                    }
+
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") {
+                            isInputFocused = false
+                        }
                     }
                 }
-            }
-            .task {
-                await viewModel.loadInitialData()
-            }
+                .task {
+                    await viewModel.loadInitialData()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+                    if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            keyboardHeight = keyboardFrame.height
+                        }
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        keyboardHeight = 0
+                    }
+                }
         }
     }
 
@@ -245,19 +264,16 @@ struct EducationQAModal: View {
         }
     }
 
-    // MARK: - Input View
+    // MARK: - Input View (Floating Glass Style)
+
+    private let inputBarHeight: CGFloat = 48
 
     private var inputView: some View {
-        VStack(spacing: 0) {
-            Divider()
-
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
+            // Floating glass input bar
+            HStack(spacing: 10) {
                 TextField("Ask a question...", text: $viewModel.question, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                    .cornerRadius(20)
+                    .font(.body)
                     .focused($isInputFocused)
                     .lineLimit(1...4)
                     .submitLabel(.send)
@@ -265,19 +281,45 @@ struct EducationQAModal: View {
                         Task { await viewModel.askQuestion() }
                     }
 
-                Button {
-                    Task { await viewModel.askQuestion() }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(canSend ? color : Color.gray.opacity(0.5))
+                // Clear text button
+                if !viewModel.question.isEmpty {
+                    Button {
+                        viewModel.question = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .disabled(!canSend || viewModel.isLoading)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .frame(minHeight: inputBarHeight)
+            .background(
+                Capsule()
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+            )
+            .modifier(GlassEffectModifier())
+
+            // Send button - floating glass circle
+            Button {
+                Task { await viewModel.askQuestion() }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(canSend ? color : Color.gray.opacity(0.3))
+                        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                .frame(width: inputBarHeight, height: inputBarHeight)
+                .modifier(GlassEffectModifier())
+            }
+            .disabled(!canSend || viewModel.isLoading)
         }
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var canSend: Bool {
