@@ -9,20 +9,26 @@
 import SwiftUI
 
 struct CategorySectionDetailView: View {
-    let section: CategorySectionConfig
+    let initialSection: CategorySectionConfig
+    @State private var currentSection: CategorySectionConfig
     @ObservedObject private var displayConfig = DisplayConfigurationService.shared
     @State private var isSearchActive = false
     @State private var searchText = ""
     @Environment(\.dismiss) private var dismiss
+
+    init(section: CategorySectionConfig) {
+        self.initialSection = section
+        _currentSection = State(initialValue: section)
+    }
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 ForEach(filteredCategories) { category in
                     NavigationLink {
-                        CategoryDetailView(category: category, sectionColor: section.color)
+                        CategoryDetailView(category: category, sectionColor: currentSection.color)
                     } label: {
-                        CardCategoryCard(category: category, sectionColor: section.color)
+                        CardCategoryCard(category: category, sectionColor: currentSection.color)
                     }
                     .buttonStyle(.plain)
                 }
@@ -35,25 +41,25 @@ struct CategorySectionDetailView: View {
         .safeAreaInset(edge: .bottom) {
             if isSearchActive {
                 CollapsedCategorySearchBar(
-                    currentSection: section,
+                    currentSection: currentSection,
                     searchText: $searchText,
                     isSearchActive: $isSearchActive
                 )
             } else {
                 ScrollableCategoryNavBar(
-                    currentSection: section,
+                    currentSection: $currentSection,
                     allSections: siblingsSections,
                     isSearchActive: $isSearchActive,
                     searchText: $searchText
                 )
             }
         }
-        .navigationTitle(section.sectionName)
+        .navigationTitle(currentSection.sectionName)
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var cardCategories: [CardCategoryConfig] {
-        displayConfig.cardCategories(forSection: section.sectionId)
+        displayConfig.cardCategories(forSection: currentSection.sectionId)
     }
 
     private var filteredCategories: [CardCategoryConfig] {
@@ -63,7 +69,7 @@ struct CategorySectionDetailView: View {
 
     /// Get all sibling sections under the same header for the scrollable nav
     private var siblingsSections: [CategorySectionConfig] {
-        displayConfig.categorySections(for: section.headerId)
+        displayConfig.categorySections(for: currentSection.headerId)
     }
 }
 
@@ -129,14 +135,14 @@ struct CardCategoryCard: View {
 // MARK: - Scrollable Category Nav Bar
 
 struct ScrollableCategoryNavBar: View {
-    let currentSection: CategorySectionConfig
+    @Binding var currentSection: CategorySectionConfig
     let allSections: [CategorySectionConfig]
     @Binding var isSearchActive: Bool
     @Binding var searchText: String
 
     var body: some View {
-        HStack(spacing: 16) {
-            // Left bubble: Scrollable section icons
+        HStack(spacing: 12) {
+            // Left bubble: Section icons (compact to fit without scroll)
             sectionsBubble
 
             // Right bubble: Search
@@ -146,23 +152,25 @@ struct ScrollableCategoryNavBar: View {
         .padding(.bottom, 16)
     }
 
-    // MARK: - Sections Bubble (Scrollable)
+    // MARK: - Sections Bubble (Compact - no scroll needed)
 
     private var sectionsBubble: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(allSections) { section in
-                    ScrollableSectionNavIcon(
-                        section: section,
-                        isSelected: currentSection.sectionId == section.sectionId
-                    )
+        HStack(spacing: 2) {
+            ForEach(allSections) { section in
+                CompactSectionNavIcon(
+                    section: section,
+                    isSelected: currentSection.sectionId == section.sectionId
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        currentSection = section
+                        searchText = ""
+                    }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
-        .frame(maxWidth: .infinity)
-        .background(glassBackground(cornerRadius: 25))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(glassBackground(cornerRadius: 22))
     }
 
     // MARK: - Search Bubble
@@ -174,12 +182,12 @@ struct ScrollableCategoryNavBar: View {
             }
         } label: {
             Image(systemName: "magnifyingglass")
-                .font(.title3)
+                .font(.body)
                 .fontWeight(.medium)
                 .foregroundStyle(.primary)
-                .frame(width: 50, height: 50)
+                .frame(width: 44, height: 44)
         }
-        .background(glassBackground(cornerRadius: 16))
+        .background(glassBackground(cornerRadius: 14))
     }
 
     // MARK: - Glass Background
@@ -197,26 +205,25 @@ struct ScrollableCategoryNavBar: View {
     }
 }
 
-// MARK: - Scrollable Section Nav Icon
+// MARK: - Compact Section Nav Icon (fits without scrolling)
 
-struct ScrollableSectionNavIcon: View {
+struct CompactSectionNavIcon: View {
     let section: CategorySectionConfig
     let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        NavigationLink {
-            CategorySectionDetailView(section: section)
-        } label: {
-            VStack(spacing: 6) {
+        Button(action: action) {
+            VStack(spacing: 4) {
                 Image(systemName: section.icon)
-                    .font(.system(size: 18))
+                    .font(.system(size: 15))
                     .foregroundColor(isSelected ? section.color : .secondary)
-                    .frame(width: 40, height: 24)
+                    .frame(width: 32, height: 20)
 
                 // Underline indicator
                 Rectangle()
                     .fill(isSelected ? section.color : Color.clear)
-                    .frame(width: 20, height: 2)
+                    .frame(width: 16, height: 2)
                     .cornerRadius(1)
             }
         }
