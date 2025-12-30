@@ -46,21 +46,26 @@ struct MainTabView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                // Custom two-bubble tab bar
-                LiquidGlassTabBar(
-                    selectedTab: $selectedTab,
-                    onAddTap: { showQuickAdd = true }
-                )
+                // Custom two-bubble tab bar (hidden when side menu is open)
+                if !showSideMenu {
+                    LiquidGlassTabBar(
+                        selectedTab: $selectedTab,
+                        onAddTap: { showQuickAdd = true }
+                    )
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showSideMenu.toggle()
+                    // Hide hamburger when side menu is open
+                    if !showSideMenu {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showSideMenu.toggle()
+                            }
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.title3)
                         }
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.title3)
                     }
                 }
 

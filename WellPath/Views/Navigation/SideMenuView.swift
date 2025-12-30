@@ -22,9 +22,25 @@ struct SideMenuView: View {
             HStack(spacing: 0) {
                 // Menu content (80% width)
                 VStack(alignment: .leading, spacing: 0) {
+                    // Close button row
+                    HStack {
+                        Spacer()
+                        Button {
+                            closeMenu()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.title3)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                                .frame(width: 44, height: 44)
+                        }
+                    }
+                    .padding(.top, 50)
+                    .padding(.trailing, 8)
+
                     // Profile Header
                     profileHeader
-                        .padding(.top, 60)
+                        .padding(.top, 8)
                         .padding(.bottom, 24)
 
                     Divider()
