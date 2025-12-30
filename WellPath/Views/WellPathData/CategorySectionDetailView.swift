@@ -22,38 +22,41 @@ struct CategorySectionDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(filteredCategories) { category in
-                    NavigationLink {
-                        CategoryDetailView(category: category, sectionColor: currentSection.color)
-                    } label: {
-                        CardCategoryCard(category: category, sectionColor: currentSection.color)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 100)
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .safeAreaInset(edge: .bottom) {
+        VStack(spacing: 0) {
+            // Top nav bar (below navigation title)
             if isSearchActive {
-                CollapsedCategorySearchBar(
+                TopCategorySearchBar(
                     currentSection: currentSection,
                     searchText: $searchText,
                     isSearchActive: $isSearchActive
                 )
             } else {
-                ScrollableCategoryNavBar(
+                TopCategoryNavBar(
                     currentSection: $currentSection,
                     allSections: siblingsSections,
                     isSearchActive: $isSearchActive,
                     searchText: $searchText
                 )
             }
+
+            // Content
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(filteredCategories) { category in
+                        NavigationLink {
+                            CategoryDetailView(category: category, sectionColor: currentSection.color)
+                        } label: {
+                            CardCategoryCard(category: category, sectionColor: currentSection.color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+            }
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(currentSection.sectionName)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -73,57 +76,118 @@ struct CategorySectionDetailView: View {
     }
 }
 
-// MARK: - Card Category Card (Oura-style with gradient)
+// MARK: - Card Category Card (Oura-style full gradient)
 
 struct CardCategoryCard: View {
     let category: CardCategoryConfig
     let sectionColor: Color
+    var score: Int? = nil  // Optional score (0-100)
     @ObservedObject private var displayConfig = DisplayConfigurationService.shared
 
+    private var scoreLabel: String {
+        guard let score = score else { return "NOT SCORED" }
+        switch score {
+        case 90...100: return "OPTIMAL"
+        case 75..<90: return "GOOD"
+        case 50..<75: return "FAIR"
+        case 25..<50: return "NEEDS WORK"
+        default: return "LOW"
+        }
+    }
+
+    private var scoreLabelColor: Color {
+        guard let score = score else { return .secondary }
+        switch score {
+        case 90...100: return .green
+        case 75..<90: return .blue
+        case 50..<75: return .yellow
+        case 25..<50: return .orange
+        default: return .red
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 16) {
-            // Icon with gradient background
-            ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(
-                        LinearGradient(
-                            colors: [sectionColor.opacity(0.9), sectionColor.opacity(0.5)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 54, height: 54)
-
+        VStack(alignment: .leading, spacing: 12) {
+            // Top row: Icon + Name + Score pill
+            HStack(alignment: .top) {
+                // Icon (small, top-left)
                 Image(systemName: categoryIcon)
-                    .font(.title2)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-            }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(.white.opacity(0.2))
+                    )
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(category.name)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    // Category name
+                    Text(category.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
 
-                if let overview = category.overview {
-                    Text(overview)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
+                    // Score label
+                    Text(scoreLabel)
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(score != nil ? scoreLabelColor : .white.opacity(0.5))
                 }
+
+                Spacer()
+
+                // Score ring (right side)
+                ZStack {
+                    // Background ring
+                    Circle()
+                        .stroke(Color.white.opacity(0.2), lineWidth: 3)
+                        .frame(width: 44, height: 44)
+
+                    // Progress ring
+                    if let score = score {
+                        Circle()
+                            .trim(from: 0, to: Double(score) / 100.0)
+                            .stroke(
+                                scoreLabelColor,
+                                style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 44, height: 44)
+                    }
+
+                    // Score text
+                    Text(score != nil ? "\(score!)" : "--")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white.opacity(0.6))
             }
 
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.body)
-                .foregroundColor(.secondary)
+            // Description at bottom
+            if let overview = category.overview {
+                Text(overview)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.7))
+                    .lineLimit(2)
+            }
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .shadow(color: sectionColor.opacity(0.1), radius: 8, x: 0, y: 4)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            sectionColor.opacity(0.85),
+                            sectionColor.opacity(0.5)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
     }
 
@@ -132,9 +196,9 @@ struct CardCategoryCard: View {
     }
 }
 
-// MARK: - Scrollable Category Nav Bar
+// MARK: - Top Category Nav Bar (Oura-style at top)
 
-struct ScrollableCategoryNavBar: View {
+struct TopCategoryNavBar: View {
     @Binding var currentSection: CategorySectionConfig
     let allSections: [CategorySectionConfig]
     @Binding var isSearchActive: Bool
@@ -142,66 +206,138 @@ struct ScrollableCategoryNavBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Left bubble: Section icons (compact to fit without scroll)
-            sectionsBubble
+            // Section icons (scrollable if needed)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(allSections) { section in
+                        TopSectionNavIcon(
+                            section: section,
+                            isSelected: currentSection.sectionId == section.sectionId
+                        ) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                currentSection = section
+                                searchText = ""
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
 
-            // Right bubble: Search
-            searchBubble
+            // Search button
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isSearchActive = true
+                }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, height: 36)
+            }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .systemGroupedBackground))
     }
+}
 
-    // MARK: - Sections Bubble (Compact - no scroll needed)
+// MARK: - Top Section Nav Icon
 
-    private var sectionsBubble: some View {
-        HStack(spacing: 2) {
-            ForEach(allSections) { section in
-                CompactSectionNavIcon(
-                    section: section,
-                    isSelected: currentSection.sectionId == section.sectionId
-                ) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        currentSection = section
+struct TopSectionNavIcon: View {
+    let section: CategorySectionConfig
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 14, weight: .medium))
+
+                if isSelected {
+                    Text(section.sectionName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundColor(isSelected ? section.color : .secondary)
+            .padding(.horizontal, isSelected ? 12 : 10)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(isSelected ? section.color.opacity(0.15) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Top Category Search Bar
+
+struct TopCategorySearchBar: View {
+    let currentSection: CategorySectionConfig
+    @Binding var searchText: String
+    @Binding var isSearchActive: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Current section icon (tap to exit search)
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isSearchActive = false
+                    searchText = ""
+                }
+            } label: {
+                Image(systemName: currentSection.icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(currentSection.color)
+                    .padding(10)
+                    .background(
+                        Circle()
+                            .fill(currentSection.color.opacity(0.15))
+                    )
+            }
+
+            // Search field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+
+                TextField("Search \(currentSection.sectionName)...", text: $searchText)
+                    .textFieldStyle(.plain)
+
+                if !searchText.isEmpty {
+                    Button {
                         searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
                     }
                 }
             }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .background(glassBackground(cornerRadius: 22))
-    }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+            )
 
-    // MARK: - Search Bubble
-
-    private var searchBubble: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isSearchActive = true
+            // Cancel button
+            Button("Cancel") {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isSearchActive = false
+                    searchText = ""
+                }
             }
-        } label: {
-            Image(systemName: "magnifyingglass")
-                .font(.body)
-                .fontWeight(.medium)
-                .foregroundStyle(.primary)
-                .frame(width: 44, height: 44)
+            .font(.subheadline)
+            .foregroundColor(.secondary)
         }
-        .background(glassBackground(cornerRadius: 14))
-    }
-
-    // MARK: - Glass Background
-
-    @ViewBuilder
-    private func glassBackground(cornerRadius: CGFloat) -> some View {
-        if #available(iOS 26, *) {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(.clear)
-                .glassEffect()
-        } else {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(.ultraThinMaterial)
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .systemGroupedBackground))
     }
 }
 
