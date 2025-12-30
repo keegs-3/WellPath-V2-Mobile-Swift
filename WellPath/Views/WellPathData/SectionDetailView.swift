@@ -74,13 +74,24 @@ struct FavoritesSectionView: View {
     let isSearchActive: Bool
     @StateObject private var favoritesService = FavoritesService.shared
 
+    private var filteredFavorites: [PatientFavorite] {
+        guard !searchText.isEmpty else { return favoritesService.favorites }
+        return favoritesService.favorites.filter {
+            ($0.displayName ?? $0.itemId).localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
     var body: some View {
         ScrollView {
-            if favoritesService.favorites.isEmpty {
+            if favoritesService.isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 100)
+            } else if filteredFavorites.isEmpty {
                 emptyState
             } else {
                 LazyVStack(spacing: 12) {
-                    ForEach(favoritesService.favorites) { favorite in
+                    ForEach(filteredFavorites) { favorite in
                         FavoriteRowCard(favorite: favorite)
                     }
                 }
@@ -90,6 +101,9 @@ struct FavoritesSectionView: View {
             }
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .task {
+            await favoritesService.loadFavorites()
+        }
     }
 
     private var emptyState: some View {

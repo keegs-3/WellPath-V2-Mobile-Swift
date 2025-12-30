@@ -216,16 +216,18 @@ struct CompactSectionNavIcon: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: section.icon)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16))
                     .foregroundColor(isSelected ? section.color : .secondary)
-                    .frame(width: 32, height: 20)
+                    .frame(width: 36, height: 24)
 
                 // Underline indicator
                 Rectangle()
                     .fill(isSelected ? section.color : Color.clear)
-                    .frame(width: 16, height: 2)
+                    .frame(width: 18, height: 2)
                     .cornerRadius(1)
             }
+            .frame(minWidth: 44, minHeight: 44) // Minimum tap target
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

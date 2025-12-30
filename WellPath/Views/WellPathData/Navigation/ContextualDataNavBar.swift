@@ -100,18 +100,20 @@ struct SectionNavIcon: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Image(systemName: sectionIcon)
-                    .font(.system(size: 20))
+                    .font(.system(size: 18))
                     .foregroundColor(isSelected ? sectionColor : .secondary)
-                    .frame(width: 44, height: 28)
+                    .frame(width: 40, height: 24)
 
                 // Underline indicator
                 Rectangle()
                     .fill(isSelected ? sectionColor : Color.clear)
-                    .frame(width: 24, height: 2)
+                    .frame(width: 20, height: 2)
                     .cornerRadius(1)
             }
+            .frame(minWidth: 48, minHeight: 48) // Minimum tap target
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
