@@ -21,6 +21,7 @@ struct SectionHeaderConfig: Codable, Identifiable {
     let headerName: String
     let description: String?
     let iconName: String?
+    let colorHex: String?
     let displayOrder: Int?
     let isActive: Bool?
 
@@ -30,11 +31,17 @@ struct SectionHeaderConfig: Codable, Identifiable {
         case headerName = "header_name"
         case description
         case iconName = "icon_name"
+        case colorHex = "color_hex"
         case displayOrder = "display_order"
         case isActive = "is_active"
     }
 
     var icon: String { iconName ?? "circle.fill" }
+
+    var color: Color {
+        guard let hex = colorHex else { return .gray }
+        return Color(hex: hex) ?? .gray
+    }
 }
 
 /// Level 2: Category Sections (e.g., "Healthful Nutrition", "Biometrics")
@@ -366,6 +373,18 @@ class DisplayConfigurationService: ObservableObject {
 
     func sectionHeader(id: String) -> SectionHeaderConfig? {
         sectionHeadersById[id]
+    }
+
+    func sectionHeaderColor(for headerId: String) -> Color {
+        sectionHeadersById[headerId]?.color ?? .gray
+    }
+
+    func sectionHeaderIcon(for headerId: String) -> String {
+        sectionHeadersById[headerId]?.icon ?? "circle.fill"
+    }
+
+    func sectionHeaderName(for headerId: String) -> String? {
+        sectionHeadersById[headerId]?.headerName
     }
 
     func categorySections(for headerId: String) -> [CategorySectionConfig] {
