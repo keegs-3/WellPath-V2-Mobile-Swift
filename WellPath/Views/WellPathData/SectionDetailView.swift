@@ -325,39 +325,23 @@ struct CategoryCard: View {
 
 struct FavoriteRowCard: View {
     let favorite: PatientFavorite
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    /// Get section color from database, fall back to yellow if not found
+    private var sectionColor: Color {
+        guard let sectionId = favorite.sectionId else { return .yellow }
+        return displayConfig.categorySectionColor(for: sectionId)
+    }
 
     var body: some View {
-        NavigationLink {
-            // TODO: Navigate to metric detail based on favorite type
-            Text(favorite.displayName ?? favorite.itemId)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "star.fill")
-                    .font(.title2)
-                    .foregroundColor(.yellow)
-                    .frame(width: 40)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(favorite.displayName ?? favorite.itemId)
-                        .font(.body)
-                        .foregroundColor(.primary)
-
-                    Text(favorite.itemType.capitalized)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-            }
-            .padding(16)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
-        }
-        .buttonStyle(.plain)
+        // Use CardRegistry to get the proper card view with routing
+        CardRegistry.card(
+            for: favorite.itemId,
+            color: sectionColor,
+            pillar: favorite.pillar ?? "",
+            displayName: favorite.displayName,
+            sectionId: favorite.sectionId
+        )
     }
 }
 
