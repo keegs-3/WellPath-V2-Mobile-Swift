@@ -49,6 +49,8 @@ struct AddTherapeuticView: View {
             return TherapeuticCategory.supplementCategories
         case .peptide:
             return TherapeuticCategory.peptideCategories
+        case .hormone:
+            return TherapeuticCategory.hormoneCategories
         case .other:
             return ["Other"]
         }
@@ -120,7 +122,7 @@ struct AddTherapeuticView: View {
 
                 // Additional Details
                 Section {
-                    if therapeuticType == .medication {
+                    if therapeuticType == .medication || therapeuticType == .hormone {
                         TextField("Prescriber (optional)", text: $prescriberName)
                     }
 
@@ -311,7 +313,7 @@ struct EditTherapeuticView: View {
 
                 // Additional Details
                 Section {
-                    if therapeutic.type == .medication {
+                    if therapeutic.type == .medication || therapeutic.type == .hormone {
                         TextField("Prescriber", text: $prescriberName)
                     }
 

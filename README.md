@@ -136,9 +136,17 @@ Matches native Apple Health UX:
 ### Data Flow
 
 ```
-Manual Entry → patient_data_entries → instance_calculations → aggregations → aggregation_results_cache → Charts
-                                                                                          ↑
-HealthKit Sync ────────────────────────────────────────────────────────────────────────┘
+Manual Entry → patient_category_samples / patient_quantity_samples → Triggers → Summary Views → Charts
+                                                                                                  ↑
+HealthKit Sync → patient_category_samples (sleep) / patient_quantity_samples (steps, etc.) ──────┘
+
+Key Tables:
+├── patient_clinical_samples      - Biomarker lab results
+├── patient_category_samples      - Sleep sessions, food logs, assessments
+├── patient_quantity_samples      - Steps, heart rate, food components
+├── patient_baseline_samples      - Survey-derived baseline values
+├── patient_correlation_samples   - Blood pressure (paired readings)
+└── patient_sleep_sessions_summary (VIEW) - Pre-aggregated sleep data for mobile
 ```
 
 ## Architecture
@@ -164,27 +172,30 @@ Direct client integration (no middleware API):
 
 ## Backend Requirements
 
-Ensure these Supabase tables exist:
+Ensure these Supabase tables/views exist:
 
-- `patient_data_entries` - Raw health data entries
-- `aggregation_results_cache` - Pre-computed aggregations
+- `patient_clinical_samples` - Biomarker/lab results
+- `patient_category_samples` - Sleep sessions, food logs, assessments
+- `patient_quantity_samples` - Steps, heart rate, food components
+- `patient_baseline_samples` - Survey-derived baseline values
+- `patient_correlation_samples` - Blood pressure readings
+- `patient_sleep_sessions_summary` (VIEW) - Aggregated sleep data
 - `display_metrics` - UI metric configurations
-- `display_metrics_aggregations` - Metric → aggregation mappings
-- `aggregation_periods` - Period definitions (daily, weekly, etc.)
+- `display_views` - View/screen configurations
 
 Required RLS policies:
 ```sql
--- Allow users to read their own aggregation results
-CREATE POLICY allow_read_aggregation_cache
-ON aggregation_results_cache FOR SELECT
+-- Allow users to read their own sample data
+CREATE POLICY allow_read_quantity_samples
+ON patient_quantity_samples FOR SELECT
 TO authenticated
-USING (user_id = auth.uid());
+USING (patient_id = auth.uid()::text);
 
--- Allow users to insert their own data entries
-CREATE POLICY allow_insert_data_entries
-ON patient_data_entries FOR INSERT
+-- Allow users to insert their own sample data
+CREATE POLICY allow_insert_quantity_samples
+ON patient_quantity_samples FOR INSERT
 TO authenticated
-WITH CHECK (user_id = auth.uid());
+WITH CHECK (patient_id = auth.uid()::text);
 ```
 
 ## Development Guidelines

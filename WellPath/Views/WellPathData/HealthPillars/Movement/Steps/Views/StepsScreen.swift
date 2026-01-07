@@ -2,8 +2,8 @@
 //  StepsScreen.swift
 //  WellPath
 //
-//  Steps view - single-card category so navigates directly to view
-//  Card (CARD_STEPS) exists in DB for favorites display
+//  Card-based layout for Steps metrics.
+//  Shows: Score card + Steps card (which navigates to detail view).
 //
 
 import SwiftUI
@@ -13,28 +13,23 @@ struct StepsScreen: View {
     let color: Color
     let sectionId: String
 
-    @StateObject private var viewModel = StepsPrimaryViewModel()
+    @StateObject private var scoreViewModel = StepsScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
-    @State private var showAboutModal = false
-
-    private let metricId = "DISP_STEPS"
-    private let metricName = "Steps"
+    @State private var showingBaseline = false
+    @State private var showingScoreDetail = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let metric = viewModel.metrics.first {
-                ParentMetricBarChart(metric: metric.metric, color: color, showAbout: $showAboutModal)
-            } else if viewModel.isLoading {
-                ProgressView()
-                    .frame(height: 300)
-                    .frame(maxWidth: .infinity)
-            } else {
-                Text("No data available")
-                    .foregroundColor(.secondary)
-                    .frame(height: 200)
-                    .frame(maxWidth: .infinity)
+        ScrollView {
+            VStack(spacing: 12) {
+                // Score card at top - always visible
+                scoreCardSection
+
+                // Steps card (navigates to chart detail)
+                StepsCard(color: color, pillar: pillar, sectionId: sectionId)
             }
+            .padding()
+            .padding(.bottom, 24)
         }
         .metricScreenBackground(color: color)
         .navigationTitle("Steps")
@@ -49,14 +44,11 @@ struct StepsScreen: View {
             }
 
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                FavoriteButton(
-                    itemType: .screen,
-                    itemId: "SCREEN_STEPS",
-                    displayName: "Steps",
-                    pillar: pillar,
-                    cardId: "CARD_STEPS",
-                    sectionId: sectionId
-                )
+                Button {
+                    showingBaseline = true
+                } label: {
+                    Image(systemName: "book.fill")
+                }
 
                 Button {
                     showingEntryForm = true
@@ -65,83 +57,132 @@ struct StepsScreen: View {
                 }
             }
         }
+        .sheet(isPresented: $showingBaseline) {
+            StepsWizardView()
+        }
+        .sheet(isPresented: $showingScoreDetail) {
+            StepsScoreDetailView(viewModel: scoreViewModel, color: color)
+        }
         .sheet(isPresented: $showingEntryForm) {
             StepsEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
             MetricDataManagementView(config: .steps(color: color))
         }
-        .sheet(isPresented: $showAboutModal) {
-            MetricEducationModal(
-                viewId: metricId,
-                metricName: metricName,
-                color: color,
-                isPresented: $showAboutModal
-            )
-        }
         .task {
-            await viewModel.loadPrimaryScreen()
+            await scoreViewModel.loadData()
         }
     }
-}
 
-// MARK: - Steps Mini Card (for Favorites display)
+    // MARK: - Score Card Section
 
-struct StepsMiniCard: View {
-    let color: Color
-    @ObservedObject var viewModel: StepsPrimaryViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if viewModel.isLoading {
-                HStack {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Spacer()
-                }
-                .frame(height: 60)
-            } else if viewModel.metrics.first != nil {
+    @ViewBuilder
+    private var scoreCardSection: some View {
+        if scoreViewModel.hasScore {
+            Button {
+                showingScoreDetail = true
+            } label: {
                 HStack(spacing: 16) {
+                    ScoreRingPill(
+                        score: scoreViewModel.scoreValue,
+                        iconName: "figure.walk",
+                        label: "Score",
+                        size: 60
+                    )
+
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Today")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("--")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                        Text("Steps Score")
+                            .font(.headline)
                             .foregroundColor(.primary)
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("Weekly Avg")
+                        Text("Based on tracking")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("--")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(color)
                     }
-                }
-            } else {
-                HStack {
-                    Text("No steps data")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .frame(height: 60)
-            }
-        }
-    }
 
-    private func formatSteps(_ value: Double?) -> String {
-        guard let value = value else { return "--" }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.secondarySystemGroupedBackground))
+                .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
+        } else if scoreViewModel.hasBaselineData {
+            Button {
+                showingScoreDetail = true
+            } label: {
+                HStack(spacing: 16) {
+                    ScoreRingPill(
+                        score: scoreViewModel.scoreValue,
+                        iconName: "figure.walk",
+                        label: "Baseline",
+                        size: 60
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Steps Score")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("Based on questionnaire")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.secondarySystemGroupedBackground))
+                .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                showingBaseline = true
+            } label: {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 4)
+                            .frame(width: 60, height: 60)
+
+                        Image(systemName: "figure.walk")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Steps Score")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("Set your baseline to get started")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text("Set Up")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(color)
+                        .cornerRadius(16)
+                }
+                .padding()
+                .background(Color(.secondarySystemGroupedBackground))
+                .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 

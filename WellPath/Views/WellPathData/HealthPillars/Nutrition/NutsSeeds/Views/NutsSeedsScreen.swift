@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Card-based layout for Nuts & Seeds metric.
-//  Shows cards: Servings, Types.
+//  Shows score card at top, then Servings, Types cards.
 //
 
 import SwiftUI
@@ -12,16 +12,28 @@ struct NutsSeedsScreen: View {
     let pillar: String
     let color: Color
 
+    @StateObject private var scoreViewModel = NutsSeedsScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
-
-    private var screenIcon: String {
-        MetricsUIConfig.getIcon(for: "Nuts & Seeds")
-    }
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Nuts & Seeds Score Card (show if baseline wizard completed)
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
+                    MetricScoreCard(
+                        config: .nutsSeeds,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        NutsSeedsScoreDetailView(viewModel: scoreViewModel, color: color)
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: .nutsSeeds, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
                 // Reusable card components
                 NutsSeedsServingsCard(color: color, pillar: pillar)
@@ -43,10 +55,18 @@ struct NutsSeedsScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -55,6 +75,18 @@ struct NutsSeedsScreen: View {
         }
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color)
+        }
+        .sheet(isPresented: $showingBaseline) {
+            SimpleBaselineWizardView(
+                baselineViewId: "BASELINE_VIEW_NUTS_SEEDS",
+                categoryId: "CAT_NUTS_SEEDS",
+                categoryName: "Nuts & Seeds",
+                scoreId: "SCORE_NUTS_SEEDS",
+                scoreType: "nuts_seeds_score"
+            )
+        }
+        .task {
+            await scoreViewModel.loadData()
         }
     }
 }

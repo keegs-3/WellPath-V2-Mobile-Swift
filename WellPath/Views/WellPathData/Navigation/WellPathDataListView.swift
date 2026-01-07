@@ -58,11 +58,13 @@ struct MetricDetailByIdView: View {
 struct GenericMiniCard: View {
     let viewId: String
     let color: Color
+    let displayName: String?
     @StateObject private var viewModel: StandardMetricViewModel
 
-    init(viewId: String, color: Color) {
+    init(viewId: String, color: Color, displayName: String? = nil) {
         self.viewId = viewId
         self.color = color
+        self.displayName = displayName
         _viewModel = StateObject(wrappedValue: StandardMetricViewModel(metricId: viewId))
     }
 
@@ -110,10 +112,19 @@ struct GenericMiniCard: View {
                     }
                 }
             } else {
-                HStack {
-                    Text("Tap to view")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                // No data state - show icon and name
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.bar")
+                        .font(.system(size: 20))
+                        .foregroundColor(color.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName ?? "Metric")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("Tap to view")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                 }
                 .frame(height: 50)
@@ -130,49 +141,46 @@ struct TrackedMetricsListView: View {
     @StateObject private var favoritesService = FavoritesService.shared
     @EnvironmentObject private var displayConfig: DisplayConfigurationService
     @EnvironmentObject private var searchState: WellPathDataSearchState
-    @State private var showingFavorites = true  // Default to favorites
+    @State private var selectedCategory: DataCategory = .favorites
+    @State private var localSearchText = ""
+    @State private var isLocalSearchActive = false
     @FocusState private var isSearchFocused: Bool
+
+    /// Backwards compatibility - favorites shown when category is .favorites
+    private var showingFavorites: Bool {
+        selectedCategory == .favorites && !isLocalSearchActive
+    }
 
     var body: some View {
         mainContent
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if searchState.isSearchActive {
-                    WellPathDataSearchBar(
-                        searchState: searchState,
-                        isFocused: $isSearchFocused,
-                        placeholder: "Search"
-                    )
-                }
-            }
             .background(backgroundView)
-            .navigationTitle(showingFavorites ? "Favorites" : "All WellPath Data")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Star button on LEFT - show favorites
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        withAnimation {
-                            showingFavorites = true
-                            searchState.deactivateSearch()
-                        }
-                    } label: {
-                        Image(systemName: showingFavorites ? "star.fill" : "star")
-                            .foregroundColor(showingFavorites ? .yellow : .primary)
-                    }
+                ToolbarItem(placement: .principal) {
+                    Text("Data")
+                        .font(.headline)
+                        .fontWeight(.semibold)
                 }
 
-                // Search button on RIGHT - opens search
+                // Search button on right
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         withAnimation {
-                            showingFavorites = false
-                            searchState.activateSearch()
+                            isLocalSearchActive.toggle()
+                            if isLocalSearchActive {
+                                searchState.activateSearch()
+                            } else {
+                                searchState.deactivateSearch()
+                                localSearchText = ""
+                            }
                         }
                     } label: {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.primary)
+                        Image(systemName: isLocalSearchActive ? "xmark" : "magnifyingglass")
                     }
                 }
+            }
+            .onChange(of: localSearchText) { _, newValue in
+                searchState.searchText = newValue
             }
             .task {
                 await viewModel.loadMetricsData()
@@ -184,6 +192,11 @@ struct TrackedMetricsListView: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
+            // Category Pills (Oura-style at top)
+            if !isLocalSearchActive {
+                categoryPillsBar
+            }
+
             if viewModel.isLoading {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -196,6 +209,28 @@ struct TrackedMetricsListView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Category Pills Bar
+
+    private var categoryPillsBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(DataCategory.allCases, id: \.rawValue) { category in
+                    CategoryPill(
+                        category: category,
+                        isSelected: selectedCategory == category
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedCategory = category
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .background(Color(uiColor: .systemBackground))
     }
 
     // MARK: - Favorites View (grouped by pillar)
@@ -332,10 +367,10 @@ struct TrackedMetricsListView: View {
 
             Button {
                 withAnimation {
-                    showingFavorites = false
+                    selectedCategory = .pillars
                 }
             } label: {
-                Text("Browse Metrics")
+                Text("Browse Pillars")
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
@@ -351,22 +386,33 @@ struct TrackedMetricsListView: View {
 
     // MARK: - Browse View (Database-driven navigation)
 
+    /// Filter section headers based on selected category
+    private var filteredSectionHeaders: [SectionHeaderConfig] {
+        let headerIds = selectedCategory.headerIds
+        if headerIds.isEmpty {
+            return [] // Favorites doesn't use headers
+        }
+        return displayConfig.sectionHeaders.filter { header in
+            headerIds.contains(header.headerId)
+        }
+    }
+
     private var browseView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // Show search results if searching
-                if !searchState.searchText.isEmpty && searchState.isSearchActive {
+                if !localSearchText.isEmpty && isLocalSearchActive {
                     searchResultsContent
                 } else {
-                    // Database-driven navigation sections
-                    ForEach(displayConfig.sectionHeaders) { header in
+                    // Database-driven navigation sections filtered by category
+                    ForEach(filteredSectionHeaders) { header in
                         sectionView(for: header)
                     }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, searchState.isSearchActive ? 80 : 24) // Extra space for search bar
+            .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
     }
@@ -427,7 +473,7 @@ struct TrackedMetricsListView: View {
         case "NAV_SUBSTANCES":
             CategoryCardsListView(section: section)
         case "NAV_MENTAL_HEALTH":
-            MentalHealthListView()
+            CategoryCardsListView(section: section)
 
         // Health Records
         case "NAV_THERAPEUTICS":
@@ -1087,15 +1133,107 @@ struct CategoryCardsListView: View {
         displayConfig.cardCategories(forSection: section.sectionId)
     }
 
-    var body: some View {
-        List {
-            ForEach(categories) { category in
-                NavigationLink(destination: categoryDestination(for: category)) {
-                    CategoryCardRow(category: category, sectionColor: section.color)
-                }
+    /// Cards in this section that match the search query
+    private var matchingCards: [ViewCardConfig] {
+        guard !searchState.searchText.isEmpty else { return [] }
+        return displayConfig.viewCards.filter { card in
+            // Only include cards from this section
+            guard let categoryId = card.categoryId,
+                  let category = displayConfig.cardCategory(id: categoryId),
+                  category.sectionId == section.sectionId else { return false }
+
+            // Match against card name or description
+            return card.cardName.localizedCaseInsensitiveContains(searchState.searchText) ||
+                   (card.description?.localizedCaseInsensitiveContains(searchState.searchText) ?? false)
+        }
+    }
+
+    /// Categories that match the search query (by name) or contain matching cards
+    private var matchingCategories: [CardCategoryConfig] {
+        guard !searchState.searchText.isEmpty else { return [] }
+        return categories.filter { category in
+            // Match category name
+            if category.name.localizedCaseInsensitiveContains(searchState.searchText) {
+                return true
+            }
+            // Or check if any cards in this category match
+            let categoryCards = displayConfig.viewCards(forCategory: category.categoryId)
+            return categoryCards.contains { card in
+                card.cardName.localizedCaseInsensitiveContains(searchState.searchText) ||
+                (card.description?.localizedCaseInsensitiveContains(searchState.searchText) ?? false)
             }
         }
-        .scrollContentBackground(.hidden)
+    }
+
+    /// Search results view showing matching categories and cards
+    @ViewBuilder
+    private var searchResultsView: some View {
+        if matchingCategories.isEmpty && matchingCards.isEmpty {
+            VStack(spacing: 16) {
+                Image(systemName: "magnifyingglass")
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
+                Text("No results for \"\(searchState.searchText)\"")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(spacing: 12) {
+                    // Show matching categories
+                    if !matchingCategories.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Categories")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+
+                            ForEach(matchingCategories) { category in
+                                NavigationLink(destination: categoryDestination(for: category)) {
+                                    CategoryCardRow(category: category, sectionColor: section.color)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // Show matching cards directly
+                    if !matchingCards.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Metrics")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+
+                            ForEach(matchingCards) { card in
+                                DatabaseDrivenCard(card: card, color: section.color)
+                            }
+                        }
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if searchState.isSearchActive && !searchState.searchText.isEmpty {
+                // Search results
+                searchResultsView
+            } else {
+                // Normal category list
+                List {
+                    ForEach(categories) { category in
+                        NavigationLink(destination: categoryDestination(for: category)) {
+                            CategoryCardRow(category: category, sectionColor: section.color)
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if searchState.isSearchActive {
                 WellPathDataSearchBar(
@@ -1184,10 +1322,15 @@ struct CategoryCardsListView: View {
         case "CAT_ULTRA_PROCESSED":
             UltraProcessedScreen(pillar: pillar, color: color)
 
-        // Sleep Analysis - show cards for subcategories (Stages, Amounts, Percentages, Comparisons)
+        // Sleep categories - each needs its own screen with score
         case "CAT_SLEEP_ANALYSIS":
-            // Route to card list instead of custom screen
             ViewCardsListView(category: category, sectionColor: section.color)
+        case "CAT_SLEEP_CONSISTENCY":
+            SleepConsistencyScreen(pillar: pillar, color: color)
+        case "CAT_SLEEP_ROUTINE":
+            SleepRoutineScreen(pillar: pillar, color: color)
+        case "CAT_SLEEP_ENVIRONMENT":
+            SleepEnvironmentScreen(pillar: pillar, color: color)
 
         // Biometrics categories - show cards for subcategories
         case "CAT_BIOMETRICS_BODY_COMP", "CAT_BIOMETRICS_VITALS", "CAT_BIOMETRICS_STRENGTH", "CAT_FITNESS_METRICS":
@@ -1609,6 +1752,22 @@ struct ViewRouter {
             VO2MaxView(metric: DisplayMetric(from: viewConfig), color: color)
         case "DISP_GRIP_STRENGTH":
             GripStrengthView(color: color)
+
+        // Mental Health Assessment views
+        case "DISP_WELLBEING":
+            AssessmentScreenTemplate(assessmentId: "ASSESS_SWLS", color: color, viewId: "DISP_WELLBEING")
+        case "DISP_ANXIETY":
+            AssessmentScreenTemplate(assessmentId: "ASSESS_GAD2", color: color, viewId: "DISP_ANXIETY")
+        case "DISP_DEPRESSION":
+            AssessmentScreenTemplate(assessmentId: "ASSESS_PHQ2", color: color, viewId: "DISP_DEPRESSION")
+        case "DISP_STRESS":
+            AssessmentScreenTemplate(assessmentId: "ASSESS_PSS10", color: color, viewId: "DISP_STRESS")
+
+        // Sleep Assessment views
+        case "DISP_SLEEP_ROUTINE":
+            AssessmentScreenTemplate(assessmentId: "ASSESS_SLEEP_ROUTINE", color: color, viewId: "DISP_SLEEP_ROUTINE")
+        case "DISP_SLEEP_ENVIRONMENT":
+            AssessmentScreenTemplate(assessmentId: "ASSESS_SLEEP_ENVIRONMENT", color: color, viewId: "DISP_SLEEP_ENVIRONMENT")
 
         // Default - for views without explicit routing
         default:

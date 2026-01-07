@@ -163,6 +163,10 @@ class BiometricCategoryViewModel: ObservableObject {
     }
 }
 
+// MARK: - Preview
+// Preview temporarily disabled due to build issue
+
+/*
 #Preview {
     NavigationStack {
         BiometricCategoryScreen(
@@ -172,3 +176,4 @@ class BiometricCategoryViewModel: ObservableObject {
         )
     }
 }
+*/

@@ -24,15 +24,15 @@ struct StepsCard: View {
         MetricCardView(
             title: "Steps",
             color: color,
-            metricId: "SCREEN_STEPS",  // Use SCREEN_* for favorites lookup (screen type)
+            metricId: "DISP_STEPS",
             pillar: pillar,
             cardId: "CARD_STEPS",
             sectionId: sectionId,
-            itemType: .screen  // This is a direct-to-view metric
+            itemType: .metric
         ) {
             StepsMiniCardContent(viewModel: viewModel, color: color)
         } fullScreen: {
-            StepsScreen(pillar: pillar, color: color, sectionId: sectionId)
+            StepsDetailView(pillar: pillar, color: color, sectionId: sectionId)
         }
         .task {
             await viewModel.loadPrimaryScreen()

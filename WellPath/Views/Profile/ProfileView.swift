@@ -69,12 +69,6 @@ struct ProfileView: View {
                         .buttonStyle(PlainButtonStyle())
                         Divider().padding(.leading, 60)
 
-                        NavigationLink(destination: HealthKitTestView()) {
-                            ProfileOptionRow(icon: "stethoscope", title: "HealthKit Test (Debug)")
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        Divider().padding(.leading, 60)
-
                         Button(action: {
                             showSignOutAlert = true
                         }) {

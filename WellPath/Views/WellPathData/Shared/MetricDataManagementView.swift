@@ -129,7 +129,7 @@ extension MetricDataConfig {
             icon: "fork.knife",
             valueFormatter: { value, _ in "\(Int(value))g" },
             metadataFields: [
-                MetadataFieldConfig("protein_type", label: "Type", category: "protein_types"),
+                MetadataFieldConfig("protein_types", label: "Type", category: "protein_types"),
                 MetadataFieldConfig("protein_timing", label: "Meal", category: "meal_timings")
             ],
             isDuration: false
@@ -151,6 +151,78 @@ extension MetricDataConfig {
                 formatter.string(from: NSNumber(value: Int(value))) ?? "\(Int(value))"
             },
             metadataFields: [],  // Steps typically have no metadata
+            isDuration: false
+        )
+    }
+
+    // MARK: - Daily Activity Metrics
+
+    static func moveMinutes(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Move Minutes",
+            quantityTypes: [QuantityTypes.exerciseTime],
+            color: color,
+            icon: "figure.run",
+            valueFormatter: { value, _ in
+                let minutes = Int(value)
+                return "\(minutes) min"
+            },
+            metadataFields: [],
+            isDuration: false
+        )
+    }
+
+    static func standTime(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Stand Time",
+            quantityTypes: [QuantityTypes.standTime],
+            color: color,
+            icon: "figure.stand",
+            valueFormatter: { value, _ in
+                let hours = Int(value) / 60
+                let minutes = Int(value) % 60
+                if hours > 0 && minutes > 0 {
+                    return "\(hours)h \(minutes)m"
+                } else if hours > 0 {
+                    return "\(hours) hr"
+                } else {
+                    return "\(minutes) min"
+                }
+            },
+            metadataFields: [],
+            isDuration: false
+        )
+    }
+
+    static func activeCalories(color: Color) -> MetricDataConfig {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+
+        return MetricDataConfig(
+            metricName: "Active Calories",
+            quantityTypes: [QuantityTypes.activeCalories],
+            color: color,
+            icon: "flame.fill",
+            valueFormatter: { value, _ in
+                let formatted = formatter.string(from: NSNumber(value: Int(value))) ?? "\(Int(value))"
+                return "\(formatted) cal"
+            },
+            metadataFields: [],
+            isDuration: false
+        )
+    }
+
+    static func exerciseSnacks(color: Color) -> MetricDataConfig {
+        MetricDataConfig(
+            metricName: "Exercise Snacks",
+            quantityTypes: [QuantityTypes.exerciseSnacks],
+            color: color,
+            icon: "hare.fill",
+            valueFormatter: { value, _ in
+                let count = Int(value)
+                return "\(count) \(count == 1 ? "snack" : "snacks")"
+            },
+            metadataFields: [],
             isDuration: false
         )
     }
@@ -182,7 +254,7 @@ extension MetricDataConfig {
     static func strengthTraining(color: Color) -> MetricDataConfig {
         MetricDataConfig(
             metricName: "Strength Training",
-            quantityTypes: [QuantityTypes.strengthDuration],
+            quantityTypes: [QuantityTypes.strengthTraining],
             color: color,
             icon: "dumbbell.fill",
             valueFormatter: { value, _ in
@@ -207,7 +279,7 @@ extension MetricDataConfig {
     static func cardio(color: Color) -> MetricDataConfig {
         MetricDataConfig(
             metricName: "Cardio",
-            quantityTypes: [QuantityTypes.cardioDuration],
+            quantityTypes: [QuantityTypes.cardio],
             color: color,
             icon: "heart.fill",
             valueFormatter: { value, _ in

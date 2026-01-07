@@ -173,51 +173,51 @@ class FatsTypeDonutViewModel: ObservableObject {
 
             scoringExplanation = scoringResults.first?.scoringExplanation
 
-            // Load tier configuration
+            // Load tier configuration from scoring_thresholds
             struct DBTier: Codable {
-                let tierId: String
-                let tierName: String
-                let tierDescription: String
-                let targetPercentage: Int
-                let multiplier: Double
-                let displayOrder: Int
+                let tierId: String      // threshold_key
+                let tierName: String?   // display_name
+                let tierDescription: String?  // display_description
+                let targetPercentage: Double  // target_value
+                let multiplier: Double  // weight
+                let displayOrder: Int?
 
                 enum CodingKeys: String, CodingKey {
-                    case tierId = "tier_id"
-                    case tierName = "tier_name"
-                    case tierDescription = "tier_description"
-                    case targetPercentage = "target_percentage"
-                    case multiplier
+                    case tierId = "threshold_key"
+                    case tierName = "display_name"
+                    case tierDescription = "display_description"
+                    case targetPercentage = "target_value"
+                    case multiplier = "weight"
                     case displayOrder = "display_order"
                 }
             }
 
             let tierResults: [DBTier] = try await supabase
-                .from("display_view_tiers")
-                .select()
+                .from("scoring_thresholds")
+                .select("threshold_key, display_name, display_description, target_value, weight, display_order")
                 .eq("view_id", value: "DISP_FATS_TYPE")
+                .eq("threshold_type", value: "tier")
+                .eq("is_active", value: true)
                 .order("display_order", ascending: true)
                 .execute()
                 .value
 
-            // Load fat types for each tier
+            // Load fat types with their tier_key from sample_category_types_reference
             struct DBTierType: Codable {
-                let tierId: String
-                let categoryTypeReferenceKey: String?
-                let displayOrder: Int
+                let referenceKey: String
+                let tierKey: String?
 
                 enum CodingKeys: String, CodingKey {
-                    case tierId = "tier_id"
-                    case categoryTypeReferenceKey = "category_type_reference_key"
-                    case displayOrder = "display_order"
+                    case referenceKey = "reference_key"
+                    case tierKey = "tier_key"
                 }
             }
 
             let tierTypeResults: [DBTierType] = try await supabase
-                .from("display_view_tier_types")
-                .select()
-                .in("tier_id", values: tierResults.map { $0.tierId })
-                .order("display_order", ascending: true)
+                .from("sample_category_types_reference")
+                .select("reference_key, tier_key")
+                .eq("reference_category", value: "fat_types")
+                .eq("is_active", value: true)
                 .execute()
                 .value
 
@@ -225,17 +225,17 @@ class FatsTypeDonutViewModel: ObservableObject {
             var tiers: [FatTierConfig.Tier] = []
             for dbTier in tierResults {
                 let fatTypes = tierTypeResults
-                    .filter { $0.tierId == dbTier.tierId }
-                    .compactMap { $0.categoryTypeReferenceKey }
+                    .filter { $0.tierKey == dbTier.tierId }
+                    .map { $0.referenceKey }
 
                 tiers.append(FatTierConfig.Tier(
                     tierId: dbTier.tierId,
-                    tierName: dbTier.tierName,
-                    targetPercentage: dbTier.targetPercentage,
+                    tierName: dbTier.tierName ?? dbTier.tierId,
+                    targetPercentage: Int(dbTier.targetPercentage),
                     multiplier: dbTier.multiplier,
                     fatTypes: fatTypes,
-                    tierDescription: dbTier.tierDescription,
-                    displayOrder: dbTier.displayOrder
+                    tierDescription: dbTier.tierDescription ?? "",
+                    displayOrder: dbTier.displayOrder ?? 0
                 ))
             }
 

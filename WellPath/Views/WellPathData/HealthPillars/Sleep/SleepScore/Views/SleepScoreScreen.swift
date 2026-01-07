@@ -2,45 +2,44 @@
 //  SleepScoreScreen.swift
 //  WellPath
 //
-//  Main view for Sleep Score metric (DISP_SLEEP_SCORE).
-//  Shows composite sleep quality score with tier breakdown.
+//  Category screen for unified Sleep Score.
+//  Shows the score card and provides access to baseline wizard.
 //
 
 import SwiftUI
-import Charts
 
 struct SleepScoreScreen: View {
-    let color: Color
     let pillar: String
-    let sectionId: String
+    let color: Color
 
-    @StateObject private var viewModel = SleepScoreViewModel()
+    @StateObject private var scoreViewModel = SleepScoreViewModel()
+    @State private var showingEntryForm = false
     @State private var showingDataManagement = false
-    @State private var showingEntryView = false
-    @State private var showAboutModal = false
-
-    private let metricId = "DISP_SLEEP_SCORE"
-    private let metricName = "Sleep Score"
-
-    init(color: Color, pillar: String = "Restorative Sleep", sectionId: String = "NAV_SLEEP") {
-        self.color = color
-        self.pillar = pillar
-        self.sectionId = sectionId
-    }
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Main score card with donut chart
-                scoreCard
+            VStack(spacing: 12) {
+                // Score Card or Empty State
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
+                    MetricScoreCard(
+                        config: .sleep,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        SleepScoreDetailView(viewModel: scoreViewModel, color: color)
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: .sleep, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
-                // Tier breakdown card
-                tierBreakdownCard
-
-                // About this score card
-                aboutCard
+                // Component explanation card
+                componentExplanationCard
             }
             .padding()
+            .padding(.bottom, 24)
         }
         .metricScreenBackground(color: color)
         .navigationTitle("Sleep Score")
@@ -54,234 +53,113 @@ struct SleepScoreScreen: View {
                 }
             }
 
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                FavoriteButton(
-                    itemType: .screen,
-                    itemId: "SCREEN_SLEEP_SCORE",
-                    displayName: "Sleep Score",
-                    pillar: pillar,
-                    cardId: "CARD_SLEEP_SCORE",
-                    sectionId: sectionId
-                )
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
 
-                Button(action: {
-                    showingEntryView = true
-                }) {
-                    Image(systemName: "plus")
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
-        .sheet(isPresented: $showingEntryView) {
+        .sheet(isPresented: $showingEntryForm) {
             SleepEntryView()
         }
         .sheet(isPresented: $showingDataManagement) {
             SleepDataManagementView(color: color)
         }
-        .sheet(isPresented: $showAboutModal) {
-            MetricEducationModal(
-                viewId: metricId,
-                metricName: metricName,
-                color: color,
-                isPresented: $showAboutModal
-            )
+        .sheet(isPresented: $showingBaseline) {
+            SleepWizardView()
         }
         .task {
-            await viewModel.loadTierConfig()
-            await viewModel.loadData()
+            await scoreViewModel.loadData()
         }
     }
 
-    // MARK: - Score Card
+    // MARK: - Component Explanation Card
 
-    private var scoreCard: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Overall Score")
-                    .font(.headline)
-                Spacer()
-                Button(action: {
-                    showAboutModal = true
-                }) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(color)
-                }
-            }
-
-            if viewModel.isLoading {
-                ProgressView()
-                    .frame(height: 200)
-            } else {
-                HStack(spacing: 32) {
-                    // Donut chart
-                    ZStack {
-                        // Background circle
-                        Circle()
-                            .stroke(Color(uiColor: .tertiarySystemGroupedBackground), lineWidth: 20)
-                            .frame(width: 140, height: 140)
-
-                        // Score segments
-                        if let tierConfig = viewModel.tierConfig {
-                            ForEach(Array(tierConfig.tiers.enumerated()), id: \.element.id) { index, tier in
-                                let startAngle = segmentStartAngle(for: index)
-                                let endAngle = segmentEndAngle(for: index)
-
-                                Circle()
-                                    .trim(from: startAngle, to: endAngle)
-                                    .stroke(tier.color, style: StrokeStyle(lineWidth: 20, lineCap: .butt))
-                                    .frame(width: 140, height: 140)
-                                    .rotationEffect(.degrees(-90))
-                            }
-                        }
-
-                        // Center score
-                        VStack(spacing: 0) {
-                            Text("\(Int(viewModel.totalScore.rounded()))")
-                                .font(.system(size: 36, weight: .bold))
-                                .foregroundColor(scoreColor)
-                            Text("/ 100")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Legend
-                    if let tierConfig = viewModel.tierConfig {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(tierConfig.tiers) { tier in
-                                HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(tier.color)
-                                        .frame(width: 10, height: 10)
-                                    Text(tier.tierName)
-                                        .font(.caption)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text("\(tier.targetPercentage)%")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        )
-    }
-
-    // MARK: - Tier Breakdown Card
-
-    private var tierBreakdownCard: some View {
+    private var componentExplanationCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Component Breakdown")
+            Text("How Your Score Works")
                 .font(.headline)
 
-            if let tierConfig = viewModel.tierConfig {
-                ForEach(tierConfig.tiers) { tier in
-                    tierRow(tier: tier)
+            VStack(spacing: 12) {
+                componentRow(
+                    icon: "clock.fill",
+                    title: "Duration",
+                    weight: "40%",
+                    description: "Total hours of sleep (7-9 hours optimal)"
+                )
+
+                componentRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: "Consistency",
+                    weight: "30%",
+                    description: "How closely you stick to regular times (±30 min optimal)"
+                )
+
+                componentRow(
+                    icon: "waveform.path.ecg",
+                    title: "Stage Amounts",
+                    weight: "30%",
+                    description: "Quality of deep, REM, and core sleep stages"
+                )
+            }
+
+            if !scoreViewModel.hasTracker {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Connect a sleep tracker for full score")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                .padding(.top, 4)
             }
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        )
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
     }
 
-    private func tierRow(tier: SleepScoreTierConfig.Tier) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(tier.tierName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Spacer()
-                Text("\(Int(viewModel.getScore(for: tier.tierId).rounded()))/100")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
+    private func componentRow(icon: String, title: String, weight: String, description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.body)
+                .foregroundColor(color)
+                .frame(width: 24)
 
-            // Progress bar
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(uiColor: .tertiarySystemGroupedBackground))
-                        .frame(height: 8)
-
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(tier.color)
-                        .frame(width: geometry.size.width * (viewModel.getScore(for: tier.tierId) / 100), height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Spacer()
+                    Text(weight)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .cornerRadius(4)
                 }
-            }
-            .frame(height: 8)
-
-            Text(tier.tierDescription)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - About Card
-
-    private var aboutCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("How It's Calculated")
-                .font(.headline)
-
-            if let explanation = viewModel.scoringExplanation {
-                Text(explanation)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            } else {
-                Text("Your Sleep Score is calculated from four weighted components: Consistency (30%), Duration (30%), Structure (20%), and Efficiency (20%). Each component is scored 0-100 based on your sleep data.")
-                    .font(.subheadline)
+                Text(description)
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        )
-    }
-
-    // MARK: - Helpers
-
-    private var scoreColor: Color {
-        let score = viewModel.totalScore
-        if score >= 85 { return MetricsUIConfig.tierGood }
-        else if score >= 70 { return MetricsUIConfig.tierMedium }
-        else { return MetricsUIConfig.tierPoor }
-    }
-
-    private func segmentStartAngle(for index: Int) -> CGFloat {
-        guard let tierConfig = viewModel.tierConfig else { return 0 }
-        var angle: CGFloat = 0
-        for i in 0..<index {
-            angle += CGFloat(tierConfig.tiers[i].targetPercentage) / 100
-        }
-        return angle
-    }
-
-    private func segmentEndAngle(for index: Int) -> CGFloat {
-        guard let tierConfig = viewModel.tierConfig else { return 0 }
-        var angle: CGFloat = 0
-        for i in 0...index {
-            angle += CGFloat(tierConfig.tiers[i].targetPercentage) / 100
-        }
-        return angle
     }
 }
 
 #Preview {
     NavigationStack {
-        SleepScoreScreen(color: .indigo)
+        SleepScoreScreen(pillar: "Restorative Sleep", color: .teal)
     }
 }

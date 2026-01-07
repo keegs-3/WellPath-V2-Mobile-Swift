@@ -292,15 +292,12 @@ struct WaterLineChart: View {
             .filter { $0 > 0 }
         guard !values.isEmpty else { return 0...100 }
 
-        let minVal = values.min() ?? 0
         let maxVal = values.max() ?? 100
-        let range = maxVal - minVal
-        let padding = max(range * 0.1, maxVal * 0.05, 1.0)
-
-        let lowerBound = max(0, minVal - padding)
+        let padding = max(maxVal * 0.1, 1.0)
         let upperBound = maxVal + padding
 
-        return lowerBound...upperBound
+        // Bar charts should always start at 0 so bars align with x-axis
+        return 0...upperBound
     }
 
     // MARK: - Helper Functions

@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Card-based layout for Ultra-Processed Foods metric.
-//  Shows card: Servings tracking.
+//  Shows score card at top, then Servings tracking card.
 //
 
 import SwiftUI
@@ -12,12 +12,28 @@ struct UltraProcessedScreen: View {
     let pillar: String
     let color: Color
 
+    @StateObject private var scoreViewModel = UltraProcessedScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Ultra-Processed Score Card (show if baseline wizard completed)
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
+                    MetricScoreCard(
+                        config: .ultraProcessed,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        UltraProcessedScoreDetailView(viewModel: scoreViewModel, color: color)
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: .ultraProcessed, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
                 // Reusable card component
                 UltraProcessedServingsCard(color: color, pillar: pillar)
@@ -38,10 +54,18 @@ struct UltraProcessedScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -50,6 +74,18 @@ struct UltraProcessedScreen: View {
         }
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color)
+        }
+        .sheet(isPresented: $showingBaseline) {
+            SimpleBaselineWizardView(
+                baselineViewId: "BASELINE_VIEW_ULTRA_PROCESSED",
+                categoryId: "CAT_ULTRA_PROCESSED",
+                categoryName: "Ultra-Processed Foods",
+                scoreId: "SCORE_ULTRA_PROCESSED",
+                scoreType: "ultra_processed_score"
+            )
+        }
+        .task {
+            await scoreViewModel.loadData()
         }
     }
 }

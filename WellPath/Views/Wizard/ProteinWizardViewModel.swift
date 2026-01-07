@@ -51,15 +51,34 @@ class ProteinWizardViewModel: ObservableObject {
 
     // MARK: - Config Models
 
+    /// Tier config loaded from scoring_thresholds table
     struct TierConfig: Decodable {
-        let tierId: String
-        let targetPercentage: Double
-        let multiplier: Double
+        let tierId: String      // threshold_key in DB
+        let targetPercentage: Double  // target_value in DB
+        let multiplier: Double  // weight in DB
 
         enum CodingKeys: String, CodingKey {
-            case tierId = "tier_id"
-            case targetPercentage = "target_percentage"
-            case multiplier
+            case tierId = "threshold_key"
+            case targetPercentage = "target_value"
+            case multiplier = "weight"
+        }
+
+        // Custom decoder to handle PostgreSQL numeric returning as string
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            tierId = try container.decode(String.self, forKey: .tierId)
+            targetPercentage = Self.decodeNumeric(from: container, forKey: .targetPercentage) ?? 0
+            multiplier = Self.decodeNumeric(from: container, forKey: .multiplier) ?? 0
+        }
+
+        private static func decodeNumeric(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Double? {
+            if let doubleValue = try? container.decode(Double.self, forKey: key) {
+                return doubleValue
+            } else if let stringValue = try? container.decode(String.self, forKey: key),
+                      let parsed = Double(stringValue) {
+                return parsed
+            }
+            return nil
         }
     }
 
@@ -82,6 +101,27 @@ class ProteinWizardViewModel: ObservableObject {
 
         var isOptimal: Bool {
             rangeNameBackend == "optimal" || rangeName == "OPTIMAL"
+        }
+
+        // Custom decoder to handle PostgreSQL numeric returning as string
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            rangeName = try container.decode(String.self, forKey: .rangeName)
+            rangeNameBackend = try container.decode(String.self, forKey: .rangeNameBackend)
+            rangeLow = Self.decodeNumeric(from: container, forKey: .rangeLow) ?? 0
+            rangeHigh = Self.decodeNumeric(from: container, forKey: .rangeHigh) ?? 0
+            scoreAtLow = Self.decodeNumeric(from: container, forKey: .scoreAtLow) ?? 0
+            scoreAtHigh = Self.decodeNumeric(from: container, forKey: .scoreAtHigh) ?? 0
+        }
+
+        private static func decodeNumeric(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Double? {
+            if let doubleValue = try? container.decode(Double.self, forKey: key) {
+                return doubleValue
+            } else if let stringValue = try? container.decode(String.self, forKey: key),
+                      let parsed = Double(stringValue) {
+                return parsed
+            }
+            return nil
         }
     }
 
@@ -295,6 +335,7 @@ class ProteinWizardViewModel: ObservableObject {
             let client = SupabaseManager.shared.client
             let userId = try await client.auth.session.user.id
 
+            // Custom decoder to handle PostgreSQL numeric returning as string
             struct BaselineData: Decodable {
                 let baselineType: String
                 let value: Double
@@ -302,6 +343,21 @@ class ProteinWizardViewModel: ObservableObject {
                 enum CodingKeys: String, CodingKey {
                     case baselineType = "baseline_type"
                     case value
+                }
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    baselineType = try container.decode(String.self, forKey: .baselineType)
+
+                    // Handle value as either Double or String (PostgreSQL numeric quirk)
+                    if let doubleValue = try? container.decode(Double.self, forKey: .value) {
+                        value = doubleValue
+                    } else if let stringValue = try? container.decode(String.self, forKey: .value),
+                              let parsed = Double(stringValue) {
+                        value = parsed
+                    } else {
+                        value = 0
+                    }
                 }
             }
 
@@ -406,21 +462,34 @@ class ProteinWizardViewModel: ObservableObject {
             let client = SupabaseManager.shared.client
             let userId = try await client.auth.session.user.id
 
+            // Custom decoder to handle PostgreSQL numeric returning as string
             struct ScoreData: Decodable {
                 let scoreValue: Double
 
                 enum CodingKeys: String, CodingKey {
                     case scoreValue = "score_value"
                 }
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    if let doubleValue = try? container.decode(Double.self, forKey: .scoreValue) {
+                        scoreValue = doubleValue
+                    } else if let stringValue = try? container.decode(String.self, forKey: .scoreValue),
+                              let parsed = Double(stringValue) {
+                        scoreValue = parsed
+                    } else {
+                        scoreValue = 0
+                    }
+                }
             }
 
-            // Query base table directly (view is slow due to JOIN)
+            // Query behavioral_scores VIEW for current baseline score
             let results: [ScoreData] = try await client
-                .from("patient_behavioral_scores")
+                .from("behavioral_scores")
                 .select("score_value")
                 .eq("patient_id", value: userId.uuidString)
                 .eq("score_type", value: "protein_score")
-                .eq("is_current", value: true)
+                .eq("score_context", value: "baseline")
                 .limit(1)
                 .execute()
                 .value
@@ -456,10 +525,13 @@ class ProteinWizardViewModel: ObservableObject {
         do {
             let client = SupabaseManager.shared.client
 
+            // Query scoring_thresholds table (consolidated from display_view_tiers)
             let results: [TierConfig] = try await client
-                .from("display_view_tiers")
-                .select("tier_id, target_percentage, multiplier")
+                .from("scoring_thresholds")
+                .select("threshold_key, target_value, weight")
                 .eq("view_id", value: "DISP_PROTEIN_TYPE")
+                .eq("threshold_type", value: "tier")
+                .eq("is_active", value: true)
                 .execute()
                 .value
 
@@ -579,14 +651,8 @@ class ProteinWizardViewModel: ObservableObject {
                 savedBaselines["daily_protein_ratio"] = ratio
             }
 
-            // Calculate and store the behavioral score
-            let _: AnyJSON = try await client.rpc(
-                "update_behavioral_score",
-                params: [
-                    "p_patient_id": AnyJSON.string(userId.uuidString),
-                    "p_score_type": AnyJSON.string("protein_score")
-                ]
-            ).execute().value
+            // Note: Behavioral scores now calculate on-the-fly via behavioral_scores VIEW
+            // No need to call update_behavioral_score - scores are computed when queried
 
             // Load the calculated score for display
             await loadProteinScore()

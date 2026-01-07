@@ -12,6 +12,7 @@ struct BaselineQuestion: Identifiable, Codable {
     let questionId: String
     let categoryId: String?
     let questionText: String
+    let questionTextTemplate: String?
     let questionSubtext: String?
     let baselineType: String?
     let quantityType: String?
@@ -27,12 +28,14 @@ struct BaselineQuestion: Identifiable, Codable {
     let isRequired: Bool
     let isActive: Bool
     let baselineSubpageId: String?
+    let optionsQuestionId: String?  // Links to view_assessment_response_options for checklist questions
 
     enum CodingKeys: String, CodingKey {
         case id
         case questionId = "question_id"
         case categoryId = "category_id"
         case questionText = "question_text"
+        case questionTextTemplate = "question_text_template"
         case questionSubtext = "question_subtext"
         case baselineType = "baseline_type"
         case quantityType = "quantity_type"
@@ -48,6 +51,26 @@ struct BaselineQuestion: Identifiable, Codable {
         case isRequired = "is_required"
         case isActive = "is_active"
         case baselineSubpageId = "baseline_subpage_id"
+        case optionsQuestionId = "options_question_id"
+    }
+
+    /// Whether this question uses a multi-select checklist with weighted options
+    var isChecklistQuestion: Bool {
+        questionType == "multi_select_checklist" && optionsQuestionId != nil
+    }
+
+    /// Whether this question uses single-choice radio buttons
+    var isSingleChoiceQuestion: Bool {
+        questionType == "single_choice" && optionsQuestionId != nil
+    }
+
+    /// Returns the question text with unit placeholder replaced
+    /// - Parameter unit: The display name of the unit to substitute (e.g., "cups", "mL", "glasses")
+    func displayText(withUnit unit: String? = nil) -> String {
+        if let template = questionTextTemplate, let unit = unit {
+            return template.replacingOccurrences(of: "{unit}", with: unit)
+        }
+        return questionText
     }
 }
 

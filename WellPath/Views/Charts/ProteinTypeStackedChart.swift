@@ -439,10 +439,10 @@ class ProteinTypeChartViewModel: ObservableObject {
             for sample in results {
                 guard let value = sample.quantityValue, value > 0 else { continue }
 
-                // Get protein_type from metadata (default to "unassigned")
+                // Get protein_types from metadata (default to "unassigned")
                 var proteinType = "unassigned"
                 if let metadata = sample.metadata,
-                   case .string(let type) = metadata["protein_type"] {
+                   case .string(let type) = metadata["protein_types"] {
                     proteinType = type
                 }
 

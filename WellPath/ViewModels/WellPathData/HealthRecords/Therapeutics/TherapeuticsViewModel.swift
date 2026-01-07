@@ -71,6 +71,7 @@ class TherapeuticsViewModel: ObservableObject {
     @Published var medications: [PatientTherapeutic] = []
     @Published var supplements: [PatientTherapeutic] = []
     @Published var peptides: [PatientTherapeutic] = []
+    @Published var hormones: [PatientTherapeutic] = []
     @Published var therapeuticsBase: [TherapeuticsBase] = []
     @Published var isLoading = false
     @Published var error: String?
@@ -82,7 +83,7 @@ class TherapeuticsViewModel: ObservableObject {
     // MARK: - Computed Properties
 
     var allTherapeutics: [PatientTherapeutic] {
-        medications + supplements + peptides
+        medications + supplements + peptides + hormones
     }
 
     var activeTherapeutics: [PatientTherapeutic] {
@@ -99,6 +100,10 @@ class TherapeuticsViewModel: ObservableObject {
 
     var activePeptides: [PatientTherapeutic] {
         peptides.filter { $0.isActive == true }
+    }
+
+    var activeHormones: [PatientTherapeutic] {
+        hormones.filter { $0.isActive == true }
     }
 
     // MARK: - Load Data
@@ -121,10 +126,11 @@ class TherapeuticsViewModel: ObservableObject {
                 .execute()
                 .value
 
-            // Separate by type
-            medications = allTherapeutics.filter { $0.therapeuticType == "medication" }
-            supplements = allTherapeutics.filter { $0.therapeuticType == "supplement" }
-            peptides = allTherapeutics.filter { $0.therapeuticType == "peptide" }
+            // Separate by type (using DB codes: MED, SUP, PEP, HOR)
+            medications = allTherapeutics.filter { $0.therapeuticType == "MED" }
+            supplements = allTherapeutics.filter { $0.therapeuticType == "SUP" }
+            peptides = allTherapeutics.filter { $0.therapeuticType == "PEP" }
+            hormones = allTherapeutics.filter { $0.therapeuticType == "HOR" }
 
         } catch {
             self.error = error.localizedDescription
@@ -217,6 +223,9 @@ class TherapeuticsViewModel: ObservableObject {
             case .peptide:
                 peptides.append(newTherapeutic)
                 peptides.sort { $0.therapeuticName < $1.therapeuticName }
+            case .hormone:
+                hormones.append(newTherapeutic)
+                hormones.sort { $0.therapeuticName < $1.therapeuticName }
             case .other:
                 // Add to supplements as fallback
                 supplements.append(newTherapeutic)
@@ -348,6 +357,7 @@ class TherapeuticsViewModel: ObservableObject {
             medications.removeAll { $0.id == therapeuticId }
             supplements.removeAll { $0.id == therapeuticId }
             peptides.removeAll { $0.id == therapeuticId }
+            hormones.removeAll { $0.id == therapeuticId }
 
         } catch {
             print("TherapeuticsViewModel: Error deleting therapeutic - \(error)")
@@ -371,6 +381,10 @@ class TherapeuticsViewModel: ObservableObject {
             if let index = peptides.firstIndex(where: { $0.id == therapeutic.id }) {
                 peptides[index] = therapeutic
             }
+        case .hormone:
+            if let index = hormones.firstIndex(where: { $0.id == therapeutic.id }) {
+                hormones[index] = therapeutic
+            }
         case .other:
             // Check all lists
             if let index = medications.firstIndex(where: { $0.id == therapeutic.id }) {
@@ -379,6 +393,8 @@ class TherapeuticsViewModel: ObservableObject {
                 supplements[index] = therapeutic
             } else if let index = peptides.firstIndex(where: { $0.id == therapeutic.id }) {
                 peptides[index] = therapeutic
+            } else if let index = hormones.firstIndex(where: { $0.id == therapeutic.id }) {
+                hormones[index] = therapeutic
             }
         }
     }

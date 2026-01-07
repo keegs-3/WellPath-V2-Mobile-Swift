@@ -57,35 +57,39 @@ struct BehavioralScoreDisplay: Codable, Identifiable {
 }
 
 // MARK: - Score Component Configuration
+// Now loaded from scoring_component_weights table (consolidated from display_behavioral_score_components)
 
 struct BehavioralScoreComponent: Codable, Identifiable {
     let id: UUID
-    let scoreId: String
-    let componentId: String
-    let componentType: String
-    let displayName: String
+    let outputScoreType: String    // The composite score (e.g., "hydration_score")
+    let componentScoreType: String // The component score (e.g., "hydration_amount_score")
+    let weight: Double
+    let displayName: String?
     let description: String?
     let iconName: String?
-    let weight: Double
     let optimalRangeText: String?
     let displayOrder: Int
     let isActive: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
-        case scoreId = "score_id"
-        case componentId = "component_id"
-        case componentType = "component_type"
+        case outputScoreType = "output_score_type"
+        case componentScoreType = "component_score_type"
+        case weight
         case displayName = "display_name"
         case description
         case iconName = "icon_name"
-        case weight
         case optimalRangeText = "optimal_range_text"
         case displayOrder = "display_order"
         case isActive = "is_active"
     }
 
-    /// Weight as percentage string (e.g., "50%")
+    // Convenience aliases for backwards compatibility
+    var scoreId: String { outputScoreType }
+    var componentId: String { componentScoreType }
+    var componentType: String { componentScoreType }
+
+    /// Weight as percentage string (e.g., "80%")
     var weightPercentage: String {
         "\(Int(weight * 100))%"
     }

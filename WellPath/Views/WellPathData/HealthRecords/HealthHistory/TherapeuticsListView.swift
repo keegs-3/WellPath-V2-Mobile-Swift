@@ -22,7 +22,7 @@ struct TherapeuticsListView: View {
             VStack(spacing: 0) {
                 // Type picker
                 Picker("Type", selection: $selectedType) {
-                    ForEach(TherapeuticType.allCases.filter { $0 != .other }) { type in
+                    ForEach(TherapeuticType.primaryCases) { type in
                         Label(type.displayName, systemImage: type.icon)
                             .tag(type)
                     }
@@ -101,6 +101,8 @@ struct TherapeuticsListView: View {
             return viewModel.supplements
         case .peptide:
             return viewModel.peptides
+        case .hormone:
+            return viewModel.hormones
         case .other:
             return []
         }
@@ -194,6 +196,8 @@ struct TherapeuticsListView: View {
             return "Keep track of vitamins, minerals, and other supplements you take."
         case .peptide:
             return "Log peptide therapies for tracking and adherence."
+        case .hormone:
+            return "Track hormone therapies like TRT, estrogen, thyroid, and more."
         case .other:
             return "Add other therapeutics here."
         }

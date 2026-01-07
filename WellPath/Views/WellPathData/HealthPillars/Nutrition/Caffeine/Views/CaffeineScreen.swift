@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Card-based layout for Caffeine metric.
-//  Shows cards: Amount, Type.
+//  Shows score card at top, then Amount, Type cards.
 //
 
 import SwiftUI
@@ -12,16 +12,28 @@ struct CaffeineScreen: View {
     let pillar: String
     let color: Color
 
+    @StateObject private var scoreViewModel = CaffeineScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
-
-    private var screenIcon: String {
-        MetricsUIConfig.getIcon(for: "Caffeine")
-    }
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Caffeine Score Card (show if baseline wizard completed)
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
+                    MetricScoreCard(
+                        config: .caffeine,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        CaffeineScoreDetailView(viewModel: scoreViewModel, color: color)
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: .caffeine, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
                 // Reusable card components
                 CaffeineAmountCard(color: color, pillar: pillar)
@@ -43,10 +55,18 @@ struct CaffeineScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -55,6 +75,12 @@ struct CaffeineScreen: View {
         }
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color, initialCategory: .caffeine)
+        }
+        .sheet(isPresented: $showingBaseline) {
+            CaffeineWizardView()
+        }
+        .task {
+            await scoreViewModel.loadData()
         }
     }
 }

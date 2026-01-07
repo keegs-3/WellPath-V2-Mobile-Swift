@@ -3,6 +3,7 @@
 //  WellPath
 //
 //  Entry form for logging protein intake to patient_quantity_samples
+//  Type is optional
 //
 
 import SwiftUI
@@ -12,10 +13,8 @@ struct ProteinEntryView: View {
     @Environment(\.dismiss) var dismiss
     @State private var selectedDateTime = Date()
     @State private var proteinAmount: String = ""
-    @State private var selectedType: String = ""
-    @State private var selectedTiming: String = ""
+    @State private var selectedType: String = ""  // Empty = no type selected
     @State private var proteinTypes: [ReferenceOption] = []
-    @State private var mealTimings: [ReferenceOption] = []
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -59,16 +58,12 @@ struct ProteinEntryView: View {
             .padding(.top, 8)
             .padding(.bottom, 24)
 
-            Form {
-                if isLoading {
-                    Section {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                            Spacer()
-                        }
-                    }
-                } else {
+            if isLoading {
+                Spacer()
+                ProgressView()
+                Spacer()
+            } else {
+                Form {
                     Section {
                         DatePicker("Date", selection: $selectedDateTime, displayedComponents: [.date])
                         DatePicker("Time", selection: $selectedDateTime, displayedComponents: [.hourAndMinute])
@@ -78,24 +73,23 @@ struct ProteinEntryView: View {
                         HStack {
                             TextField("Amount", text: $proteinAmount)
                                 .keyboardType(.decimalPad)
+
                             Text("grams")
                                 .foregroundColor(.secondary)
                         }
                     }
 
-                    Section {
-                        Picker("Type", selection: $selectedType) {
-                            Text("Select Type").tag("")
-                            ForEach(proteinTypes, id: \.id) { option in
-                                Text(option.displayName).tag(option.referenceKey)
+                    // Type section (optional)
+                    if !proteinTypes.isEmpty {
+                        Section {
+                            Picker("Type", selection: $selectedType) {
+                                Text("None").tag("")
+                                ForEach(proteinTypes, id: \.id) { type in
+                                    Text(type.displayName).tag(type.referenceKey)
+                                }
                             }
-                        }
-
-                        Picker("Timing", selection: $selectedTiming) {
-                            Text("Select Timing").tag("")
-                            ForEach(mealTimings, id: \.id) { option in
-                                Text(option.displayName).tag(option.referenceKey)
-                            }
+                        } header: {
+                            Text("Type (Optional)")
                         }
                     }
 
@@ -138,6 +132,8 @@ struct ProteinEntryView: View {
         }
     }
 
+    // MARK: - Data Loading
+
     private func loadReferenceData() async {
         isLoading = true
 
@@ -152,36 +148,21 @@ struct ProteinEntryView: View {
                 .execute()
                 .value
 
-            // Load meal timings from sample_category_types_reference
-            let timingsResponse: [ReferenceOption] = try await supabase
-                .from("sample_category_types_reference")
-                .select("id, display_name, reference_key")
-                .eq("reference_category", value: "food_timing")
-                .eq("is_active", value: true)
-                .order("display_order")
-                .execute()
-                .value
-
             await MainActor.run {
                 proteinTypes = typesResponse
-                mealTimings = timingsResponse
-
-                // Set default selections if available
-                selectedType = proteinTypes.first?.referenceKey ?? ""
-                selectedTiming = mealTimings.first?.referenceKey ?? ""
-
                 isLoading = false
             }
 
         } catch {
             await MainActor.run {
-                print("⚠️ Could not load reference options: \(error.localizedDescription)")
-                print("⚠️ Full error: \(error)")
-                errorMessage = "Failed to load options: \(error.localizedDescription)"
+                print("[ProteinEntry] Could not load reference options: \(error)")
+                // Don't block the form - just proceed without types
                 isLoading = false
             }
         }
     }
+
+    // MARK: - Save
 
     private func saveProteinEntry() async {
         guard let amountValue = Double(proteinAmount), amountValue > 0 else {
@@ -193,22 +174,15 @@ struct ProteinEntryView: View {
         errorMessage = nil
 
         do {
-            // Get user ID
             let userId = try await supabase.auth.session.user.id
-
-            // Get device timezone
             let deviceTimezone = TimeZone.current.identifier
 
-            // Build metadata with protein type and timing
+            // Build metadata - only include type if selected
             var metadata: [String: AnyJSON] = [:]
             if !selectedType.isEmpty {
                 metadata[ProteinMetadataKeys.proteinType] = .string(selectedType)
             }
-            if !selectedTiming.isEmpty {
-                metadata["food_timing"] = .string(selectedTiming)
-            }
 
-            // Create quantity sample using the proper write model
             let sample = QuantitySampleWrite.create(
                 patientId: userId,
                 quantityType: QuantityTypes.proteinGrams,
@@ -217,11 +191,10 @@ struct ProteinEntryView: View {
                 timestamp: selectedDateTime,
                 source: .wellpathInput,
                 timezone: deviceTimezone,
-                metadata: metadata,
+                metadata: metadata.isEmpty ? nil : metadata,
                 eventInstanceId: UUID()
             )
 
-            // Insert into patient_quantity_samples (the correct specialized table)
             try await supabase
                 .from("patient_quantity_samples")
                 .insert(sample)

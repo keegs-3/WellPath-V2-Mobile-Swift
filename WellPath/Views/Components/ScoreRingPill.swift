@@ -10,10 +10,13 @@ import SwiftUI
 
 struct ScoreRingPill: View {
     let score: Int?
+    let maxScore: Int
     let iconName: String
     let label: String
     let size: CGFloat
+    let color: Color?
 
+    /// Standard init with score out of 100
     init(
         score: Int?,
         iconName: String,
@@ -21,23 +24,48 @@ struct ScoreRingPill: View {
         size: CGFloat = 70
     ) {
         self.score = score
+        self.maxScore = 100
         self.iconName = iconName
         self.label = label
         self.size = size
+        self.color = nil
     }
 
-    // Subtle teal/cyan like Oura
+    /// Init with custom max score (normalizes to 100 for display)
+    init(
+        score: Int?,
+        maxScore: Int,
+        iconName: String,
+        label: String,
+        size: CGFloat = 70,
+        color: Color? = nil
+    ) {
+        self.score = score
+        self.maxScore = maxScore
+        self.iconName = iconName
+        self.label = label
+        self.size = size
+        self.color = color
+    }
+
+    // Subtle teal/cyan like Oura, or custom color
     private var ringColor: Color {
-        Color(red: 0.4, green: 0.7, blue: 0.8).opacity(0.8)
+        color ?? Color(red: 0.4, green: 0.7, blue: 0.8).opacity(0.8)
+    }
+
+    /// Normalized score out of 100
+    private var normalizedScore: Int? {
+        guard let score = score, maxScore > 0 else { return nil }
+        return Int((Double(score) / Double(maxScore)) * 100.0)
     }
 
     private var progress: Double {
-        guard let score = score else { return 0 }
-        return Double(score) / 100.0
+        guard let score = score, maxScore > 0 else { return 0 }
+        return Double(score) / Double(maxScore)
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: label.isEmpty ? 0 : 6) {
             // Ring with score and icon
             ZStack {
                 // Background ring
@@ -60,9 +88,9 @@ struct ScoreRingPill: View {
 
                 // Center content
                 VStack(spacing: 2) {
-                    // Score
-                    if let score = score {
-                        Text("\(score)")
+                    // Score (normalized to 100 scale for display)
+                    if let displayScore = normalizedScore {
+                        Text("\(displayScore)")
                             .font(.system(size: size * 0.3, weight: .semibold, design: .rounded))
                             .foregroundColor(.primary)
                     } else {
@@ -77,12 +105,15 @@ struct ScoreRingPill: View {
                         .foregroundColor(ringColor)
                 }
             }
+            .frame(width: size, height: size)
 
-            // Label
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+            // Label - only show if not empty
+            if !label.isEmpty {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
         }
     }
 }

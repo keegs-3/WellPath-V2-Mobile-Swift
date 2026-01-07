@@ -119,7 +119,7 @@ struct BiomarkerCategoryView: View {
     }
 }
 
-// MARK: - Biomarker Card (uses MetricCardView for consistency)
+// MARK: - Biomarker Card (Oura-style dark gradient)
 
 struct BiomarkerCard: View {
     let biomarker: BiomarkerDisplayData
@@ -127,23 +127,129 @@ struct BiomarkerCard: View {
     let sectionId: String  // For favorites: NAV_BIOMARKERS
     @ObservedObject var viewModel: BiomarkerViewModel
 
+    private var statusLabel: String {
+        biomarker.status.rawValue.uppercased()
+    }
+
+    private var statusColor: Color {
+        biomarker.status.color
+    }
+
+    /// Format the date for display
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: biomarker.lastUpdated)
+    }
+
     var body: some View {
-        MetricCardView(
-            title: biomarker.name,
-            color: sectionColor,
-            metricId: biomarker.viewId ?? biomarker.cardId,  // Use viewId for favorites (consistent with other metrics)
-            pillar: "Biomarker",
-            cardId: biomarker.cardId,
-            sectionId: sectionId,
-            itemType: .biomarker
-        ) {
-            BiomarkerMiniCard(biomarker: biomarker, color: sectionColor)
-        } fullScreen: {
+        NavigationLink {
             GenericBiomarkerDetailView(
                 biomarkerName: biomarker.name,
                 viewModel: viewModel
             )
+            .navigationTitle(biomarker.name)
+            .navigationBarTitleDisplayMode(.large)
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                // Top row: Name + Favorite + Chevron
+                HStack {
+                    Text(biomarker.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    FavoriteButton(
+                        itemType: .biomarker,
+                        itemId: biomarker.viewId ?? biomarker.cardId,
+                        displayName: biomarker.name,
+                        pillar: "Biomarker",
+                        cardId: biomarker.cardId,
+                        sectionId: sectionId,
+                        size: .compact
+                    )
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                }
+
+                // Content row: Icon + Value + Range
+                HStack(spacing: 16) {
+                    // Icon in circle
+                    Image(systemName: "testtube.2")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(sectionColor)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            Circle()
+                                .fill(sectionColor.opacity(0.2))
+                        )
+
+                    // Value and date
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(biomarker.formattedValue)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            if !biomarker.unitDisplay.isEmpty {
+                                Text(biomarker.unitDisplay)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Text(formattedDate)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    // Status and range indicator
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(statusLabel)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(statusColor)
+
+                        if !biomarker.rangeSegments.isEmpty {
+                            RangeIndicatorView(
+                                segments: biomarker.rangeSegments,
+                                patientValue: biomarker.value
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        sectionColor.opacity(0.15),
+                                        sectionColor.opacity(0.05)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(sectionColor.opacity(0.25), lineWidth: 1)
+                    )
+            )
         }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

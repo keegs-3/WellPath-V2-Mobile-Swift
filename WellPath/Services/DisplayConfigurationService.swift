@@ -191,27 +191,36 @@ struct ViewCardConfig: Codable, Identifiable {
     }
 }
 
+/// Display tier config - loaded from scoring_thresholds table (threshold_type = 'tier')
 struct DisplayTierConfig: Codable, Identifiable {
-    var id: String { tierId + (viewId ?? "") }
-    let tierId: String
+    let id: UUID
     let viewId: String?
-    let tierName: String
-    let tierDescription: String?
-    let targetPercentage: Int?
-    let multiplier: Double?
+    let thresholdKey: String       // e.g., "PROTEIN_TIER_1"
+    let displayName: String?       // e.g., "Tier 1"
+    let displayDescription: String?
+    let targetValue: Double?       // target percentage
+    let weight: Double?            // multiplier
     let displayOrder: Int?
     let colorHex: String?
 
     enum CodingKeys: String, CodingKey {
-        case tierId = "tier_id"
+        case id
         case viewId = "view_id"
-        case tierName = "tier_name"
-        case tierDescription = "tier_description"
-        case targetPercentage = "target_percentage"
-        case multiplier
+        case thresholdKey = "threshold_key"
+        case displayName = "display_name"
+        case displayDescription = "display_description"
+        case targetValue = "target_value"
+        case weight
         case displayOrder = "display_order"
         case colorHex = "color_hex"
     }
+
+    // Backwards compatibility aliases
+    var tierId: String { thresholdKey }
+    var tierName: String { displayName ?? thresholdKey }
+    var tierDescription: String? { displayDescription }
+    var targetPercentage: Int? { targetValue.map { Int($0) } }
+    var multiplier: Double? { weight }
 
     var colorValue: Color {
         guard let hex = colorHex else { return .gray }
@@ -293,8 +302,6 @@ class DisplayConfigurationService: ObservableObject {
             self.isLoaded = true
             self.loadError = nil
 
-            print("DisplayConfigurationService: Loaded \(sectionHeaders.count) headers, \(categorySections.count) sections, \(pillars.count) pillars, \(cardCategories.count) categories, \(viewCards.count) cards, \(views.count) views, \(loadedTiers.count) tiers")
-
         } catch {
             self.loadError = error
             print("DisplayConfigurationService: Failed to load - \(error)")
@@ -361,9 +368,12 @@ class DisplayConfigurationService: ObservableObject {
     }
 
     private func loadTiers() async throws -> [DisplayTierConfig] {
+        // Load from scoring_thresholds table (consolidated from display_view_tiers)
         try await SupabaseManager.shared.client
-            .from("display_view_tiers")
-            .select()
+            .from("scoring_thresholds")
+            .select("id, view_id, threshold_key, display_name, display_description, target_value, weight, display_order, color_hex")
+            .eq("threshold_type", value: "tier")
+            .eq("is_active", value: true)
             .order("display_order")
             .execute()
             .value
@@ -489,6 +499,14 @@ class DisplayConfigurationService: ObservableObject {
     func viewCards(forCategory categoryId: String) -> [ViewCardConfig] {
         (viewCardsByCategory[categoryId] ?? [])
             .sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
+    }
+
+    /// Search all view cards by name (case-insensitive)
+    func searchViewCards(query: String) -> [ViewCardConfig] {
+        guard !query.isEmpty else { return [] }
+        return viewCards.filter {
+            $0.cardName.localizedCaseInsensitiveContains(query)
+        }.sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
     }
 
     /// Get the view config for a card (for chart_type_id lookup)

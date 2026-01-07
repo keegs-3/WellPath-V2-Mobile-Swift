@@ -18,6 +18,12 @@ struct NutrientScreenConfig {
     let screenIcon: String
     let screenId: String  // For tour question mapping
     let dataManagementConfigFactory: (Color) -> MetricDataConfig
+    let baselineViewId: String
+    let categoryId: String
+    let scoreId: String
+    let scoreType: String
+    let scoreCardConfig: MetricScoreCardConfig
+    let scoreViewModelFactory: () -> BehavioralScoreViewModel
 
     static let legumes = NutrientScreenConfig(
         title: "Legume",
@@ -25,7 +31,13 @@ struct NutrientScreenConfig {
         nutrientType: .legumes,
         screenIcon: MetricsUIConfig.getIcon(for: "Legumes"),
         screenId: "SCREEN_LEGUMES",
-        dataManagementConfigFactory: { MetricDataConfig.legumes(color: $0) }
+        dataManagementConfigFactory: { MetricDataConfig.legumes(color: $0) },
+        baselineViewId: "BASELINE_VIEW_LEGUMES",
+        categoryId: "CAT_LEGUMES",
+        scoreId: "SCORE_LEGUMES",
+        scoreType: "legumes_score",
+        scoreCardConfig: .legumes,
+        scoreViewModelFactory: { LegumesScoreViewModel() }
     )
 
     static let vegetables = NutrientScreenConfig(
@@ -34,7 +46,13 @@ struct NutrientScreenConfig {
         nutrientType: .vegetables,
         screenIcon: MetricsUIConfig.getIcon(for: "Vegetables"),
         screenId: "SCREEN_VEGETABLES",
-        dataManagementConfigFactory: { MetricDataConfig.vegetables(color: $0) }
+        dataManagementConfigFactory: { MetricDataConfig.vegetables(color: $0) },
+        baselineViewId: "BASELINE_VIEW_VEGETABLES",
+        categoryId: "CAT_VEGETABLES",
+        scoreId: "SCORE_VEGETABLES",
+        scoreType: "vegetables_score",
+        scoreCardConfig: .vegetables,
+        scoreViewModelFactory: { VegetablesScoreViewModel() }
     )
 
     static let fruits = NutrientScreenConfig(
@@ -43,7 +61,13 @@ struct NutrientScreenConfig {
         nutrientType: .fruits,
         screenIcon: MetricsUIConfig.getIcon(for: "Fruits"),
         screenId: "SCREEN_FRUITS",
-        dataManagementConfigFactory: { MetricDataConfig.fruits(color: $0) }
+        dataManagementConfigFactory: { MetricDataConfig.fruits(color: $0) },
+        baselineViewId: "BASELINE_VIEW_FRUITS",
+        categoryId: "CAT_FRUITS",
+        scoreId: "SCORE_FRUITS",
+        scoreType: "fruits_score",
+        scoreCardConfig: .fruits,
+        scoreViewModelFactory: { FruitsScoreViewModel() }
     )
 
     static let wholeGrains = NutrientScreenConfig(
@@ -52,7 +76,13 @@ struct NutrientScreenConfig {
         nutrientType: .wholeGrains,
         screenIcon: MetricsUIConfig.getIcon(for: "Whole Grains"),
         screenId: "SCREEN_WHOLE_GRAINS",
-        dataManagementConfigFactory: { MetricDataConfig.wholeGrains(color: $0) }
+        dataManagementConfigFactory: { MetricDataConfig.wholeGrains(color: $0) },
+        baselineViewId: "BASELINE_VIEW_WHOLE_GRAINS",
+        categoryId: "CAT_WHOLE_GRAINS",
+        scoreId: "SCORE_WHOLE_GRAINS",
+        scoreType: "whole_grains_score",
+        scoreCardConfig: .wholeGrains,
+        scoreViewModelFactory: { WholeGrainsScoreViewModel() }
     )
 }
 
@@ -62,19 +92,40 @@ struct NutrientScreen: View {
     let color: Color
 
     @StateObject private var viewModel: StandardMetricViewModel
+    @StateObject private var scoreViewModel: BehavioralScoreViewModel
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
+    @State private var showingBaseline = false
 
     init(config: NutrientScreenConfig, pillar: String, color: Color) {
         self.config = config
         self.pillar = pillar
         self.color = color
         _viewModel = StateObject(wrappedValue: StandardMetricViewModel(metricId: config.metricId))
+        _scoreViewModel = StateObject(wrappedValue: config.scoreViewModelFactory())
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Score Card at top - taps to detail (show if baseline wizard completed)
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.dailyScore != nil {
+                    MetricScoreCard(
+                        config: config.scoreCardConfig,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        NutrientScoreDetailView(
+                            config: config,
+                            viewModel: scoreViewModel,
+                            color: color
+                        )
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: config.scoreCardConfig, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
                 // Reusable card components (defined in Cards/NutrientCards.swift)
                 NutrientServingsCard(config: config, color: color, pillar: pillar)
@@ -96,10 +147,18 @@ struct NutrientScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -109,8 +168,18 @@ struct NutrientScreen: View {
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color)
         }
+        .sheet(isPresented: $showingBaseline) {
+            SimpleBaselineWizardView(
+                baselineViewId: config.baselineViewId,
+                categoryId: config.categoryId,
+                categoryName: config.title,
+                scoreId: config.scoreId,
+                scoreType: config.scoreType
+            )
+        }
         .task {
             await viewModel.loadPrimaryScreen()
+            await scoreViewModel.loadData()
         }
     }
 }

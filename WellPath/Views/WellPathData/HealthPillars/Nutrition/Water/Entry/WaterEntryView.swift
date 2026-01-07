@@ -223,6 +223,9 @@ struct WaterEntryView: View {
                 .insert(sample)
                 .execute()
 
+            // Note: Hydration scores now calculate on-the-fly via behavioral_scores VIEW
+            // No need to call update_behavioral_score - scores are computed when queried
+
             await MainActor.run {
                 dismiss()
             }

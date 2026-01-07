@@ -31,12 +31,13 @@ struct PeriodNavigationView: View {
                     Text(dateRangeText)
                         .font(.headline)
                         .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
 
                     Image(systemName: "calendar")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
-                .frame(maxWidth: .infinity)
                 .frame(height: 44)
             }
             .buttonStyle(.plain)

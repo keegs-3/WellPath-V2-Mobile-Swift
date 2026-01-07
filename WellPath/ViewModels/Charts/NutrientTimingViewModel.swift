@@ -94,14 +94,14 @@ enum NutrientTimingType: String, CaseIterable {
         }
     }
 
-    /// The metadata key for type breakdown (e.g., "protein_type")
-    /// Note: Uses plural form to match database trigger output (e.g., "vegetables_types")
+    /// The metadata key for type breakdown
+    /// Standard: all use {nutrient}_types (plural) to match database trigger and reference tables
     var typeMetadataKey: String {
         switch self {
         case .protein:
-            return "protein_type"
+            return "protein_types"
         case .fats:
-            return "fat_type"
+            return "fat_types"
         case .legumes:
             return "legumes_types"
         case .vegetables:
@@ -121,13 +121,13 @@ enum NutrientTimingType: String, CaseIterable {
     }
 
     /// The reference_category for type lookup in sample_category_types_reference
-    /// Note: Some categories use singular form (fat_types) while others use plural (vegetables_types)
+    /// Standard: all use {nutrient}_types format to match database reference tables
     var typeReferenceCategory: String {
         switch self {
         case .protein:
             return "protein_types"
         case .fats:
-            return "fat_types"  // singular "fat" - matches database
+            return "fat_types"
         case .legumes:
             return "legumes_types"
         case .vegetables:

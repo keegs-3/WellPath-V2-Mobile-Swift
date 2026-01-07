@@ -165,6 +165,20 @@ struct PersonalInfoView: View {
 
             // Advanced Testing Section (extracted to reduce body complexity)
             advancedTestingSection
+
+            // Account Security Section
+            Section("Account Security") {
+                NavigationLink {
+                    ChangePasswordView()
+                } label: {
+                    HStack {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.blue)
+                            .frame(width: 24)
+                        Text("Change Password")
+                    }
+                }
+            }
         }
         .navigationTitle("Personal Info")
         .navigationBarTitleDisplayMode(.inline)

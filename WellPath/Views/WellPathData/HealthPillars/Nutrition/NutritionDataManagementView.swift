@@ -105,17 +105,17 @@ enum NutritionCategory: String, CaseIterable, Identifiable {
     var metadataTypeKey: String? {
         switch self {
         case .all: return nil
-        case .protein: return "protein_type"
-        case .vegetables: return "vegetables_type"
-        case .fruits: return "fruits_type"
-        case .legumes: return "legumes_type"
-        case .wholeGrains: return "whole_grains_type"
-        case .nutsSeeds: return "nuts_seeds_type"
+        case .protein: return "protein_types"
+        case .vegetables: return "vegetables_types"
+        case .fruits: return "fruits_types"
+        case .legumes: return "legumes_types"
+        case .wholeGrains: return "whole_grains_types"
+        case .nutsSeeds: return "nuts_seeds_types"
         case .fiber: return "fiber_source"
-        case .fats: return "fat_type"
+        case .fats: return "fat_types"
         case .water: return nil  // Water doesn't have types
-        case .caffeine: return "caffeine_type"
-        case .alcohol: return "alcohol_type"
+        case .caffeine: return "caffeine_types"
+        case .alcohol: return "alcohol_types"
         }
     }
 
@@ -1018,8 +1018,8 @@ class NutritionDataManagementViewModel: ObservableObject {
             for sample in samples {
                 guard let metadata = sample.metadata else { continue }
 
-                // Type keys
-                for key in ["protein_type", "vegetables_type", "fruits_type", "legumes_type", "whole_grains_type", "nuts_seeds_type", "fiber_source", "fat_type", "caffeine_type", "alcohol_type"] {
+                // Type keys (use plural _types format to match database metadata)
+                for key in ["protein_types", "vegetables_types", "fruits_types", "legumes_types", "whole_grains_types", "nuts_seeds_types", "fiber_source", "fat_types", "caffeine_types", "alcohol_types"] {
                     if let value = metadata[key]?.stringValue {
                         referenceKeys.insert(value)
                     }
@@ -1118,7 +1118,7 @@ class NutritionDataManagementViewModel: ObservableObject {
                     // Extract type/timing from metadata (prefer first found)
                     if let metadata = sample.metadata {
                         if typeName == nil {
-                            for key in ["protein_type", "vegetables_type", "fruits_type", "legumes_type", "whole_grains_type", "nuts_seeds_type", "fiber_source", "fat_type", "caffeine_type", "alcohol_type"] {
+                            for key in ["protein_types", "vegetables_types", "fruits_types", "legumes_types", "whole_grains_types", "nuts_seeds_types", "fiber_source", "fat_types", "caffeine_types", "alcohol_types"] {
                                 if let value = metadata[key]?.stringValue {
                                     typeName = referenceCache[value]
                                     break
@@ -1195,7 +1195,7 @@ class NutritionDataManagementViewModel: ObservableObject {
                 var typeName: String?
                 var timingName: String?
                 if let metadata = sample.metadata {
-                    for key in ["protein_type", "vegetables_type", "fruits_type", "legumes_type", "whole_grains_type", "nuts_seeds_type", "fiber_source", "fat_type", "caffeine_type", "alcohol_type"] {
+                    for key in ["protein_types", "vegetables_types", "fruits_types", "legumes_types", "whole_grains_types", "nuts_seeds_types", "fiber_source", "fat_types", "caffeine_types", "alcohol_types"] {
                         if let value = metadata[key]?.stringValue {
                             typeName = referenceCache[value]
                             break

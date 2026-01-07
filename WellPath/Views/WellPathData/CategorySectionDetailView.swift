@@ -12,9 +12,15 @@ struct CategorySectionDetailView: View {
     let initialSection: CategorySectionConfig
     @State private var currentSection: CategorySectionConfig
     @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+    @StateObject private var biomarkerViewModel = BiomarkerViewModel()
     @State private var isSearchActive = false
     @State private var searchText = ""
     @Environment(\.dismiss) private var dismiss
+
+    /// Check if current section is biomarkers
+    private var isBiomarkerSection: Bool {
+        currentSection.sectionId == "NAV_BIOMARKERS"
+    }
 
     init(section: CategorySectionConfig) {
         self.initialSection = section
@@ -42,13 +48,52 @@ struct CategorySectionDetailView: View {
             // Content
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    ForEach(filteredCategories) { category in
-                        NavigationLink {
-                            CategoryDetailView(category: category, sectionColor: currentSection.color)
-                        } label: {
-                            CardCategoryCard(category: category, sectionColor: currentSection.color)
+                    // Show search results when searching
+                    if !searchText.isEmpty {
+                        // For biomarker section, ONLY show biomarker results (not ViewCards which duplicate)
+                        if isBiomarkerSection {
+                            if !filteredBiomarkers.isEmpty {
+                                ForEach(filteredBiomarkers) { biomarker in
+                                    BiomarkerCard(
+                                        biomarker: biomarker,
+                                        sectionColor: currentSection.color,
+                                        sectionId: currentSection.sectionId,
+                                        viewModel: biomarkerViewModel
+                                    )
+                                }
+                            }
+                        } else {
+                            // For non-biomarker sections, show card search results
+                            if !searchedViewCards.isEmpty {
+                                ForEach(searchedViewCards) { card in
+                                    ViewCardSearchResult(card: card, sectionColor: currentSection.color)
+                                }
+                            }
                         }
-                        .buttonStyle(.plain)
+
+                        // Empty state if no results
+                        let hasResults = isBiomarkerSection ? !filteredBiomarkers.isEmpty : !searchedViewCards.isEmpty
+                        if !hasResults && filteredCategories.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(.secondary.opacity(0.5))
+                                Text("No results for \"\(searchText)\"")
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                        }
+                    } else {
+                        // Show categories when not searching
+                        ForEach(cardCategories) { category in
+                            NavigationLink {
+                                CategoryDetailView(category: category, sectionColor: currentSection.color)
+                            } label: {
+                                CardCategoryCard(category: category, sectionColor: currentSection.color)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -59,6 +104,12 @@ struct CategorySectionDetailView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(currentSection.sectionName)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            // Load biomarker data if on biomarker section
+            if isBiomarkerSection {
+                await biomarkerViewModel.loadAll()
+            }
+        }
     }
 
     private var cardCategories: [CardCategoryConfig] {
@@ -73,6 +124,120 @@ struct CategorySectionDetailView: View {
     /// Get all sibling sections under the same header for the scrollable nav
     private var siblingsSections: [CategorySectionConfig] {
         displayConfig.categorySections(for: currentSection.headerId)
+    }
+
+    /// All biomarkers flattened for search (only used when isBiomarkerSection)
+    private var allBiomarkers: [BiomarkerDisplayData] {
+        biomarkerViewModel.categories.flatMap { biomarkerViewModel.biomarkers(for: $0.categoryId) }
+    }
+
+    /// Filtered biomarkers based on search text
+    private var filteredBiomarkers: [BiomarkerDisplayData] {
+        guard !searchText.isEmpty else { return [] }
+        return allBiomarkers.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    /// Search view cards by name
+    private var searchedViewCards: [ViewCardConfig] {
+        displayConfig.searchViewCards(query: searchText)
+    }
+}
+
+// MARK: - View Card Search Result (Oura-style card for search results)
+
+struct ViewCardSearchResult: View {
+    let card: ViewCardConfig
+    let sectionColor: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    /// Get the icon for this card from its category
+    private var cardIcon: String {
+        guard let categoryId = card.categoryId else { return "doc" }
+        return displayConfig.cardCategoryIcon(for: categoryId)
+    }
+
+    /// Get color from category
+    private var cardColor: Color {
+        guard let categoryId = card.categoryId else { return sectionColor }
+        return displayConfig.cardCategoryColor(for: categoryId)
+    }
+
+    var body: some View {
+        NavigationLink {
+            // Route to the appropriate screen using CardRegistry
+            CardRegistry.destination(
+                for: card.cardId,
+                color: cardColor,
+                pillar: "",
+                sectionId: card.categoryId
+            )
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                // Top row: Icon + Name
+                HStack(alignment: .top) {
+                    // Icon in circle
+                    Image(systemName: cardIcon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(cardColor)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            Circle()
+                                .fill(cardColor.opacity(0.2))
+                        )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(card.cardName)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+
+                        Text("Tap to view")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                }
+
+                // Description if available
+                if let description = card.description, !description.isEmpty {
+                    Text(description)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        cardColor.opacity(0.15),
+                                        cardColor.opacity(0.05)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(cardColor.opacity(0.25), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -110,14 +275,14 @@ struct CardCategoryCard: View {
         VStack(alignment: .leading, spacing: 12) {
             // Top row: Icon + Name + Score pill
             HStack(alignment: .top) {
-                // Icon (small, top-left)
+                // Icon (small circle with subtle color)
                 Image(systemName: categoryIcon)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 28, height: 28)
+                    .foregroundColor(sectionColor)
+                    .frame(width: 32, height: 32)
                     .background(
                         Circle()
-                            .fill(.white.opacity(0.2))
+                            .fill(sectionColor.opacity(0.2))
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -125,13 +290,13 @@ struct CardCategoryCard: View {
                     Text(category.name)
                         .font(.headline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
 
                     // Score label
                     Text(scoreLabel)
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(score != nil ? scoreLabelColor : .white.opacity(0.5))
+                        .foregroundColor(score != nil ? scoreLabelColor : .secondary)
                 }
 
                 Spacer()
@@ -140,7 +305,7 @@ struct CardCategoryCard: View {
                 ZStack {
                     // Background ring
                     Circle()
-                        .stroke(Color.white.opacity(0.2), lineWidth: 3)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 3)
                         .frame(width: 44, height: 44)
 
                     // Progress ring
@@ -158,35 +323,43 @@ struct CardCategoryCard: View {
                     // Score text
                     Text(score != nil ? "\(score!)" : "--")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
 
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.secondary)
             }
 
             // Description at bottom
             if let overview = category.overview {
                 Text(overview)
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.secondary)
                     .lineLimit(2)
             }
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            sectionColor.opacity(0.85),
-                            sectionColor.opacity(0.5)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    sectionColor.opacity(0.15),
+                                    sectionColor.opacity(0.05)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(sectionColor.opacity(0.25), lineWidth: 1)
                 )
         )
     }
@@ -483,7 +656,7 @@ enum CategoryScreenRouter {
     @ViewBuilder
     static func destinationView(for categoryId: String, pillar: String, color: Color, sectionId: String) -> some View {
         switch categoryId {
-        // Nutrition
+        // MARK: - Nutrition
         case "CAT_PROTEIN":
             ProteinScreen(pillar: pillar, color: color)
         case "CAT_FATS":
@@ -504,14 +677,26 @@ enum CategoryScreenRouter {
             CaffeineScreen(pillar: pillar, color: color)
         case "CAT_MEAL_PATTERNS":
             MealPatternsScreen(pillar: pillar, color: color)
+        case "CAT_NUTS_SEEDS":
+            NutsSeedsScreen(pillar: pillar, color: color)
+        case "CAT_ULTRA_PROCESSED":
+            UltraProcessedScreen(pillar: pillar, color: color)
 
-        // Sleep
+        // MARK: - Sleep
         case "CAT_SLEEP_ANALYSIS":
             SleepAnalysisScreen(pillar: pillar, color: color)
         case "CAT_SLEEP_SCORE":
-            SleepScoreScreen(color: color, pillar: pillar, sectionId: sectionId)
+            SleepScoreScreen(pillar: pillar, color: color)
+        case "CAT_SLEEP", "CAT_SLEEP_DURATION":
+            SleepDurationScreen(pillar: pillar, color: color)
+        case "CAT_SLEEP_CONSISTENCY":
+            SleepConsistencyScreen(pillar: pillar, color: color)
+        case "CAT_SLEEP_ROUTINE":
+            SleepRoutineScreen(pillar: pillar, color: color)
+        case "CAT_SLEEP_ENVIRONMENT":
+            SleepEnvironmentScreen(pillar: pillar, color: color)
 
-        // Movement
+        // MARK: - Movement
         case "CAT_STEPS":
             StepsScreen(pillar: pillar, color: color, sectionId: sectionId)
         case "CAT_CARDIO":
@@ -522,16 +707,84 @@ enum CategoryScreenRouter {
             HIITScreen(pillar: pillar, color: color, sectionId: sectionId)
         case "CAT_MOBILITY":
             MobilityScreen(pillar: pillar, color: color, sectionId: sectionId)
+        case "CAT_DAILY_ACTIVITY":
+            DailyActivityScreen(pillar: pillar, color: color, sectionId: sectionId)
 
-        // Cognitive
-        case "CAT_BRAIN_TRAINING":
+        // MARK: - Stress Management
+        case "CAT_MINDFULNESS":
+            MindfulnessScreen(pillar: pillar, color: color, sectionId: sectionId)
+        case "CAT_STRESS", "CAT_STRESS_LEVEL":
+            StressLevelScreen(pillar: pillar, color: color)
+        case "CAT_STRESS_DIRECT":  // Keep direct route for internal use
+            AssessmentScreenTemplate(
+                assessmentId: "ASSESS_PSS10",
+                color: color,
+                viewId: "DISP_STRESS",
+                sectionId: sectionId
+            )
+
+        // MARK: - Cognitive
+        case "CAT_COGNITIVE_ACTIVITIES", "CAT_BRAIN_TRAINING":
             CognitiveScreen(pillar: pillar, color: color, sectionId: sectionId)
 
-        // Connection
-        case "CAT_SOCIAL":
+        // MARK: - Connection
+        case "CAT_SOCIAL", "CAT_SOCIAL_CONNECTIONS":
             SocialScreen(pillar: pillar, color: color, sectionId: sectionId)
         case "CAT_OUTDOOR_TIME":
             OutdoorTimeScreen(pillar: pillar, color: color, sectionId: sectionId)
+
+        // MARK: - Biometrics (route to category screens)
+        case "CAT_BIOMETRICS_BODY_COMP":
+            BiometricCategoryScreen(
+                category: .bodyComposition,
+                pillar: pillar,
+                color: color
+            )
+        case "CAT_BIOMETRICS_VITALS":
+            BiometricCategoryScreen(
+                category: .vitals,
+                pillar: pillar,
+                color: color
+            )
+        case "CAT_FITNESS_METRICS":
+            BiometricCategoryScreen(
+                category: .fitnessMetrics,
+                pillar: pillar,
+                color: color
+            )
+
+        // MARK: - Biomarkers (route directly to category - no extra navigation level)
+        case "CAT_BIOMARKER_CARDIO", "CAT_BIOMARKER_METABOLISM", "CAT_BIOMARKER_INFLAMMATION",
+             "CAT_BIOMARKER_IMMUNE_RENAL", "CAT_BIOMARKER_HORMONES", "CAT_BIOMARKER_COGNITION",
+             "CAT_BIOMARKER_RECOVERY", "CAT_BIOMARKER_ENDURANCE", "CAT_BIOMARKER_FITNESS",
+             "CAT_BIOMARKER_SLEEP":
+            BiomarkerCategoryScreen(categoryId: categoryId, pillar: pillar, color: color)
+
+        // MARK: - Biological Age
+        case "CAT_TRUDIAGNOSTIC", "CAT_PHENOAGE":
+            BiologicalAgeScreen(pillar: pillar, color: color)
+
+        // MARK: - Substances (placeholder until substance screens are built)
+        case "CAT_ALCOHOL", "CAT_TOBACCO", "CAT_NICOTINE", "CAT_CANNABIS":
+            CategoryPlaceholderView(categoryId: categoryId, color: color)
+
+        // MARK: - Mental Health
+        case "CAT_WELLBEING":
+            WellbeingScreen(pillar: pillar, color: color)
+        case "CAT_ANXIETY":
+            AnxietyScreen(pillar: pillar, color: color)
+        case "CAT_DEPRESSION":
+            DepressionScreen(pillar: pillar, color: color)
+
+        // MARK: - Health Records
+        case "CAT_THERAPEUTICS":
+            TherapeuticsListView()
+        case "CAT_PERSONAL_HISTORY":
+            MedicalHistoryListView()
+        case "CAT_FAMILY_HISTORY":
+            CategoryPlaceholderView(categoryId: categoryId, color: color)  // Family history not yet built
+        case "CAT_SCREENINGS":
+            ScreeningsListView()
 
         // Default fallback
         default:

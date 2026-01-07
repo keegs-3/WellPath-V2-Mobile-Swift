@@ -11,8 +11,8 @@ import Supabase
 // MARK: - Unit Types
 
 enum WeightDisplayUnit: String, CaseIterable, Identifiable {
-    case kg = "kg"
-    case lb = "lb"
+    case kg = "kilogram"
+    case lb = "pound"
 
     var id: String { rawValue }
     var displayName: String {
@@ -21,11 +21,20 @@ enum WeightDisplayUnit: String, CaseIterable, Identifiable {
         case .lb: return "Pounds (lb)"
         }
     }
+
+    /// For backwards compatibility with legacy DB values
+    static func fromLegacy(_ rawValue: String) -> WeightDisplayUnit {
+        switch rawValue {
+        case "kg": return .kg
+        case "lb": return .lb
+        default: return WeightDisplayUnit(rawValue: rawValue) ?? .kg
+        }
+    }
 }
 
 enum HeightDisplayUnit2: String, CaseIterable, Identifiable {
-    case cm = "cm"
-    case ftIn = "ft_in"
+    case cm = "centimeter"
+    case ftIn = "feet_inches"
 
     var id: String { rawValue }
 
@@ -44,11 +53,20 @@ enum HeightDisplayUnit2: String, CaseIterable, Identifiable {
         case .ftIn: return "Feet & Inches (ft/in)"
         }
     }
+
+    /// For backwards compatibility with legacy DB values
+    static func fromLegacy(_ rawValue: String) -> HeightDisplayUnit2 {
+        switch rawValue {
+        case "cm": return .cm
+        case "ft_in": return .ftIn
+        default: return HeightDisplayUnit2(rawValue: rawValue) ?? .cm
+        }
+    }
 }
 
 enum DistanceDisplayUnit: String, CaseIterable, Identifiable {
-    case km = "km"
-    case mi = "mi"
+    case km = "kilometer"
+    case mi = "mile"
 
     var id: String { rawValue }
     var displayName: String {
@@ -57,11 +75,20 @@ enum DistanceDisplayUnit: String, CaseIterable, Identifiable {
         case .mi: return "Miles (mi)"
         }
     }
+
+    /// For backwards compatibility with legacy DB values
+    static func fromLegacy(_ rawValue: String) -> DistanceDisplayUnit {
+        switch rawValue {
+        case "km": return .km
+        case "mi": return .mi
+        default: return DistanceDisplayUnit(rawValue: rawValue) ?? .km
+        }
+    }
 }
 
 enum TemperatureDisplayUnit: String, CaseIterable, Identifiable {
-    case c = "c"
-    case f = "f"
+    case c = "degrees_celsius"
+    case f = "degrees_fahrenheit"
 
     var id: String { rawValue }
     var displayName: String {
@@ -70,15 +97,24 @@ enum TemperatureDisplayUnit: String, CaseIterable, Identifiable {
         case .f: return "Fahrenheit (°F)"
         }
     }
+
+    /// For backwards compatibility with legacy DB values
+    static func fromLegacy(_ rawValue: String) -> TemperatureDisplayUnit {
+        switch rawValue {
+        case "c": return .c
+        case "f": return .f
+        default: return TemperatureDisplayUnit(rawValue: rawValue) ?? .c
+        }
+    }
 }
 
 enum LiquidDisplayUnit: String, CaseIterable, Identifiable {
-    case fluidOunce = "fl_oz"
-    case milliliter = "ml"
-    case cup = "cups"
-    case glass = "glasses"
-    case liter = "L"
-    case gallon = "gal"
+    case fluidOunce = "fluid_ounce"
+    case milliliter = "milliliter"
+    case cup = "cup"
+    case glass = "glass"
+    case liter = "liter"
+    case gallon = "gallon_us"
 
     var id: String { rawValue }
 
@@ -119,13 +155,22 @@ enum LiquidDisplayUnit: String, CaseIterable, Identifiable {
         }
     }
 
-    /// For backwards compatibility with existing DB values
+    /// For backwards compatibility with legacy DB values
     static func fromLegacy(_ rawValue: String) -> LiquidDisplayUnit {
         switch rawValue {
         case "ml": return .milliliter
-        case "oz": return .fluidOunce
+        case "oz", "fl_oz": return .fluidOunce
+        case "cups": return .cup
+        case "glasses": return .glass
+        case "L": return .liter
+        case "gal": return .gallon
         default: return LiquidDisplayUnit(rawValue: rawValue) ?? .milliliter
         }
+    }
+
+    /// Create from short label (e.g., "mL", "cups", "fl oz")
+    static func fromShortLabel(_ label: String) -> LiquidDisplayUnit? {
+        allCases.first { $0.shortLabel == label }
     }
 }
 
@@ -182,17 +227,17 @@ class UnitPreferencesViewModel: ObservableObject {
                 .value
 
             if let prefs = results.first {
-                if let w = prefs.weightUnit, let unit = WeightDisplayUnit(rawValue: w) {
-                    weightUnit = unit
+                if let w = prefs.weightUnit {
+                    weightUnit = WeightDisplayUnit.fromLegacy(w)
                 }
-                if let h = prefs.heightUnit, let unit = HeightDisplayUnit2(rawValue: h) {
-                    heightUnit = unit
+                if let h = prefs.heightUnit {
+                    heightUnit = HeightDisplayUnit2.fromLegacy(h)
                 }
-                if let d = prefs.distanceUnit, let unit = DistanceDisplayUnit(rawValue: d) {
-                    distanceUnit = unit
+                if let d = prefs.distanceUnit {
+                    distanceUnit = DistanceDisplayUnit.fromLegacy(d)
                 }
-                if let t = prefs.temperatureUnit, let unit = TemperatureDisplayUnit(rawValue: t) {
-                    temperatureUnit = unit
+                if let t = prefs.temperatureUnit {
+                    temperatureUnit = TemperatureDisplayUnit.fromLegacy(t)
                 }
                 if let l = prefs.liquidUnit {
                     liquidUnit = LiquidDisplayUnit.fromLegacy(l)

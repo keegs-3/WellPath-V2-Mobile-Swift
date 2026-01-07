@@ -227,6 +227,37 @@ class CategoryState: ObservableObject, Identifiable {
 
 // MARK: - Type Option (from database)
 
+/// Simple response struct for reference table query (no join)
+private struct TypeOptionResponseSimple: Codable {
+    let id: UUID
+    let referenceKey: String
+    let displayName: String
+    let displayOrder: Int
+    let metadata: TypeMetadata?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case referenceKey = "reference_key"
+        case displayName = "display_name"
+        case displayOrder = "display_order"
+        case metadata
+    }
+
+    func toTypeOption() -> TypeOption {
+        return TypeOption(
+            id: id,
+            referenceKey: referenceKey,
+            displayName: displayName,
+            displayOrder: displayOrder,
+            metadata: metadata,
+            exampleFoods: nil,
+            servingSize: nil,
+            servingTip: nil,
+            servingGrams: metadata?.servingGrams
+        )
+    }
+}
+
 /// Nested struct to decode usda_foods join response
 /// These fields are on usda_foods WellPath category entries, not on sample_category_types_reference
 private struct USDAFoodsJoin: Codable {
@@ -336,6 +367,11 @@ struct CategoryFoodNutrition: Identifiable, Codable {
     let proteinG: Double?
     let fatTotalG: Double?
     let carbsG: Double?
+    // Serving info
+    let exampleFoods: String?
+    let servingSize: String?
+    let servingTip: String?
+    let servingGrams: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -345,6 +381,10 @@ struct CategoryFoodNutrition: Identifiable, Codable {
         case proteinG = "protein_g"
         case fatTotalG = "fat_total_g"
         case carbsG = "carbs_g"
+        case exampleFoods = "example_foods"
+        case servingSize = "serving_size"
+        case servingTip = "serving_tip"
+        case servingGrams = "serving_grams"
     }
 }
 
@@ -1671,19 +1711,15 @@ struct QuickLogWizardView: View {
     private func loadTypeOptions() async {
         for category in NutrientCategory.allCases {
             do {
-                // Join with usda_foods to get serving info per food type
-                // usda_foods.category_reference_id -> sample_category_types_reference.id
-                // Use explicit FK name because usda_foods has multiple FKs to this table
-                // example_foods, serving_size, serving_tip, serving_grams are on usda_foods
-                let responses: [TypeOptionResponse] = try await supabase
+                // Load type options from reference table (no join - serving info loaded separately)
+                let responses: [TypeOptionResponseSimple] = try await supabase
                     .from("sample_category_types_reference")
-                    .select("id, reference_key, display_name, display_order, metadata, usda_foods!usda_foods_category_reference_id_fkey(example_foods, serving_size, serving_tip, serving_grams)")
+                    .select("id, reference_key, display_name, display_order, metadata")
                     .eq("reference_category", value: category.referenceCategory)
                     .order("display_order")
                     .execute()
                     .value
 
-                // Map responses to TypeOption, extracting serving_grams from nested join
                 let options = responses.map { $0.toTypeOption() }
 
                 await MainActor.run {
@@ -1694,7 +1730,7 @@ struct QuickLogWizardView: View {
             }
         }
 
-        // Load nutrition data from usda_foods (WellPath category entries)
+        // Load nutrition AND serving info from usda_foods (WellPath category entries)
         await loadCategoryNutrition()
 
         // Load portions from usda_food_portions
@@ -1705,7 +1741,7 @@ struct QuickLogWizardView: View {
         do {
             let nutrition: [CategoryFoodNutrition] = try await supabase
                 .from("usda_foods")
-                .select("id, category_reference_id, description, calories, protein_g, fat_total_g, carbs_g")
+                .select("id, category_reference_id, description, calories, protein_g, fat_total_g, carbs_g, example_foods, serving_size, serving_tip, serving_grams")
                 .eq("is_wellpath_category", value: true)
                 .not("category_reference_id", operator: .is, value: "null")
                 .execute()
@@ -1813,9 +1849,9 @@ struct QuickLogWizardView: View {
                         }
                         metadata["protein_selections"] = .array(proteinSelections.map { .object($0) })
 
-                        // Also include first type for backwards compatibility
+                        // Also include first type for query compatibility
                         if let first = selectedProtein.first {
-                            metadata["protein_type"] = .string(first.typeOption.referenceKey)
+                            metadata["protein_types"] = .string(first.typeOption.referenceKey)
                             metadata["protein_grams"] = .double(first.amount)
                         }
                     }

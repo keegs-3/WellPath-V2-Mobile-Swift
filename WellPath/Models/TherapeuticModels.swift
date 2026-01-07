@@ -13,9 +13,10 @@ import SwiftUI
 // MARK: - Therapeutic Type
 
 enum TherapeuticType: String, Codable, CaseIterable, Identifiable {
-    case medication = "medication"
-    case supplement = "supplement"
-    case peptide = "peptide"
+    case medication = "MED"
+    case supplement = "SUP"
+    case peptide = "PEP"
+    case hormone = "HOR"
     case other = "other"
 
     var id: String { rawValue }
@@ -25,6 +26,17 @@ enum TherapeuticType: String, Codable, CaseIterable, Identifiable {
         case .medication: return "Medication"
         case .supplement: return "Supplement"
         case .peptide: return "Peptide"
+        case .hormone: return "Hormone"
+        case .other: return "Other"
+        }
+    }
+
+    var displayNamePlural: String {
+        switch self {
+        case .medication: return "Medications"
+        case .supplement: return "Supplements"
+        case .peptide: return "Peptides"
+        case .hormone: return "Hormones"
         case .other: return "Other"
         }
     }
@@ -34,6 +46,7 @@ enum TherapeuticType: String, Codable, CaseIterable, Identifiable {
         case .medication: return "pills.fill"
         case .supplement: return "leaf.fill"
         case .peptide: return "syringe.fill"
+        case .hormone: return "waveform.path.ecg"
         case .other: return "cross.vial.fill"
         }
     }
@@ -43,8 +56,14 @@ enum TherapeuticType: String, Codable, CaseIterable, Identifiable {
         case .medication: return .blue
         case .supplement: return .green
         case .peptide: return .purple
+        case .hormone: return .orange
         case .other: return .gray
         }
+    }
+
+    /// Primary types shown in picker (excludes "other")
+    static var primaryCases: [TherapeuticType] {
+        [.medication, .supplement, .peptide, .hormone]
     }
 }
 
@@ -342,6 +361,19 @@ struct TherapeuticCategory {
         "Metabolic",
         "Immune",
         "Anti-Aging",
+        "Other"
+    ]
+
+    static let hormoneCategories = [
+        "Testosterone",
+        "Estrogen",
+        "Progesterone",
+        "Thyroid",
+        "Growth Hormone",
+        "DHEA",
+        "Cortisol",
+        "Insulin",
+        "Melatonin",
         "Other"
     ]
 }

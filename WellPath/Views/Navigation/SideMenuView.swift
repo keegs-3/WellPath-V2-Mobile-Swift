@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Oura-style side menu that slides in from the left (80% width)
-//  Contains: Profile, Learn, Chat, Settings, Sign Out
+//  Contains: Profile, Journey Status, Learn, Chat, Settings, Sign Out
 //
 
 import SwiftUI
@@ -11,9 +11,12 @@ import SwiftUI
 struct SideMenuView: View {
     @EnvironmentObject var authManager: AuthStateManager
     @StateObject private var profileViewModel = ProfileViewModel()
+    @ObservedObject private var journeyState = JourneyStateService.shared
     @Binding var isShowing: Bool
     @Binding var showEducation: Bool
     @Binding var showCoachChat: Bool
+    @Binding var showOnboarding: Bool
+    @Binding var showTour: Bool
 
     @State private var showSignOutAlert = false
 
@@ -41,7 +44,20 @@ struct SideMenuView: View {
                     // Profile Header
                     profileHeader
                         .padding(.top, 8)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 16)
+
+                    // Journey Status Card (shows onboarding progress or cycle status)
+                    if journeyState.shouldShowStatusCard {
+                        JourneyStatusCard(
+                            state: journeyState.state,
+                            onContinue: {
+                                showOnboarding = true
+                                closeMenu()
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                    }
 
                     Divider()
                         .padding(.horizontal)
@@ -91,15 +107,6 @@ struct SideMenuView: View {
                                 closeMenu()
                             }
 
-                            // Change Password
-                            SideMenuNavItem(
-                                icon: "lock.fill",
-                                title: "Change Password",
-                                destination: ChangePasswordView()
-                            ) {
-                                closeMenu()
-                            }
-
                             // Unit Preferences
                             SideMenuNavItem(
                                 icon: "ruler.fill",
@@ -118,28 +125,18 @@ struct SideMenuView: View {
                                 closeMenu()
                             }
 
-                            #if DEBUG
-                            // Debug section
-                            Divider()
-                                .padding(.vertical, 12)
-                                .padding(.horizontal)
-
-                            Text("DEBUG")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 20)
-                                .padding(.bottom, 8)
-
-                            SideMenuNavItem(
-                                icon: "stethoscope",
-                                title: "HealthKit Test",
-                                destination: HealthKitTestView()
+                            // Replay Tour
+                            SideMenuItem(
+                                icon: "sparkles",
+                                title: "Replay Tour",
+                                color: .purple
                             ) {
+                                // Close menu first, then show tour after animation completes
                                 closeMenu()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    showTour = true
+                                }
                             }
-                            #endif
 
                             Divider()
                                 .padding(.vertical, 12)
@@ -190,6 +187,7 @@ struct SideMenuView: View {
         }
         .task {
             await profileViewModel.loadProfile()
+            await journeyState.loadState()
         }
     }
 
@@ -304,7 +302,9 @@ struct SideMenuNavItem<Destination: View>: View {
     SideMenuView(
         isShowing: .constant(true),
         showEducation: .constant(false),
-        showCoachChat: .constant(false)
+        showCoachChat: .constant(false),
+        showOnboarding: .constant(false),
+        showTour: .constant(false)
     )
     .environmentObject(AuthStateManager())
 }

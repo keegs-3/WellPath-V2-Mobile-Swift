@@ -11,23 +11,68 @@ import SwiftUI
 
 struct MyDataLandingView: View {
     @EnvironmentObject private var displayConfig: DisplayConfigurationService
+    @EnvironmentObject private var searchState: WellPathDataSearchState
     @StateObject private var favoritesService = FavoritesService.shared
 
+    /// Sections to display (excludes favorites - accessible via toolbar star)
+    private var displayedSections: [DataSection] {
+        DataSection.allCases.filter { $0 != .favorites }
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // Section cards
-                ForEach(DataSection.allCases) { section in
-                    NavigationLink(destination: sectionDestination(for: section)) {
-                        SectionCard(section: section, favoritesCount: favoritesCount(for: section))
+        VStack(spacing: 0) {
+            // Search bar when search is active
+            if searchState.isSearchActive {
+                searchBar
+            }
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    // Section cards (favorites excluded - accessible via toolbar star)
+                    ForEach(displayedSections) { section in
+                        NavigationLink(destination: sectionDestination(for: section)) {
+                            LandingSectionCard(section: section)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 100) // Space for tab bar
+            }
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("Search all data...", text: $searchState.searchText)
+                    .textFieldStyle(.plain)
+
+                if !searchState.searchText.isEmpty {
+                    Button {
+                        searchState.clearSearchText()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 100) // Space for tab bar
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(uiColor: .systemBackground))
+            .cornerRadius(12)
+
+            Button("Cancel") {
+                searchState.deactivateSearch()
+            }
+            .foregroundColor(.blue)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(Color(uiColor: .systemGroupedBackground))
     }
 
@@ -108,11 +153,10 @@ enum DataSection: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Section Card (Oura-style with gradient)
+// MARK: - Landing Section Card (matches DatabaseCategoryCard aesthetic)
 
-struct SectionCard: View {
+struct LandingSectionCard: View {
     let section: DataSection
-    var favoritesCount: Int = 0
     @ObservedObject private var displayConfig = DisplayConfigurationService.shared
 
     private var sectionColor: Color {
@@ -128,62 +172,79 @@ struct SectionCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            // Icon with gradient background
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: [sectionColor.opacity(0.9), sectionColor.opacity(0.5)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 60, height: 60)
-
+        VStack(alignment: .leading, spacing: 12) {
+            // Top row: Icon + Name + Score ring
+            HStack(alignment: .top) {
+                // Small circular icon (matches DatabaseCategoryCard)
                 Image(systemName: sectionIcon)
-                    .font(.title)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-            }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(sectionColor)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(sectionColor.opacity(0.2))
+                    )
 
-            // Text
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(section.title)
                         .font(.headline)
+                        .fontWeight(.semibold)
                         .foregroundColor(.primary)
 
-                    if section == .favorites && favoritesCount > 0 {
-                        Text("\(favoritesCount)")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(sectionColor)
-                            .clipShape(Capsule())
-                    }
+                    Text("NOT SCORED")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
                 }
 
-                Text(section.subtitle)
-                    .font(.subheadline)
+                Spacer()
+
+                // Score ring placeholder
+                ZStack {
+                    // Background ring
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 3)
+                        .frame(width: 44, height: 44)
+
+                    // Score text placeholder
+                    Text("--")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .fontWeight(.semibold)
                     .foregroundColor(.secondary)
-                    .lineLimit(1)
             }
 
-            Spacer()
-
-            // Chevron
-            Image(systemName: "chevron.right")
-                .font(.body)
+            // Description
+            Text(section.subtitle)
+                .font(.subheadline)
                 .foregroundColor(.secondary)
+                .lineLimit(2)
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .shadow(color: sectionColor.opacity(0.1), radius: 8, x: 0, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    sectionColor.opacity(0.15),
+                                    sectionColor.opacity(0.05)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(sectionColor.opacity(0.25), lineWidth: 1)
+                )
         )
     }
 }

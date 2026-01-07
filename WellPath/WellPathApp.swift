@@ -10,8 +10,12 @@ import Supabase
 
 @main
 struct WellPathApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     @StateObject private var syncService = HealthKitSyncService.shared
     @StateObject private var displayConfig = DisplayConfigurationService.shared
+    @StateObject private var pushService = PushNotificationService.shared
+    @StateObject private var scoreCache = ScoreCacheService.shared
 
     private let supabase = SupabaseManager.shared.client
 
@@ -32,8 +36,18 @@ struct WellPathApp: App {
                         await performInitialSync()
                     }
 
+                    // Request push notification permission in background
+                    Task {
+                        await requestPushNotifications()
+                    }
+
                     // Run cache sync in background - don't block UI
                     performCacheSync()
+
+                    // Pre-load behavioral scores for fast UI rendering
+                    Task {
+                        await preloadScores()
+                    }
                 }
         }
     }
@@ -72,6 +86,29 @@ struct WellPathApp: App {
         // TODO: Refactor LocalCacheManager to use background ModelContext
         // For now, data is fetched on-demand when views load
         print("📡 Cache sync disabled - data will be fetched on-demand")
+    }
+
+    private func preloadScores() async {
+        // Check if user is authenticated before loading scores
+        guard (try? await supabase.auth.session) != nil else {
+            print("📊 Skipping score preload - user not authenticated")
+            return
+        }
+
+        print("📊 Pre-loading behavioral scores...")
+        await scoreCache.loadTodayScores()
+    }
+
+    private func requestPushNotifications() async {
+        // Check if user is authenticated before requesting
+        guard (try? await supabase.auth.session) != nil else {
+            print("🔔 Skipping push notification request - user not authenticated")
+            return
+        }
+
+        // Request permission and register for remote notifications
+        let granted = await pushService.requestAuthorization()
+        print("🔔 Push notification permission: \(granted ? "granted" : "denied")")
     }
 
     // MARK: - Deep Link Handling

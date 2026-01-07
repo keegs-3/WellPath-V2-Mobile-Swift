@@ -38,7 +38,7 @@ patient_baseline_samples (survey-derived baseline, e.g., 3750 steps)
     ↓
 behavioral_threshold_config (rules for overwriting baseline)
     ↓
-aggregation_results_cache (actual tracked data)
+patient_quantity_samples (actual tracked data - steps, food components, etc.)
     ↓
 Threshold logic: "Need X days of data to override baseline score"
 ```
@@ -115,11 +115,13 @@ This is the most complex component of WellPath. Clean up displays first to valid
 - `behavioral_threshold_config` - Override rules
 
 ### Data Sources
-- `patient_clinical_samples` - Lab results
-- `patient_quantity_samples` - Tracked quantities
+- `patient_clinical_samples` - Biomarker/lab results
+- `patient_category_samples` - Sleep sessions, food logs, assessments
+- `patient_quantity_samples` - Steps, heart rate, food components
 - `patient_baseline_samples` - Survey-derived baselines
+- `patient_correlation_samples` - Blood pressure (paired readings)
 - `patient_survey_responses` - Raw survey answers
-- `aggregation_results_cache` - Aggregated tracked data
+- `patient_sleep_sessions_summary` (VIEW) - Pre-aggregated sleep data
 
 ### Display
 - `display_views` - View configuration

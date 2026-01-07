@@ -49,6 +49,9 @@ struct ProteinScoreDetailView: View {
     // Baseline data
     @State private var baselineData: ProteinSummaryData = .empty
 
+    // Tier configuration from database
+    @State private var tierConfig: TierConfig?
+
     @StateObject private var unitPrefs = UnitPreferencesViewModel()
 
     enum ScoreTab: String, CaseIterable {
@@ -89,6 +92,7 @@ struct ProteinScoreDetailView: View {
             }
             .task {
                 await unitPrefs.loadPreferences()
+                await loadTierConfig()
                 await loadTodayData()
                 await loadBaselineData()
                 await loadScoreHistory()
@@ -98,7 +102,8 @@ struct ProteinScoreDetailView: View {
                     date: date,
                     score: scoreHistory[dateString(for: date)],
                     color: color,
-                    viewModel: viewModel
+                    viewModel: viewModel,
+                    tierConfig: tierConfig
                 )
             }
         }
@@ -129,7 +134,8 @@ struct ProteinScoreDetailView: View {
                         data: todayData,
                         color: color,
                         usePounds: unitPrefs.weightUnit == .lb,
-                        viewModel: viewModel
+                        viewModel: viewModel,
+                        tierConfig: tierConfig
                     )
                 }
 
@@ -148,7 +154,7 @@ struct ProteinScoreDetailView: View {
     private var baselineTabContent: some View {
         VStack(spacing: 20) {
             ScoreRingPill(
-                score: viewModel.scoreValue,
+                score: viewModel.baselineCompositeScore,
                 iconName: "fish.fill",
                 label: "Baseline",
                 size: 90
@@ -174,7 +180,8 @@ struct ProteinScoreDetailView: View {
                 color: color,
                 usePounds: unitPrefs.weightUnit == .lb,
                 viewModel: viewModel,
-                showIcon: true
+                showIcon: true,
+                tierConfig: tierConfig
             )
 
             if let explanation = viewModel.scoringExplanation {
@@ -432,6 +439,91 @@ struct ProteinScoreDetailView: View {
 
     // MARK: - Data Loading
 
+    private func loadTierConfig() async {
+        do {
+            let client = SupabaseManager.shared.client
+
+            // Load tier configuration from scoring_thresholds
+            struct DBTier: Codable {
+                let tierId: String      // threshold_key
+                let tierName: String?   // display_name
+                let tierDescription: String?  // display_description
+                let targetPercentage: Double  // target_value
+                let multiplier: Double  // weight
+                let displayOrder: Int?
+
+                enum CodingKeys: String, CodingKey {
+                    case tierId = "threshold_key"
+                    case tierName = "display_name"
+                    case tierDescription = "display_description"
+                    case targetPercentage = "target_value"
+                    case multiplier = "weight"
+                    case displayOrder = "display_order"
+                }
+            }
+
+            let tierResults: [DBTier] = try await client
+                .from("scoring_thresholds")
+                .select("threshold_key, display_name, display_description, target_value, weight, display_order")
+                .eq("view_id", value: "DISP_PROTEIN_TYPE")
+                .eq("threshold_type", value: "tier")
+                .eq("is_active", value: true)
+                .order("display_order", ascending: true)
+                .execute()
+                .value
+
+            // Load protein types with their tier_key from sample_category_types_reference
+            struct DBTierType: Codable {
+                let referenceKey: String
+                let tierKey: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case referenceKey = "reference_key"
+                    case tierKey = "tier_key"
+                }
+            }
+
+            let tierTypeResults: [DBTierType] = try await client
+                .from("sample_category_types_reference")
+                .select("reference_key, tier_key")
+                .eq("reference_category", value: "protein_types")
+                .eq("is_active", value: true)
+                .execute()
+                .value
+
+            var tiers: [TierConfig.Tier] = []
+            for dbTier in tierResults {
+                let proteinTypes = tierTypeResults
+                    .filter { $0.tierKey == dbTier.tierId }
+                    .map { $0.referenceKey }
+
+                tiers.append(TierConfig.Tier(
+                    tierId: dbTier.tierId,
+                    tierName: dbTier.tierName ?? dbTier.tierId,
+                    targetPercentage: Int(dbTier.targetPercentage),
+                    multiplier: dbTier.multiplier,
+                    proteinTypes: proteinTypes,
+                    tierDescription: dbTier.tierDescription ?? "",
+                    displayOrder: dbTier.displayOrder ?? 0
+                ))
+            }
+
+            tierConfig = TierConfig(tiers: tiers)
+        } catch {
+            print("Error loading tier config: \(error)")
+        }
+    }
+
+    private func getTierForProteinType(_ proteinType: String) -> String? {
+        guard let config = tierConfig else { return nil }
+        for tier in config.tiers {
+            if tier.proteinTypes.contains(proteinType) {
+                return tier.tierId
+            }
+        }
+        return nil
+    }
+
     private func loadTodayData() async {
         do {
             let client = SupabaseManager.shared.client
@@ -485,11 +577,18 @@ struct ProteinScoreDetailView: View {
             for sample in samples {
                 totalGrams += sample.canonicalValue
                 if let type = sample.proteinType {
-                    if ["fish", "legumes", "poultry", "eggs"].contains(where: { type.lowercased().contains($0) }) {
-                        tier1Grams += sample.canonicalValue
-                    } else if ["processed", "bacon", "sausage", "red_meat", "beef", "pork"].contains(where: { type.lowercased().contains($0) }) {
-                        tier3Grams += sample.canonicalValue
+                    // Use database tier config instead of hardcoded strings
+                    if let tierId = getTierForProteinType(type) {
+                        switch tierId {
+                        case "PROTEIN_TIER_1":
+                            tier1Grams += sample.canonicalValue
+                        case "PROTEIN_TIER_3":
+                            tier3Grams += sample.canonicalValue
+                        default:
+                            tier2Grams += sample.canonicalValue
+                        }
                     } else {
+                        // Fallback to Tier 2 for unknown types
                         tier2Grams += sample.canonicalValue
                     }
                 }
@@ -528,16 +627,17 @@ struct ProteinScoreDetailView: View {
         let ratioValue = viewModel.baselines["daily_protein_ratio"] ?? 0
         let weight = viewModel.baselines["body_mass_kg"] ?? 0
 
+        // Use scores from behavioral_scores view
         baselineData = ProteinSummaryData(
             grams: grams,
-            tier1Pct: 0, // Baseline doesn't have tier breakdown
-            tier2Pct: 0,
-            tier3Pct: 0,
+            tier1Pct: viewModel.baselines["protein_tier1_pct"] ?? 0,
+            tier2Pct: viewModel.baselines["protein_tier2_pct"] ?? 0,
+            tier3Pct: viewModel.baselines["protein_tier3_pct"] ?? 0,
             ratio: ratioValue,
             weight: weight,
-            typeScore: viewModel.typeScore,
-            ratioScore: viewModel.ratioScore,
-            overallScore: viewModel.scoreValue
+            typeScore: viewModel.baselineTypeScore,
+            ratioScore: viewModel.baselineRatioScore,
+            overallScore: viewModel.baselineCompositeScore
         )
     }
 
@@ -556,7 +656,7 @@ struct ProteinScoreDetailView: View {
                 .from("patient_quantity_samples")
                 .select("canonical_value")
                 .eq("patient_id", value: userId)
-                .eq("quantity_type", value: "body_mass_kg")
+                .eq("quantity_type", value: "bodyweight")
                 .order("start_time", ascending: false)
                 .limit(1)
                 .execute()
@@ -575,7 +675,7 @@ struct ProteinScoreDetailView: View {
                 .from("patient_baseline_samples")
                 .select("value")
                 .eq("patient_id", value: userId)
-                .eq("baseline_type", value: "body_mass_kg")
+                .eq("baseline_type", value: "bodyweight_kg")
                 .eq("is_current", value: true)
                 .limit(1)
                 .execute()
@@ -644,6 +744,7 @@ struct ProteinSummaryCard: View {
     let usePounds: Bool
     let viewModel: ProteinScoreViewModel
     var showIcon: Bool = false
+    var tierConfig: TierConfig? = nil
 
     @State private var isExpanded = false
 
@@ -791,9 +892,24 @@ struct ProteinSummaryCard: View {
                 .fontWeight(.medium)
 
             HStack(spacing: 16) {
-                tierRow(label: "Tier 1", pct: data.tier1Pct, color: MetricsUIConfig.tierGood, description: "Fish, legumes, poultry")
-                tierRow(label: "Tier 2", pct: data.tier2Pct, color: MetricsUIConfig.tierMedium, description: "Dairy, other")
-                tierRow(label: "Tier 3", pct: data.tier3Pct, color: MetricsUIConfig.tierPoor, description: "Red/processed meat")
+                tierRow(
+                    label: tierConfig?.tiers.first { $0.tierId == "PROTEIN_TIER_1" }?.tierName ?? "Tier 1",
+                    pct: data.tier1Pct,
+                    color: MetricsUIConfig.tierGood,
+                    description: tierConfig?.tiers.first { $0.tierId == "PROTEIN_TIER_1" }?.tierDescription ?? "Best sources"
+                )
+                tierRow(
+                    label: tierConfig?.tiers.first { $0.tierId == "PROTEIN_TIER_2" }?.tierName ?? "Tier 2",
+                    pct: data.tier2Pct,
+                    color: MetricsUIConfig.tierMedium,
+                    description: tierConfig?.tiers.first { $0.tierId == "PROTEIN_TIER_2" }?.tierDescription ?? "Good sources"
+                )
+                tierRow(
+                    label: tierConfig?.tiers.first { $0.tierId == "PROTEIN_TIER_3" }?.tierName ?? "Tier 3",
+                    pct: data.tier3Pct,
+                    color: MetricsUIConfig.tierPoor,
+                    description: tierConfig?.tiers.first { $0.tierId == "PROTEIN_TIER_3" }?.tierDescription ?? "Limit intake"
+                )
             }
         }
         .padding()
@@ -851,7 +967,7 @@ struct ProteinSummaryCard: View {
                         .frame(width: 24)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(component.displayName)
+                        Text(component.displayName ?? component.componentScoreType)
                             .font(.subheadline)
                         if let desc = component.description {
                             Text(desc)
@@ -901,6 +1017,7 @@ struct ProteinDayDetailView: View {
     let score: Int?
     let color: Color
     @ObservedObject var viewModel: ProteinScoreViewModel
+    var tierConfig: TierConfig? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var dayData: ProteinSummaryData = .empty
@@ -945,7 +1062,8 @@ struct ProteinDayDetailView: View {
                             data: dayData,
                             color: color,
                             usePounds: unitPrefs.weightUnit == .lb,
-                            viewModel: viewModel
+                            viewModel: viewModel,
+                            tierConfig: tierConfig
                         )
                     }
                 }
@@ -978,6 +1096,16 @@ struct ProteinDayDetailView: View {
         else if score >= 60 { return "Good" }
         else if score >= 40 { return "Fair" }
         else { return "Needs Improvement" }
+    }
+
+    private func getTierForProteinType(_ proteinType: String) -> String? {
+        guard let config = tierConfig else { return nil }
+        for tier in config.tiers {
+            if tier.proteinTypes.contains(proteinType) {
+                return tier.tierId
+            }
+        }
+        return nil
     }
 
     private func loadDayData() async {
@@ -1059,11 +1187,18 @@ struct ProteinDayDetailView: View {
             for sample in samples {
                 totalGrams += sample.canonicalValue
                 if let type = sample.proteinType {
-                    if ["fish", "legumes", "poultry", "eggs"].contains(where: { type.lowercased().contains($0) }) {
-                        tier1Grams += sample.canonicalValue
-                    } else if ["processed", "bacon", "sausage", "red_meat", "beef", "pork"].contains(where: { type.lowercased().contains($0) }) {
-                        tier3Grams += sample.canonicalValue
+                    // Use database tier config instead of hardcoded strings
+                    if let tierId = getTierForProteinType(type) {
+                        switch tierId {
+                        case "PROTEIN_TIER_1":
+                            tier1Grams += sample.canonicalValue
+                        case "PROTEIN_TIER_3":
+                            tier3Grams += sample.canonicalValue
+                        default:
+                            tier2Grams += sample.canonicalValue
+                        }
                     } else {
+                        // Fallback to Tier 2 for unknown types
                         tier2Grams += sample.canonicalValue
                     }
                 }
@@ -1085,7 +1220,7 @@ struct ProteinDayDetailView: View {
                 .from("patient_quantity_samples")
                 .select("canonical_value")
                 .eq("patient_id", value: userId.uuidString)
-                .eq("quantity_type", value: "body_mass_kg")
+                .eq("quantity_type", value: "bodyweight")
                 .lte("aggregation_date", value: dateString)
                 .order("start_time", ascending: false)
                 .limit(1)

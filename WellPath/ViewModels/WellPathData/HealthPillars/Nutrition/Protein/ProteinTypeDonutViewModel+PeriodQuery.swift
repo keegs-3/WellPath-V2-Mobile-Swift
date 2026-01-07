@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Extension to query protein type data for specific periods
-//  Queries patient_quantity_samples directly and groups by protein_type metadata
+//  Queries patient_quantity_samples directly and groups by protein_types metadata
 //
 
 import Foundation

@@ -14,6 +14,7 @@ struct ProteinScreen: View {
     let color: Color
 
     @StateObject private var scoreViewModel = ProteinScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "protein_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -21,15 +22,23 @@ struct ProteinScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Protein Score Card - taps to detail
-                // Show card if user has baseline/tracked score OR has daily score
-                if scoreViewModel.hasScore || scoreViewModel.hasDailyScore {
-                    ProteinScoreCard(color: color, viewModel: scoreViewModel)
-                } else {
-                    ProteinScoreEmptyCard(color: color) {
+                // Protein Score Card - always shown, handles empty state internally
+                MetricScoreCard(
+                    config: .protein,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "Protein Score",
+                            iconName: "fork.knife",
+                            color: color
+                        )
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card components
                 ProteinAmountCard(color: color, pillar: pillar)

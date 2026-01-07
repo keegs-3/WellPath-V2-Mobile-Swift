@@ -272,7 +272,6 @@ struct QuantityTypes {
     static let wholeGrainsServings = "whole_grains_servings"
     static let fruitsServings = "fruits_servings"
     static let nutsSeedsServings = "nuts_seeds_servings"
-    static let hydrationOunces = "hydration_ounces"
     static let waterMl = "water_ml"
     static let carbGrams = "carbs_grams"
     static let fiberGrams = "fiber_grams"
@@ -286,10 +285,11 @@ struct QuantityTypes {
 
     // Movement
     static let steps = "steps"
-    static let strengthDuration = "strength_duration"
-    static let cardioDuration = "cardio_duration"
+    static let strengthTraining = "strength_training"
+    static let cardio = "cardio"
+    static let hiit = "hiit"
+    static let mobility = "mobility"
     static let yogaDuration = "yoga_duration"
-    static let hiitDuration = "hiit_duration"
     static let flexibilityDuration = "flexibility_duration"
 
     // Activity (from HealthKit)
@@ -300,6 +300,9 @@ struct QuantityTypes {
     static let distanceWalkingRunning = "distance_walking_running"
     static let distanceCycling = "distance_cycling"
     static let flightsClimbed = "flights_climbed"
+
+    // Daily Activity (manual tracking)
+    static let exerciseSnacks = "exercise_snacks"
 
     // Physical / Biometrics
     static let weight = "bodyweight"
@@ -371,7 +374,7 @@ struct FoodMetadataKeys {
 
 /// Standard metadata keys for protein samples
 struct ProteinMetadataKeys {
-    static let proteinType = "protein_type"
+    static let proteinType = "protein_types"
 }
 
 /// Standard metadata keys for workout samples

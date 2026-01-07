@@ -3,7 +3,8 @@
 //  WellPath
 //
 //  Card-based layout for Fats metric.
-//  Shows cards: Amount, Type.
+//  Shows score card at top, then 2 cards: Amount, Type.
+//  Follows ProteinScreen pattern for behavioral scores.
 //
 
 import SwiftUI
@@ -12,16 +13,28 @@ struct FatsScreen: View {
     let pillar: String
     let color: Color
 
+    @StateObject private var scoreViewModel = FatsScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
-
-    private var screenIcon: String {
-        MetricsUIConfig.getIcon(for: "Fats")
-    }
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Fats Score Card - taps to detail (show if baseline wizard completed)
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
+                    MetricScoreCard(
+                        config: .fats,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        FatsScoreDetailView(viewModel: scoreViewModel, color: color)
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: .fats, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
                 // Reusable card components
                 FatsAmountCard(color: color, pillar: pillar)
@@ -43,10 +56,18 @@ struct FatsScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -55,6 +76,12 @@ struct FatsScreen: View {
         }
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color, initialCategory: .fats)
+        }
+        .sheet(isPresented: $showingBaseline) {
+            FatsWizardView()
+        }
+        .task {
+            await scoreViewModel.loadData()
         }
     }
 }

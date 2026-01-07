@@ -29,10 +29,10 @@ struct LiquidGlassTabBar: View {
 
     private var tabsBubble: some View {
         HStack(spacing: 0) {
-            // Today
+            // Goals
             TabBarIcon(
                 icon: "sun.max",
-                label: "Today",
+                label: "Goals",
                 isSelected: selectedTab == 0
             ) {
                 withAnimation(.easeInOut(duration: 0.2)) {

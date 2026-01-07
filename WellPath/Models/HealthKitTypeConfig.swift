@@ -56,7 +56,8 @@ struct HealthKitTypeRegistry {
     /// All quantity types to sync from HealthKit
     static let quantityConfigs: [HealthKitQuantityConfig] = [
         // Vitals
-        .init(hkIdentifier: .heartRate, dbQuantityType: QuantityTypes.heartRate, hkUnit: .count().unitDivided(by: .minute()), dbUnit: "beats_per_minute", displayName: "Heart Rate", category: .vitals),
+        // DISABLED: heart_rate creates too much data (500k+ samples), slowing everything down
+        // .init(hkIdentifier: .heartRate, dbQuantityType: QuantityTypes.heartRate, hkUnit: .count().unitDivided(by: .minute()), dbUnit: "beats_per_minute", displayName: "Heart Rate", category: .vitals),
         .init(hkIdentifier: .heartRateVariabilitySDNN, dbQuantityType: QuantityTypes.hrv, hkUnit: .secondUnit(with: .milli), dbUnit: "millisecond", displayName: "HRV", category: .vitals),
         .init(hkIdentifier: .restingHeartRate, dbQuantityType: QuantityTypes.restingHeartRate, hkUnit: .count().unitDivided(by: .minute()), dbUnit: "beats_per_minute", displayName: "Resting Heart Rate", category: .vitals),
         .init(hkIdentifier: .walkingHeartRateAverage, dbQuantityType: QuantityTypes.walkingHeartRate, hkUnit: .count().unitDivided(by: .minute()), dbUnit: "beats_per_minute", displayName: "Walking Heart Rate", category: .vitals),
@@ -119,7 +120,8 @@ struct HealthKitTypeRegistry {
         .init(activityType: .soccer, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Soccer", workoutSubtype: "soccer"),
         .init(activityType: .basketball, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Basketball", workoutSubtype: "basketball"),
         .init(activityType: .tennis, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Tennis", workoutSubtype: "tennis"),
-        .init(activityType: .dance, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Dance", workoutSubtype: "dancing"),
+        .init(activityType: .cardioDance, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Dance", workoutSubtype: "dancing"),
+        .init(activityType: .socialDance, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Dance", workoutSubtype: "dancing"),
         .init(activityType: .baseball, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Baseball", workoutSubtype: "baseball"),
         .init(activityType: .volleyball, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Volleyball", workoutSubtype: "volleyball"),
         .init(activityType: .hockey, wellpathCategory: "cardio", quantityType: "cardio", displayName: "Hockey", workoutSubtype: "hockey"),

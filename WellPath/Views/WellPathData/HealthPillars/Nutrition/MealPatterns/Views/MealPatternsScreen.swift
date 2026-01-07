@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Card-based layout for Meal Patterns metrics.
-//  Shows cards: Meal Type, Whole Food, Plant-Based, Homemade.
+//  Shows score card at top, then Meal Type, Whole Food, Plant-Based, Homemade cards.
 //
 
 import SwiftUI
@@ -12,12 +12,28 @@ struct MealPatternsScreen: View {
     let pillar: String
     let color: Color
 
+    @StateObject private var scoreViewModel = MealPatternsScoreViewModel()
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
+    @State private var showingBaseline = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                // Meal Patterns Score Card (show if baseline wizard completed)
+                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
+                    MetricScoreCard(
+                        config: .mealPatterns,
+                        color: color,
+                        viewModel: scoreViewModel
+                    ) {
+                        MealPatternsScoreDetailView(viewModel: scoreViewModel, color: color)
+                    }
+                } else {
+                    MetricScoreEmptyCard(config: .mealPatterns, color: color) {
+                        showingBaseline = true
+                    }
+                }
 
                 // Reusable card components
                 MealTypeCard(color: color, pillar: pillar)
@@ -41,10 +57,18 @@ struct MealPatternsScreen: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingEntryForm = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Button {
+                        showingBaseline = true
+                    } label: {
+                        Image(systemName: "book.fill")
+                    }
+
+                    Button {
+                        showingEntryForm = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -53,6 +77,18 @@ struct MealPatternsScreen: View {
         }
         .sheet(isPresented: $showingDataManagement) {
             NutritionDataManagementView(color: color)
+        }
+        .sheet(isPresented: $showingBaseline) {
+            SimpleBaselineWizardView(
+                baselineViewId: "BASELINE_VIEW_MEAL_PATTERNS",
+                categoryId: "CAT_MEAL_PATTERNS",
+                categoryName: "Meal Patterns",
+                scoreId: "SCORE_MEAL_PATTERNS",
+                scoreType: "meal_patterns_score"
+            )
+        }
+        .task {
+            await scoreViewModel.loadData()
         }
     }
 }

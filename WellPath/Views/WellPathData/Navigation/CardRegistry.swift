@@ -103,6 +103,10 @@ enum CardRegistry {
         case "DISP_WHOLE_GRAINS_TYPE":
             WholeGrainsTypeCard(color: color, pillar: pillar)
 
+        // MARK: - Water/Hydration Cards
+        case "DISP_WATER_ML", "CARD_WATER_ML", "DISP_HYDRATION", "CARD_HYDRATION":
+            WaterAmountCard(color: color, pillar: pillar)
+
         // MARK: - Sleep Analysis Cards (database-driven viewId)
         case "DISP_SLEEP_STAGES":
             SleepStagesCard(color: color, pillar: pillar, viewId: metricId)
@@ -113,10 +117,26 @@ enum CardRegistry {
         case "DISP_SLEEP_COMPARISONS":
             SleepComparisonsCard(color: color, pillar: pillar, viewId: metricId)
 
+        // MARK: - Sleep Assessment Cards
+        case "DISP_SLEEP_ROUTINE":
+            SleepRoutineCard(color: color, pillar: pillar)
+        case "DISP_SLEEP_ENVIRONMENT":
+            SleepEnvironmentCard(color: color, pillar: pillar)
+
+        // MARK: - Mental Health Assessment Cards
+        case "DISP_WELLBEING":
+            WellBeingCard(color: color, pillar: pillar)
+        case "DISP_ANXIETY":
+            AnxietyCard(color: color, pillar: pillar)
+        case "DISP_DEPRESSION":
+            DepressionCard(color: color, pillar: pillar)
+        case "DISP_STRESS":
+            StressCard(color: color, pillar: pillar)
+
         // MARK: - Sleep Duration & Consistency (simple cards)
-        case "CARD_SLEEP_DURATION", "DISP_SLEEP_DURATION":
+        case "CARD_SLEEP_DURATION", "DISP_SLEEP_DURATION", "SCREEN_SLEEP_DURATION":
             SleepDurationCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_SLEEP")
-        case "CARD_SLEEP_CONSISTENCY", "DISP_SLEEP_CONSISTENCY":
+        case "CARD_SLEEP_CONSISTENCY", "DISP_SLEEP_CONSISTENCY", "SCREEN_SLEEP_CONSISTENCY":
             SleepConsistencyCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_SLEEP")
 
         // MARK: - Steps (direct-to-view metric)
@@ -133,9 +153,19 @@ enum CardRegistry {
         case "CARD_MOBILITY_DURATION", "DISP_MOBILITY_DURATION":
             MobilityDurationCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
 
+        // MARK: - Daily Activity Cards
+        case "CARD_MOVE_MINUTES", "DISP_MOVE_MINUTES":
+            MoveMinutesCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "CARD_STAND_TIME", "DISP_STAND_TIME":
+            StandTimeCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "CARD_ACTIVE_CALORIES", "DISP_ACTIVE_CALORIES":
+            ActiveCaloriesCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+        case "CARD_EXERCISE_SNACKS", "DISP_EXERCISE_SNACKS":
+            ExerciseSnacksCard(color: color, pillar: pillar, sectionId: sectionId ?? "NAV_MOVEMENT")
+
         // MARK: - Default (Generic Card)
         default:
-            GenericMetricCard(metricId: metricId, color: color, pillar: pillar)
+            GenericMetricCard(metricId: metricId, color: color, pillar: pillar, displayName: displayName)
         }
         }
     }
@@ -162,6 +192,12 @@ enum CardRegistry {
         // Sleep Analysis
         case "DISP_SLEEP_STAGES", "DISP_SLEEP_AMOUNTS", "DISP_SLEEP_PERCENTAGES", "DISP_SLEEP_COMPARISONS":
             return true
+        // Sleep Assessments
+        case "DISP_SLEEP_ROUTINE", "DISP_SLEEP_ENVIRONMENT":
+            return true
+        // Mental Health Assessments
+        case "DISP_WELLBEING", "DISP_ANXIETY", "DISP_DEPRESSION", "DISP_STRESS":
+            return true
         // Sleep Duration & Consistency
         case "DISP_SLEEP_DURATION", "DISP_SLEEP_CONSISTENCY",
              "CARD_SLEEP_DURATION", "CARD_SLEEP_CONSISTENCY":
@@ -175,9 +211,24 @@ enum CardRegistry {
              "DISP_HIIT_DURATION", "CARD_HIIT_DURATION",
              "DISP_MOBILITY_DURATION", "CARD_MOBILITY_DURATION":
             return true
+        // Daily Activity
+        case "DISP_MOVE_MINUTES", "CARD_MOVE_MINUTES",
+             "DISP_STAND_TIME", "CARD_STAND_TIME",
+             "DISP_ACTIVE_CALORIES", "CARD_ACTIVE_CALORIES",
+             "DISP_EXERCISE_SNACKS", "CARD_EXERCISE_SNACKS":
+            return true
         default:
             return false
         }
+    }
+
+    /// Returns just the destination view for a card (for search results)
+    /// This routes to the detail view without the MetricCardView wrapper
+    @MainActor @ViewBuilder
+    static func destination(for cardId: String, color: Color, pillar: String, sectionId: String?) -> some View {
+        // Route to appropriate detail view based on cardId
+        // Use generic detail view that loads the right content
+        MetricDetailByIdView(viewId: cardId, pillar: pillar, color: color)
     }
 }
 
@@ -187,24 +238,45 @@ struct GenericMetricCard: View {
     let metricId: String
     let color: Color
     let pillar: String
+    let displayName: String?
 
     @StateObject private var viewModel: StandardMetricViewModel
 
-    init(metricId: String, color: Color, pillar: String) {
+    init(metricId: String, color: Color, pillar: String, displayName: String? = nil) {
         self.metricId = metricId
         self.color = color
         self.pillar = pillar
+        self.displayName = displayName
         _viewModel = StateObject(wrappedValue: StandardMetricViewModel(metricId: metricId))
+    }
+
+    /// Format raw metric ID to human-readable title
+    private var formattedTitle: String {
+        // Use displayName if provided
+        if let displayName = displayName, !displayName.isEmpty {
+            return displayName
+        }
+        // Use loaded metric name
+        if let metricName = viewModel.displayMetric?.metricName {
+            return metricName
+        }
+        // Format the raw ID: DISP_SLEEP_DURATION -> Sleep Duration
+        return metricId
+            .replacingOccurrences(of: "DISP_", with: "")
+            .replacingOccurrences(of: "CARD_", with: "")
+            .replacingOccurrences(of: "SCREEN_", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
     }
 
     var body: some View {
         MetricCardView(
-            title: viewModel.displayMetric?.metricName ?? metricId,
+            title: formattedTitle,
             color: color,
             metricId: metricId,
             pillar: pillar
         ) {
-            GenericMiniCard(viewId: metricId, color: color)
+            GenericMiniCard(viewId: metricId, color: color, displayName: formattedTitle)
         } fullScreen: {
             MetricDetailByIdView(viewId: metricId, pillar: pillar, color: color)
         }

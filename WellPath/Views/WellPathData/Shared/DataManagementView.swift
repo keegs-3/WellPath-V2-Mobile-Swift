@@ -9,7 +9,7 @@ import SwiftUI
 
 struct DataManagementView: View {
     let metricName: String
-    let quantityTypes: [String]  // Quantity types to filter for this metric (e.g., "steps", "hydration_ounces")
+    let quantityTypes: [String]  // Quantity types to filter for this metric (e.g., "steps", "water_ml")
     let color: Color
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: DataManagementViewModel
@@ -427,7 +427,7 @@ struct DataEntry: Identifiable {
             return "Steps"
         case QuantityTypes.proteinGrams:
             return "Protein"
-        case QuantityTypes.hydrationOunces:
+        case QuantityTypes.waterMl:
             return "Water"
         case QuantityTypes.vegetablesServings:
             return "Vegetables"
@@ -437,9 +437,9 @@ struct DataEntry: Identifiable {
             return "Whole Grains"
         case QuantityTypes.fruitsServings:
             return "Fruits"
-        case QuantityTypes.strengthDuration:
+        case QuantityTypes.strengthTraining:
             return "Strength Training"
-        case QuantityTypes.cardioDuration:
+        case QuantityTypes.cardio:
             return "Cardio"
         case QuantityTypes.yogaDuration:
             return "Yoga"
@@ -481,8 +481,13 @@ struct DataEntry: Identifiable {
             return String(format: "%.1f servings", value)
         } else if quantityType == QuantityTypes.proteinGrams {
             return "\(Int(value))g"
-        } else if quantityType == QuantityTypes.hydrationOunces {
-            return "\(Int(value)) oz"
+        } else if quantityType == QuantityTypes.waterMl {
+            // Display in L if >= 1000mL, otherwise mL
+            if value >= 1000 {
+                return String(format: "%.1f L", value / 1000.0)
+            } else {
+                return "\(Int(value)) mL"
+            }
         } else if let unit = quantityUnit {
             return "\(Int(value)) \(unit)"
         } else {

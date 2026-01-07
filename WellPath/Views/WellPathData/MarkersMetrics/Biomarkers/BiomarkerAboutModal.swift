@@ -571,6 +571,173 @@ typealias BiomarkerAboutModal = MetricEducationModal
 typealias BiomarkerEducationContent = MetricEducationContent
 typealias BiomarkerEducationContentLoader = MetricEducationContentLoader
 
+// MARK: - Scoring Explanation Modal
+
+/// Simple modal to display scoring explanation from display_views
+struct ScoringExplanationModal: View {
+    let viewId: String
+    let title: String
+    let color: Color
+    @Binding var isPresented: Bool
+
+    @State private var explanation: String?
+    @State private var isLoading = true
+
+    private let supabase = SupabaseManager.shared.client
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 100)
+                    } else if let explanation = explanation {
+                        MarkdownTextView(markdown: explanation, color: color)
+                    } else {
+                        Text("Scoring explanation not available.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 100)
+                    }
+                }
+                .padding()
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+        .task {
+            await loadExplanation()
+        }
+    }
+
+    private func loadExplanation() async {
+        isLoading = true
+
+        do {
+            struct ViewRow: Decodable {
+                let scoringExplanation: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case scoringExplanation = "scoring_explanation"
+                }
+            }
+
+            let results: [ViewRow] = try await supabase
+                .from("display_views")
+                .select("scoring_explanation")
+                .eq("view_id", value: viewId)
+                .limit(1)
+                .execute()
+                .value
+
+            await MainActor.run {
+                self.explanation = results.first?.scoringExplanation
+                self.isLoading = false
+            }
+        } catch {
+            print("Error loading scoring explanation: \(error)")
+            await MainActor.run {
+                self.isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - Markdown Text View
+
+/// A view that renders markdown text with proper formatting
+/// Handles ## headers, **bold**, and bullet points
+struct MarkdownTextView: View {
+    let markdown: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(parseMarkdown().enumerated()), id: \.offset) { _, element in
+                switch element {
+                case .header(let text):
+                    Text(text)
+                        .font(.headline)
+                        .foregroundColor(color)
+                        .padding(.top, 8)
+                case .body(let text):
+                    if let attrString = try? AttributedString(markdown: text) {
+                        Text(attrString)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                    } else {
+                        Text(text)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                    }
+                case .bullet(let text):
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .font(.body)
+                            .foregroundColor(color)
+                        if let attrString = try? AttributedString(markdown: text) {
+                            Text(attrString)
+                                .font(.body)
+                                .foregroundColor(.primary)
+                        } else {
+                            Text(text)
+                                .font(.body)
+                                .foregroundColor(.primary)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private enum MarkdownElement {
+        case header(String)
+        case body(String)
+        case bullet(String)
+    }
+
+    private func parseMarkdown() -> [MarkdownElement] {
+        var elements: [MarkdownElement] = []
+        let lines = markdown.components(separatedBy: "\n")
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.isEmpty {
+                continue
+            } else if trimmed.hasPrefix("## ") {
+                let headerText = String(trimmed.dropFirst(3))
+                elements.append(.header(headerText))
+            } else if trimmed.hasPrefix("# ") {
+                let headerText = String(trimmed.dropFirst(2))
+                elements.append(.header(headerText))
+            } else if trimmed.hasPrefix("- ") {
+                let bulletText = String(trimmed.dropFirst(2))
+                elements.append(.bullet(bulletText))
+            } else if trimmed.hasPrefix("* ") {
+                let bulletText = String(trimmed.dropFirst(2))
+                elements.append(.bullet(bulletText))
+            } else {
+                elements.append(.body(trimmed))
+            }
+        }
+
+        return elements
+    }
+}
+
 // MARK: - Preview
 
 #Preview {

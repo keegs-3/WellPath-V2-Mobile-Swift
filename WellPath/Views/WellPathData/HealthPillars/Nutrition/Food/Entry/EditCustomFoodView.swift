@@ -428,7 +428,7 @@ struct EditCustomFoodView: View {
                 "fat_total_g": fat.isEmpty ? .null : .double(fatPer100g),
                 "carbs_g": carbs.isEmpty ? .null : .double(carbsPer100g),
                 "fiber_g": fiber.isEmpty ? .null : .double(fiberPer100g),
-                "protein_type": selectedProteinType == "protein_types_other" ? .null : .string(selectedProteinType),
+                "protein_types": selectedProteinType == "protein_types_other" ? .null : .string(selectedProteinType),
                 "fat_type": .string(selectedFatType),
                 "default_serving_grams": .double(servingSize),
                 "serving_description": servingDescription.isEmpty ? .null : .string(servingDescription)

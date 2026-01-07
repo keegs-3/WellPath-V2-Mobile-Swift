@@ -12,6 +12,7 @@ struct WaterAmountCard: View {
     let pillar: String
 
     @StateObject private var viewModel = StandardMetricViewModel(metricId: "DISP_WATER_ML")
+    @StateObject private var unitPrefs = UnitPreferencesViewModel()
 
     var body: some View {
         MetricCardView(
@@ -20,12 +21,13 @@ struct WaterAmountCard: View {
             metricId: "DISP_WATER_ML",
             pillar: pillar
         ) {
-            WaterAmountMiniCard(viewModel: viewModel, color: color)
+            WaterAmountMiniCard(viewModel: viewModel, color: color, liquidUnit: unitPrefs.liquidUnit)
         } fullScreen: {
             WaterAmountView(color: color)
         }
         .task {
             await viewModel.loadPrimaryScreen()
+            await unitPrefs.loadPreferences()
         }
     }
 }
@@ -35,6 +37,7 @@ struct WaterAmountCard: View {
 struct WaterAmountMiniCard: View {
     @ObservedObject var viewModel: StandardMetricViewModel
     let color: Color
+    let liquidUnit: LiquidDisplayUnit
 
     private let calendar = Calendar.current
 
@@ -64,9 +67,9 @@ struct WaterAmountMiniCard: View {
         return values.max() ?? 2000
     }
 
-    /// Convert ml to cups for display (1 cup = 237ml)
-    private func mlToCups(_ ml: Double) -> Double {
-        ml / 237.0
+    /// Convert mL to the user's preferred unit
+    private func convertFromMl(_ ml: Double) -> Double {
+        ml / liquidUnit.mlPerUnit
     }
 
     var body: some View {
@@ -85,11 +88,11 @@ struct WaterAmountMiniCard: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(formatCups(viewModel.todayValue))
+                            Text(formatValue(viewModel.todayValue))
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(color)
-                            Text("cups")
+                            Text(liquidUnit.shortLabel)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -152,13 +155,13 @@ struct WaterAmountMiniCard: View {
         return String(formatter.string(from: date).prefix(1))
     }
 
-    private func formatCups(_ mlValue: Double?) -> String {
+    private func formatValue(_ mlValue: Double?) -> String {
         guard let ml = mlValue else { return "--" }
-        let cups = mlToCups(ml)
-        if cups >= 10 {
-            return String(format: "%.0f", cups)
+        let converted = convertFromMl(ml)
+        if converted >= 10 {
+            return String(format: "%.0f", converted)
         } else {
-            return String(format: "%.1f", cups)
+            return String(format: "%.1f", converted)
         }
     }
 }
