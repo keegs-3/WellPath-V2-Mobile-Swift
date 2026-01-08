@@ -13,6 +13,7 @@ struct MealPatternsScreen: View {
     let color: Color
 
     @StateObject private var scoreViewModel = MealPatternsScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "meal_patterns_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -20,20 +21,24 @@ struct MealPatternsScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Meal Patterns Score Card (show if baseline wizard completed)
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
-                    MetricScoreCard(
-                        config: .mealPatterns,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
-                        MealPatternsScoreDetailView(viewModel: scoreViewModel, color: color)
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: .mealPatterns, color: color) {
+                // Meal Patterns Score Card
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: .mealPatterns,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "Meal Patterns Score",
+                            iconName: MetricsUIConfig.getIcon(for: "Meal Patterns"),
+                            color: color
+                        )
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card components
                 MealTypeCard(color: color, pillar: pillar)

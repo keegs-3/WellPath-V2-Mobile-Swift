@@ -184,18 +184,9 @@ struct CaffeineWizardView: View {
                 }
                 .padding()
             } else {
-                ForEach(viewModel.baselineQuestions) { question in
+                // Show non-cutoff questions first
+                ForEach(viewModel.baselineQuestions.filter { $0.questionId != "BQ_CAFFEINE_CUTOFF" }) { question in
                     switch question.questionId {
-                    case "BQ_CAFFEINE_CUTOFF":
-                        // Time picker for cutoff
-                        CaffeineCutoffTimePickerCard(
-                            question: question,
-                            value: Binding(
-                                get: { viewModel.getValue(for: question) },
-                                set: { viewModel.setValue($0, for: question) }
-                            ),
-                            color: viewModel.pillarColor
-                        )
                     case "BQ_CAFFEINE_TIER1_PCT":
                         // Slider for source percentage
                         CaffeineSourceSliderCard(
@@ -217,6 +208,15 @@ struct CaffeineWizardView: View {
                         )
                     }
                 }
+
+                // Timing distribution card (replaces cutoff time picker)
+                CaffeineTimingDistributionCard(
+                    morningPct: $viewModel.timingMorningPct,
+                    earlyAfternoonPct: $viewModel.timingEarlyAfternoonPct,
+                    lateAfternoonPct: $viewModel.timingLateAfternoonPct,
+                    eveningPct: $viewModel.timingEveningPct,
+                    color: viewModel.pillarColor
+                )
 
                 // Caffeine reference guide
                 caffeineReferenceGuide
@@ -288,13 +288,10 @@ struct CaffeineWizardView: View {
                         unit: "%"
                     )
                 }
-                if let cutoff = viewModel.savedBaselines["caffeine_cutoff_hour"] {
-                    baselineSummaryRow(
-                        icon: "clock.fill",
-                        title: "Cutoff Time",
-                        value: cutoff,
-                        unit: formatHour(cutoff)
-                    )
+
+                // Timing distribution summary
+                if viewModel.savedBaselines["caffeine_timing_morning_pct"] != nil {
+                    timingDistributionSummary
                 }
             }
 
@@ -304,6 +301,45 @@ struct CaffeineWizardView: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
         }
+    }
+
+    private var timingDistributionSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "clock.fill")
+                    .font(.title2)
+                    .foregroundColor(viewModel.pillarColor)
+                    .frame(width: 32)
+
+                Text("Timing Distribution")
+                    .font(.subheadline)
+
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                timingPill(label: "AM", value: viewModel.timingMorningPct, color: .green)
+                timingPill(label: "Early PM", value: viewModel.timingEarlyAfternoonPct, color: .yellow)
+                timingPill(label: "Late PM", value: viewModel.timingLateAfternoonPct, color: .orange)
+                timingPill(label: "Eve", value: viewModel.timingEveningPct, color: .red)
+            }
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .cornerRadius(12)
+    }
+
+    private func timingPill(label: String, value: Double, color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text("\(Int(value.rounded()))%")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func formatHour(_ hour: Double) -> String {
@@ -856,6 +892,12 @@ class CaffeineWizardViewModel: ObservableObject {
     @Published var savedBaselines: [String: Double] = [:]
     @Published var isComplete = false
 
+    // Timing distribution percentages
+    @Published var timingMorningPct: Double = 90
+    @Published var timingEarlyAfternoonPct: Double = 10
+    @Published var timingLateAfternoonPct: Double = 0
+    @Published var timingEveningPct: Double = 0
+
     let baselineViewId = "BASELINE_VIEW_CAFFEINE"
     let categoryId = "CAT_CAFFEINE"
 
@@ -875,11 +917,23 @@ class CaffeineWizardViewModel: ObservableObject {
         return categoryBaselineTypes.allSatisfy { savedBaselines[$0] != nil }
     }
 
+    var timingPercentageTotal: Double {
+        timingMorningPct + timingEarlyAfternoonPct + timingLateAfternoonPct + timingEveningPct
+    }
+
+    var timingPercentagesValid: Bool {
+        abs(timingPercentageTotal - 100) < 0.01
+    }
+
     var allQuestionsAnswered: Bool {
-        let requiredQuestions = baselineQuestions.filter { $0.isRequired }
-        return requiredQuestions.allSatisfy { question in
+        // Filter out cutoff question (we're using timing distribution now)
+        let requiredQuestions = baselineQuestions.filter {
+            $0.isRequired && $0.questionId != "BQ_CAFFEINE_CUTOFF"
+        }
+        let baseQuestionsAnswered = requiredQuestions.allSatisfy { question in
             baselineResponses[question.questionId] != nil
         }
+        return baseQuestionsAnswered && timingPercentagesValid
     }
 
     func loadInitialData() async {
@@ -991,6 +1045,20 @@ class CaffeineWizardViewModel: ObservableObject {
 
             for baseline in baselines {
                 savedBaselines[baseline.baselineType] = baseline.value
+
+                // Load timing distribution values
+                switch baseline.baselineType {
+                case "caffeine_timing_morning_pct":
+                    timingMorningPct = baseline.value
+                case "caffeine_timing_early_afternoon_pct":
+                    timingEarlyAfternoonPct = baseline.value
+                case "caffeine_timing_late_afternoon_pct":
+                    timingLateAfternoonPct = baseline.value
+                case "caffeine_timing_evening_pct":
+                    timingEveningPct = baseline.value
+                default:
+                    break
+                }
             }
         } catch {
             print("Error loading baselines: \(error)")
@@ -1020,8 +1088,10 @@ class CaffeineWizardViewModel: ObservableObject {
             dateFormatter.formatOptions = [.withFullDate]
             let today = dateFormatter.string(from: Date())
 
+            // Save standard question responses (excluding cutoff)
             for question in baselineQuestions {
                 guard let baselineType = question.baselineType,
+                      question.questionId != "BQ_CAFFEINE_CUTOFF",
                       let value = baselineResponses[question.questionId] else { continue }
 
                 // Determine unit based on baseline type
@@ -1039,6 +1109,33 @@ class CaffeineWizardViewModel: ObservableObject {
                     "baseline_type": .string(baselineType),
                     "value": .double(value),
                     "unit": .string(unit),
+                    "source": .string("onboarding"),
+                    "assessment_date": .string(today),
+                    "is_current": .bool(true)
+                ]
+
+                try await client
+                    .from("patient_baseline_samples")
+                    .insert(record)
+                    .execute()
+
+                savedBaselines[baselineType] = value
+            }
+
+            // Save timing distribution baselines
+            let timingBaselines: [(String, Double)] = [
+                ("caffeine_timing_morning_pct", timingMorningPct),
+                ("caffeine_timing_early_afternoon_pct", timingEarlyAfternoonPct),
+                ("caffeine_timing_late_afternoon_pct", timingLateAfternoonPct),
+                ("caffeine_timing_evening_pct", timingEveningPct)
+            ]
+
+            for (baselineType, value) in timingBaselines {
+                let record: [String: AnyJSON] = [
+                    "patient_id": .string(userId.uuidString),
+                    "baseline_type": .string(baselineType),
+                    "value": .double(value),
+                    "unit": .string("percent"),
                     "source": .string("onboarding"),
                     "assessment_date": .string(today),
                     "is_current": .bool(true)

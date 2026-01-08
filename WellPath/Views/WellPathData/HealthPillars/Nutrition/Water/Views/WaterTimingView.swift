@@ -2,7 +2,7 @@
 //  WaterTimingView.swift
 //  WellPath
 //
-//  Full view for Water Timing metric (DISP_WATER_TIMING).
+//  Full view for Water Timing metric (DISP_HYDRATION_TIMING).
 //  Shows hydration distribution throughout the day with 24-hour clock visualization.
 //
 
@@ -663,7 +663,7 @@ struct WaterTimingView: View {
     @StateObject private var viewModel: WaterTimingViewModel
     @StateObject private var unitPrefs = UnitPreferencesViewModel()
 
-    private let metricId = "DISP_WATER_TIMING"
+    private let metricId = "DISP_HYDRATION_TIMING"
     private let metricName = "Hydration Timing"
 
     init(color: Color) {
@@ -906,10 +906,10 @@ struct WaterTimingView: View {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
             FavoriteButton(
                 itemType: .metric,
-                itemId: "DISP_WATER_TIMING",
+                itemId: "DISP_HYDRATION_TIMING",
                 displayName: "Hydration Timing",
                 pillar: "Healthful Nutrition",
-                cardId: "CARD_WATER_TIMING",
+                cardId: "CARD_HYDRATION_TIMING",
                 sectionId: "NAV_NUTRITION"
             )
 

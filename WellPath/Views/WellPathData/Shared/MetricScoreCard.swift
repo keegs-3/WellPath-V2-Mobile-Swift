@@ -198,9 +198,11 @@ struct MetricScoreCard<ViewModel: BehavioralScoreViewModel, DetailView: View>: V
 
     var body: some View {
         Button {
-            if showEmptyState, let onSetup = onSetupTapped {
-                onSetup()
+            if showEmptyState {
+                // No baseline - only open setup if callback provided
+                onSetupTapped?()
             } else {
+                // Has baseline - can show detail
                 showingDetail = true
             }
         } label: {

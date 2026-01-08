@@ -12,24 +12,23 @@ struct SleepEnvironmentCard: View {
     let pillar: String
 
     @StateObject private var viewModel = SleepEnvironmentViewModel()
-    @State private var showingDetail = false
+    @State private var showingBaseline = false
 
     var body: some View {
-        if viewModel.hasScore || viewModel.hasBaselineData {
-            MetricScoreCard(
-                config: .sleepEnvironment,
-                color: color,
-                viewModel: viewModel
-            ) {
+        // MetricScoreCard handles empty state internally when hasBaselineData is false
+        MetricScoreCard(
+            config: .sleepEnvironment,
+            color: color,
+            viewModel: viewModel,
+            detailViewBuilder: {
                 SleepEnvironmentDetailView(viewModel: viewModel, color: color)
+            },
+            onSetupTapped: {
+                showingBaseline = true
             }
-        } else {
-            MetricScoreEmptyCard(config: .sleepEnvironment, color: color) {
-                showingDetail = true
-            }
-            .sheet(isPresented: $showingDetail) {
-                SleepEnvironmentWizardView()
-            }
+        )
+        .sheet(isPresented: $showingBaseline) {
+            SleepEnvironmentWizardView()
         }
     }
 }

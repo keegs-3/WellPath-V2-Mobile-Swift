@@ -91,6 +91,29 @@ class ScoringRangesDetailViewModel: ObservableObject {
         isLoading = false
     }
 
+    /// Load ranges by range_key (for variety scores, etc.)
+    func loadRangesByKey(_ rangeKey: String) async {
+        isLoading = true
+        error = nil
+
+        do {
+            let results: [ScoringRangeData] = try await supabase
+                .from("sample_scoring_ranges")
+                .select("id, range_name, range_low, range_high, score_at_low, score_at_high, frontend_display")
+                .eq("range_key", value: rangeKey)
+                .order("range_low", ascending: true)
+                .execute()
+                .value
+
+            ranges = results
+        } catch {
+            self.error = error.localizedDescription
+            print("Error loading scoring ranges by key: \(error)")
+        }
+
+        isLoading = false
+    }
+
     /// Find which range contains the given value
     func activeRange(for value: Double) -> ScoringRangeData? {
         ranges.first { $0.contains(value) }
@@ -108,12 +131,14 @@ struct ScoringRangesDetailView: View {
     let title: String
     let value: Double
     let unit: String
-    let quantityType: String
+    let quantityType: String?
+    let rangeKey: String?
     let score: Int?
     let color: Color
 
     @StateObject private var viewModel = ScoringRangesDetailViewModel()
 
+    /// Initialize with quantity_type lookup (standard for amount scores)
     init(
         title: String,
         value: Double,
@@ -126,6 +151,25 @@ struct ScoringRangesDetailView: View {
         self.value = value
         self.unit = unit
         self.quantityType = quantityType
+        self.rangeKey = nil
+        self.score = score
+        self.color = color
+    }
+
+    /// Initialize with range_key lookup (for variety scores, etc.)
+    init(
+        title: String,
+        value: Double,
+        unit: String,
+        rangeKey: String,
+        score: Int? = nil,
+        color: Color = .blue
+    ) {
+        self.title = title
+        self.value = value
+        self.unit = unit
+        self.quantityType = nil
+        self.rangeKey = rangeKey
         self.score = score
         self.color = color
     }
@@ -231,7 +275,11 @@ struct ScoringRangesDetailView: View {
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(12)
         .task {
-            await viewModel.loadRanges(for: quantityType)
+            if let rangeKey = rangeKey {
+                await viewModel.loadRangesByKey(rangeKey)
+            } else if let quantityType = quantityType {
+                await viewModel.loadRanges(for: quantityType)
+            }
         }
     }
 

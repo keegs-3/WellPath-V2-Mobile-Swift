@@ -164,7 +164,21 @@ struct SideMenuView: View {
                         .padding(.bottom, 32)
                 }
                 .frame(width: geometry.size.width * 0.80)
-                .background(Color(uiColor: .systemBackground))
+                .background(
+                    ZStack {
+                        WellPathColors.backgroundBase
+                        // Soft ambient glow
+                        RadialGradient(
+                            gradient: Gradient(colors: [
+                                WellPathColors.brandGreen.opacity(0.08),
+                                Color.clear
+                            ]),
+                            center: UnitPoint(x: 0.2, y: 0.3),
+                            startRadius: 0,
+                            endRadius: 400
+                        )
+                    }
+                )
 
                 // Tap area to dismiss (20% on right)
                 Color.black.opacity(0.3)

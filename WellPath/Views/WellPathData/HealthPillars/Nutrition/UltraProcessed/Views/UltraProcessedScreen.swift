@@ -13,6 +13,7 @@ struct UltraProcessedScreen: View {
     let color: Color
 
     @StateObject private var scoreViewModel = UltraProcessedScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "ultra_processed_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -20,20 +21,24 @@ struct UltraProcessedScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Ultra-Processed Score Card (show if baseline wizard completed)
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
-                    MetricScoreCard(
-                        config: .ultraProcessed,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
-                        UltraProcessedScoreDetailView(viewModel: scoreViewModel, color: color)
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: .ultraProcessed, color: color) {
+                // Ultra-Processed Score Card
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: .ultraProcessed,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "Ultra-Processed Score",
+                            iconName: MetricsUIConfig.getIcon(for: "Ultra-Processed"),
+                            color: color
+                        )
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card component
                 UltraProcessedServingsCard(color: color, pillar: pillar)

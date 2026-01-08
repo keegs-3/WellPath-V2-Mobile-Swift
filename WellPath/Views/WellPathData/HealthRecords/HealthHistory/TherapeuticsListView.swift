@@ -61,16 +61,10 @@ struct TherapeuticsListView: View {
             }
         }
         .sheet(isPresented: $showAddTherapeutic) {
-            AddTherapeuticView(
-                viewModel: viewModel,
-                therapeuticType: selectedType
-            )
+            TherapeuticSearchView()
         }
         .sheet(item: $selectedTherapeutic) { therapeutic in
-            EditTherapeuticView(
-                therapeutic: therapeutic,
-                viewModel: viewModel
-            )
+            EditTherapeuticView(therapeutic: therapeutic)
         }
         .task {
             await viewModel.loadTherapeutics()

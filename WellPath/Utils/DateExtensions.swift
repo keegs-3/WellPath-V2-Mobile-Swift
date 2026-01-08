@@ -7,6 +7,21 @@
 
 import Foundation
 
+// MARK: - Calendar Extension
+
+extension Calendar {
+    /// Returns the first day of the month for the given date
+    func startOfMonth(for date: Date) -> Date {
+        self.date(from: self.dateComponents([.year, .month], from: date)) ?? date
+    }
+}
+
+// MARK: - Date Identifiable Conformance
+
+extension Date: @retroactive Identifiable {
+    public var id: TimeInterval { timeIntervalSince1970 }
+}
+
 extension Date {
     /// Returns the date for timeline matching
     ///

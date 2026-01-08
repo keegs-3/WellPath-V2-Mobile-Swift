@@ -304,9 +304,9 @@ struct SimpleBaselineWizardView: View {
             NutrientTypePreviewCard(title: "Nuts & Seeds", color: viewModel.pillarColor, varietyScore: 68, typesCount: 3)
 
         // Hydration
-        case "CARD_WATER_AMOUNT", "CARD_HYDRATION_AMOUNT", "CARD_WATER_ML":
+        case "CARD_HYDRATION_AMOUNT", "CARD_WATER_AMOUNT", "CARD_WATER_ML":
             WaterAmountPreviewCard(color: viewModel.pillarColor)
-        case "CARD_WATER_TIMING", "CARD_HYDRATION_TIMING":
+        case "CARD_HYDRATION_TIMING", "CARD_WATER_TIMING":
             WaterTimingPreviewCard(color: viewModel.pillarColor)
 
         // Ultra-Processed

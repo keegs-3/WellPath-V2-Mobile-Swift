@@ -66,7 +66,7 @@ struct AssessmentScreenTemplate: View {
         switch assessmentId {
         case "ASSESS_SLEEP_ROUTINE", "ASSESS_SLEEP_ENVIRONMENT":
             return "NAV_SLEEP"
-        case "ASSESS_PSS10":
+        case "ASSESS_STRESS_LEVEL":
             return "NAV_STRESS"
         case "ASSESS_SWLS", "ASSESS_GAD2", "ASSESS_PHQ2":
             return "NAV_MENTAL_HEALTH"
@@ -134,7 +134,7 @@ struct AssessmentScreenTemplate: View {
                 .background(Color(uiColor: .systemGroupedBackground))
 
                 // View More Detail button (for stress assessment only)
-                if assessmentId == "ASSESS_PSS10" {
+                if assessmentId == "ASSESS_STRESS_LEVEL" {
                     Button {
                         showStressInsights = true
                     } label: {
@@ -147,7 +147,8 @@ struct AssessmentScreenTemplate: View {
                                 .font(.caption)
                         }
                         .foregroundColor(color)
-                        .padding()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
                         .cornerRadius(12)
                     }
@@ -158,7 +159,7 @@ struct AssessmentScreenTemplate: View {
                 // Questionnaire card (below chart section)
                 questionnaireCard
                     .padding(.horizontal)
-                    .padding(.top, assessmentId == "ASSESS_PSS10" ? 12 : 16)
+                    .padding(.top, 16)
                     .padding(.bottom, 24)
             }
         }
@@ -245,11 +246,11 @@ struct AssessmentScreenTemplate: View {
                             .foregroundColor(.secondary)
                     }
                 } else {
-                    // Show overall entry count and tier range
-                    let totalEntries = dataPointsWithValues.reduce(0) { $0 + $1.entryCount }
+                    // Show entry count and tier range for visible window
+                    let visibleEntries = visibleDataPoints.reduce(0) { $0 + $1.entryCount }
                     let tierRange = getVisibleTierRange()
 
-                    if totalEntries > 0 {
+                    if visibleEntries > 0 {
                         // Show tier range for 6M/Y, or entry count for W/M
                         if selectedPeriod == .sixMonth || selectedPeriod == .year, let range = tierRange {
                             Text(range)
@@ -257,10 +258,10 @@ struct AssessmentScreenTemplate: View {
                                 .foregroundColor(.primary)
                         } else {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text("\(totalEntries)")
+                                Text("\(visibleEntries)")
                                     .font(.system(size: 32, weight: .medium))
                                     .foregroundColor(.primary)
-                                Text(totalEntries == 1 ? "entry" : "entries")
+                                Text(visibleEntries == 1 ? "entry" : "entries")
                                     .font(.title3)
                                     .foregroundColor(.primary)
                             }
@@ -272,7 +273,7 @@ struct AssessmentScreenTemplate: View {
                         Text("No Data")
                             .font(.system(size: 32, weight: .medium))
                             .foregroundColor(.secondary)
-                        Text("Complete an assessment to see results")
+                        Text(visibleDateRangeString())
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -322,12 +323,11 @@ struct AssessmentScreenTemplate: View {
 
     /// Get the tier range string for visible data (e.g., "Low–High")
     private func getVisibleTierRange() -> String? {
-        let visibleData = dataPointsWithValues
-        guard !visibleData.isEmpty else { return nil }
+        guard !visibleDataPoints.isEmpty else { return nil }
 
-        // Get the absolute min and max across all data points
-        let allMinScores = visibleData.map { $0.minScore }
-        let allMaxScores = visibleData.map { $0.maxScore }
+        // Get the absolute min and max across visible data points
+        let allMinScores = visibleDataPoints.map { $0.minScore }
+        let allMaxScores = visibleDataPoints.map { $0.maxScore }
         guard let minScore = allMinScores.min(), let maxScore = allMaxScores.max() else { return nil }
 
         let minTier = tierName(for: Double(minScore))
@@ -341,21 +341,23 @@ struct AssessmentScreenTemplate: View {
 
     private func visibleDateRangeString() -> String {
         let calendar = Calendar.current
-        let now = Date()
-        let startDate: Date = {
-            switch selectedPeriod {
-            case .week: return calendar.date(byAdding: .day, value: -7, to: now) ?? now
-            case .month: return calendar.date(byAdding: .month, value: -1, to: now) ?? now
-            case .sixMonth: return calendar.date(byAdding: .month, value: -6, to: now) ?? now
-            case .year: return calendar.date(byAdding: .year, value: -1, to: now) ?? now
-            }
-        }()
+        let visibleDuration = selectedPeriod.numberOfBars
+        let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration - 1, to: scrollPosition) ?? scrollPosition
 
-        let startFormatter = DateFormatter()
-        startFormatter.dateFormat = "MMM d"
-        let endFormatter = DateFormatter()
-        endFormatter.dateFormat = "MMM d, yyyy"
-        return "\(startFormatter.string(from: startDate)) – \(endFormatter.string(from: now))"
+        // Check if start and end are in same year
+        let sameYear = calendar.component(.year, from: scrollPosition) == calendar.component(.year, from: endDate)
+
+        if sameYear {
+            let startFormatter = DateFormatter()
+            startFormatter.dateFormat = "MMM d"
+            let endFormatter = DateFormatter()
+            endFormatter.dateFormat = "MMM d, yyyy"
+            return "\(startFormatter.string(from: scrollPosition)) – \(endFormatter.string(from: endDate))"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d, yyyy"
+            return "\(formatter.string(from: scrollPosition)) – \(formatter.string(from: endDate))"
+        }
     }
 
     // MARK: - Chart Section
@@ -393,22 +395,20 @@ struct AssessmentScreenTemplate: View {
         scrollManager.chartData.filter { $0.entryCount > 0 }
     }
 
-    /// Tiers sorted by tier_order (determines Y-axis display order)
-    /// For "positive" assessments (Sleep Routine/Environment): tier_order 1 = worst (bottom), highest = best (top)
-    /// For "negative" assessments (Stress/Anxiety): tier_order 1 = best (bottom), highest = worst (top)
-    private var sortedTiers: [ViewAssessmentTier] {
-        (viewModel.assessmentData?.tiers ?? []).sorted { $0.tierOrder < $1.tierOrder }
+    /// Visible data points based on current scroll position
+    private var visibleDataPoints: [AssessmentChartPoint] {
+        let calendar = Calendar.current
+        let visibleDuration = selectedPeriod.numberOfBars
+        let endDate = calendar.date(byAdding: selectedPeriod.calendarComponent, value: visibleDuration, to: scrollPosition) ?? scrollPosition
+
+        return dataPointsWithValues.filter { point in
+            point.date >= scrollPosition && point.date <= endDate
+        }
     }
 
-    /// Tier names for categorical Y-axis - order determines position (first = TOP in categorical Charts)
-    /// For stress/anxiety: Very High (worst) at top, Very Low (best) at bottom
-    /// For sleep: Excellent (best) at top, Poor (worst) at bottom
-    private var tierNames: [String] {
-        // sortedTiers is sorted by tier_order ascending (1=best/lowest for sleep, 1=best/lowest stress for stress)
-        // For Sleep: tier_order 1 = Poor, higher = Excellent → want Excellent at top → REVERSE
-        // For Stress/Anxiety: tier_order 1 = Very Low (good), higher = Very High (bad) → want Very High at top → REVERSE
-        // Both cases: reverse so highest tier_order is at top (index 0)
-        return sortedTiers.reversed().map { $0.tierName }
+    /// Tiers sorted by tier_order (ascending: 1=lowest, 5=highest)
+    private var sortedTiers: [ViewAssessmentTier] {
+        (viewModel.assessmentData?.tiers ?? []).sorted { $0.tierOrder < $1.tierOrder }
     }
 
     /// Get tier name for a score value
@@ -418,28 +418,20 @@ struct AssessmentScreenTemplate: View {
         return tiers.first { intScore >= $0.scoreMin && intScore <= $0.scoreMax }?.tierName ?? ""
     }
 
-    /// Map score to tier name for chart plotting
-    private func tierForScore(_ score: Int) -> String {
-        let tiers = viewModel.assessmentData?.tiers ?? []
-        return tiers.first { score >= $0.scoreMin && score <= $0.scoreMax }?.tierName ?? ""
-    }
-
     /// Get tier position (order) for a score - used for numeric Y-axis
-    /// Returns the tier_order value, which is used for vertical positioning
     private func tierPositionForScore(_ score: Int) -> Double {
         let tiers = viewModel.assessmentData?.tiers ?? []
         guard let tier = tiers.first(where: { score >= $0.scoreMin && score <= $0.scoreMax }) else {
-            return 0
+            return 1.0
         }
         return Double(tier.tierOrder)
     }
 
-    /// Get Y-axis domain based on tier orders
-    private var tierYAxisDomain: ClosedRange<Double> {
-        guard !sortedTiers.isEmpty else { return 0...5 }
+    /// Y-axis domain: from 0.5 (below tier 1) to maxTierOrder + 0.5 (above highest tier)
+    private var yAxisDomain: ClosedRange<Double> {
+        guard !sortedTiers.isEmpty else { return 0.5...5.5 }
         let minOrder = Double(sortedTiers.first?.tierOrder ?? 1)
         let maxOrder = Double(sortedTiers.last?.tierOrder ?? 5)
-        // Add padding for visual clarity
         return (minOrder - 0.5)...(maxOrder + 0.5)
     }
 
@@ -453,26 +445,28 @@ struct AssessmentScreenTemplate: View {
         }
     }
 
+    // MARK: - Assessment Chart
+
     private var assessmentChart: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Main chart area - uses numeric Y axis for range bar support
+            // Main chart
             Chart {
-                // Invisible placeholder to establish timeline
+                // Invisible placeholders to establish timeline
                 ForEach(scrollManager.chartData) { point in
                     PointMark(
                         x: .value("Date", point.date, unit: selectedPeriod.calendarComponent),
-                        y: .value("Position", tierYAxisDomain.lowerBound)
+                        y: .value("Position", yAxisDomain.lowerBound)
                     )
                     .opacity(0)
                 }
 
-                // Score visualization - range bars for multi-entry periods, points for single entries
+                // Score visualization
                 ForEach(dataPointsWithValues) { point in
                     let isSelected = selectedPointDate != nil &&
                         Calendar.current.isDate(point.date, equalTo: selectedPointDate!, toGranularity: selectedPeriod.calendarComponent)
 
                     if point.hasRange {
-                        // Range bar showing min to max tier
+                        // Range bar for multiple entries
                         let minPosition = tierPositionForScore(point.minScore)
                         let maxPosition = tierPositionForScore(point.maxScore)
 
@@ -485,7 +479,7 @@ struct AssessmentScreenTemplate: View {
                         .foregroundStyle(isSelected ? color : color.opacity(0.7))
                         .clipShape(Capsule())
                     } else {
-                        // Single point for single-entry periods
+                        // Single point
                         let position = tierPositionForScore(point.score)
 
                         PointMark(
@@ -497,7 +491,7 @@ struct AssessmentScreenTemplate: View {
                     }
                 }
             }
-            .chartYScale(domain: tierYAxisDomain)
+            .chartYScale(domain: yAxisDomain)
             .frame(height: 220)
             .chartScrollableAxes(.horizontal)
             .chartScrollPosition(x: $scrollPosition)
@@ -506,10 +500,9 @@ struct AssessmentScreenTemplate: View {
                 SpatialTapGesture()
                     .onEnded { value in
                         if let tappedDate: Date = proxy.value(atX: value.location.x) {
-                            let closest = dataPointsWithValues
-                                .min(by: {
-                                    abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
-                                })
+                            let closest = dataPointsWithValues.min(by: {
+                                abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
+                            })
                             if let closestDate = closest?.date,
                                Calendar.current.isDate(selectedPointDate ?? Date.distantPast, equalTo: closestDate, toGranularity: selectedPeriod.calendarComponent) {
                                 selectedPointDate = nil
@@ -519,39 +512,39 @@ struct AssessmentScreenTemplate: View {
                         }
                     }
             }
-            .onChange(of: scrollPosition) { oldValue, newValue in
+            .onChange(of: scrollPosition) { _, newValue in
                 handleChartScrolling(position: newValue)
             }
             .chartYAxis {
-                // Gridlines at each tier position
+                // Grid lines at each tier position
                 AxisMarks(values: sortedTiers.map { Double($0.tierOrder) }) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                         .foregroundStyle(Color.secondary.opacity(0.4))
                 }
             }
             .chartXAxis {
-                AxisMarks(values: .stride(by: xAxisStride, count: xAxisLabelMultiplier)) { _ in
-                    AxisValueLabel(format: xAxisFormat)
-                        .foregroundStyle(Color.secondary)
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                        .foregroundStyle(Color.secondary.opacity(0.2))
+                AxisMarks(values: .stride(by: xAxisStride, count: 1)) { value in
+                    if value.as(Date.self) != nil {
+                        AxisValueLabel(format: xAxisFormat)
+                            .foregroundStyle(Color.secondary)
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                            .foregroundStyle(Color.secondary.opacity(0.2))
+                    }
                 }
             }
 
-            // Y-axis tier labels on right side - positioned to align with gridlines
+            // Y-axis tier labels on right side - centered in each band
             VStack(alignment: .leading, spacing: 0) {
-                // Reversed to match chart orientation (highest tier_order at top)
                 ForEach(sortedTiers.reversed(), id: \.tierOrder) { tier in
                     Text(tier.tierName)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .frame(maxHeight: .infinity, alignment: .top)
+                        .frame(maxHeight: .infinity, alignment: .center)
                 }
             }
-            .frame(width: 60, height: 220)
-            .padding(.bottom, 24) // Account for x-axis labels
+            .frame(width: 60, height: 196) // 220 - 24 for x-axis labels
         }
     }
 
@@ -609,15 +602,6 @@ struct AssessmentScreenTemplate: View {
         }
     }
 
-    private var xAxisLabelMultiplier: Int {
-        switch selectedPeriod {
-        case .week: return 1
-        case .month: return 1
-        case .sixMonth: return 1
-        case .year: return 1
-        }
-    }
-
     private var xAxisFormat: Date.FormatStyle {
         switch selectedPeriod {
         case .week: return .dateTime.weekday(.narrow)
@@ -638,7 +622,7 @@ struct AssessmentScreenTemplate: View {
         case "ASSESS_SLEEP_ENVIRONMENT":
             return ("Sleep Environment Questionnaire",
                     "Your sleep environment plays a crucial role in the quality of your rest and recovery.")
-        case "ASSESS_PSS10":
+        case "ASSESS_STRESS_LEVEL":
             return ("Stress Level Questionnaire",
                     "Regular assessment of your stress levels can help you recognize patterns and take steps to manage them effectively.")
         case "ASSESS_SWLS":
@@ -1346,7 +1330,7 @@ struct StressCard: View {
 
     var body: some View {
         AssessmentCard(
-            assessmentId: "ASSESS_PSS10",
+            assessmentId: "ASSESS_STRESS_LEVEL",
             color: color,
             pillar: pillar,
             sectionId: "NAV_STRESS",
@@ -1547,29 +1531,31 @@ class AssessmentChartScrollManager: ObservableObject {
     private func fetchDataPoints(from startDate: Date, to endDate: Date) async -> [AssessmentChartPoint] {
         do {
             let patientId = try await supabase.auth.session.user.id
-            let quantityType = "assessment_\(assessmentId.lowercased())_score"
 
+            // Use ISO8601 format without fractional seconds for better compatibility
             let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            formatter.formatOptions = [.withInternetDateTime]
+            formatter.timeZone = TimeZone(identifier: "UTC")
 
-            struct SampleResult: Codable {
-                let quantityValue: Double?
-                let startTime: Date
+            struct AssessmentResultRow: Codable {
+                let totalScore: Int
+                let completedAt: Date
 
                 enum CodingKeys: String, CodingKey {
-                    case quantityValue = "quantity_value"
-                    case startTime = "start_time"
+                    case totalScore = "total_score"
+                    case completedAt = "completed_at"
                 }
             }
 
-            let results: [SampleResult] = try await supabase
-                .from("patient_quantity_samples")
-                .select("quantity_value, start_time")
-                .eq("patient_id", value: patientId)
-                .eq("quantity_type", value: quantityType)
-                .gte("start_time", value: formatter.string(from: startDate))
-                .lte("start_time", value: formatter.string(from: endDate))
-                .order("start_time", ascending: false)
+            // Query from patient_assessment_results
+            let results: [AssessmentResultRow] = try await supabase
+                .from("patient_assessment_results")
+                .select("total_score, completed_at")
+                .eq("patient_id", value: patientId.uuidString)
+                .eq("assessment_id", value: assessmentId)
+                .gte("completed_at", value: formatter.string(from: startDate))
+                .lte("completed_at", value: formatter.string(from: endDate))
+                .order("completed_at", ascending: false)
                 .execute()
                 .value
 
@@ -1585,10 +1571,9 @@ class AssessmentChartScrollManager: ObservableObject {
 
             var groupedByPeriod: [Date: PeriodAggregate] = [:]
 
-            for sample in results {
-                guard let value = sample.quantityValue else { continue }
-                let score = Int(value)
-                let periodKey = getPeriodKey(for: sample.startTime, calendar: calendar)
+            for result in results {
+                let score = result.totalScore
+                let periodKey = getPeriodKey(for: result.completedAt, calendar: calendar)
 
                 if groupedByPeriod[periodKey] == nil {
                     groupedByPeriod[periodKey] = PeriodAggregate(date: periodKey)
@@ -1605,7 +1590,7 @@ class AssessmentChartScrollManager: ObservableObject {
                 let avgScore = aggregate.scores.reduce(0, +) / aggregate.scores.count
                 let entryCount = aggregate.scores.count
 
-                // Use max score tier color for the point
+                // Use avg score tier color for the point
                 let tier = assessmentData?.tier(for: avgScore)
 
                 return AssessmentChartPoint(

@@ -302,15 +302,20 @@ struct ScoreLockedView: View {
                 Spacer()
             }
             .background(
-                LinearGradient(
-                    colors: [
-                        Color(uiColor: .systemBackground).opacity(0.9),
-                        Color(uiColor: .systemBackground).opacity(0.95),
-                        Color(uiColor: .systemBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                ZStack {
+                    WellPathColors.backgroundBase
+                    // Soft ambient glow
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            WellPathColors.brandGreen.opacity(0.08),
+                            Color.clear
+                        ]),
+                        center: UnitPoint(x: 0.5, y: 0.3),
+                        startRadius: 0,
+                        endRadius: UIScreen.main.bounds.height * 0.5
+                    )
+                }
+                .ignoresSafeArea()
             )
         }
     }
@@ -376,7 +381,7 @@ struct ScoreLockedView: View {
             }
         }
         .padding()
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(WellPathColors.cardBackground)
         .cornerRadius(12)
         .padding(.horizontal, 32)
     }

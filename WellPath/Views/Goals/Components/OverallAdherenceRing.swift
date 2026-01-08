@@ -136,30 +136,20 @@ struct AdherenceHeroBackground: View {
                         endPoint: .bottom
                     )
                 } else {
-                    // Fallback: Programmatic gradient with waves
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.08, green: 0.12, blue: 0.18),
-                            Color(red: 0.12, green: 0.18, blue: 0.24),
-                            accentColor.opacity(0.3)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    // Fallback: Ambient glow background (Oura-style)
+                    WellPathColors.backgroundBase
 
-                    // Layered wave shapes creating horizon effect
-                    WaveLayerStack(
-                        size: geometry.size,
-                        accentColor: accentColor
-                    )
-
-                    // Topographic pattern overlay for texture
-                    TopographicPattern(
-                        color: .white,
-                        opacity: 0.06,
-                        lineSpacing: 16,
-                        fadeStart: 0.0,
-                        fadeEnd: 0.7
+                    // Single top-center ambient glow
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            accentColor.opacity(0.20),
+                            accentColor.opacity(0.10),
+                            accentColor.opacity(0.04),
+                            Color.clear
+                        ]),
+                        center: UnitPoint(x: 0.5, y: 0.0),
+                        startRadius: 0,
+                        endRadius: geometry.size.height * 1.2
                     )
                 }
             }
@@ -445,7 +435,7 @@ struct CompactAdherenceRing: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(WellPathColors.cardBackground)
         .cornerRadius(12)
     }
 }
@@ -483,7 +473,7 @@ struct EmptyAdherenceRing: View {
                 .padding(.horizontal)
         }
         .padding(24)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(WellPathColors.cardBackground)
         .cornerRadius(20)
     }
 }
@@ -641,7 +631,7 @@ struct OnboardingAdherenceRing: View {
             }
         }
         .padding(24)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(WellPathColors.cardBackground)
         .cornerRadius(20)
         .onAppear {
             withAnimation(.easeOut(duration: 1.0)) {
@@ -740,7 +730,7 @@ struct ComingSoonChallengesCard: View {
             .opacity(0.6)
         }
         .padding()
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(WellPathColors.cardBackground)
         .cornerRadius(12)
     }
 }
@@ -830,7 +820,7 @@ struct TutorialAdherenceRing: View {
                     .padding(.bottom, 16)
             }
             .frame(maxWidth: .infinity)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(WellPathColors.cardBackground)
         }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
@@ -841,7 +831,7 @@ struct TutorialAdherenceRing: View {
 #Preview("Tutorial Ring") {
     TutorialAdherenceRing(journeyState: .baselineCollection(completed: 2, total: 7))
         .padding()
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Full Ring") {
@@ -859,7 +849,7 @@ struct TutorialAdherenceRing: View {
         )
     }
     .padding()
-    .background(Color(uiColor: .systemGroupedBackground))
+    .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Compact") {
@@ -868,13 +858,13 @@ struct TutorialAdherenceRing: View {
         CompactAdherenceRing(weeklyProgress: 45, goalCount: 3)
     }
     .padding()
-    .background(Color(uiColor: .systemGroupedBackground))
+    .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Empty State") {
     EmptyAdherenceRing()
         .padding()
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Onboarding - Baseline") {
@@ -884,7 +874,7 @@ struct TutorialAdherenceRing: View {
         onTap: { print("Tapped!") }
     )
     .padding()
-    .background(Color(uiColor: .systemGroupedBackground))
+    .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Onboarding - Labs") {
@@ -894,7 +884,7 @@ struct TutorialAdherenceRing: View {
         onTap: nil
     )
     .padding()
-    .background(Color(uiColor: .systemGroupedBackground))
+    .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Onboarding - Clinician Review") {
@@ -904,11 +894,11 @@ struct TutorialAdherenceRing: View {
         onTap: nil
     )
     .padding()
-    .background(Color(uiColor: .systemGroupedBackground))
+    .background(WellPathColors.backgroundBase)
 }
 
 #Preview("Coming Soon Challenges") {
     ComingSoonChallengesCard()
         .padding()
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(WellPathColors.backgroundBase)
 }

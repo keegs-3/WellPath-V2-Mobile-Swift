@@ -12,24 +12,23 @@ struct SleepRoutineCard: View {
     let pillar: String
 
     @StateObject private var viewModel = SleepRoutineViewModel()
-    @State private var showingDetail = false
+    @State private var showingBaseline = false
 
     var body: some View {
-        if viewModel.hasScore || viewModel.hasBaselineData {
-            MetricScoreCard(
-                config: .sleepRoutine,
-                color: color,
-                viewModel: viewModel
-            ) {
+        // MetricScoreCard handles empty state internally when hasBaselineData is false
+        MetricScoreCard(
+            config: .sleepRoutine,
+            color: color,
+            viewModel: viewModel,
+            detailViewBuilder: {
                 SleepRoutineDetailView(viewModel: viewModel, color: color)
+            },
+            onSetupTapped: {
+                showingBaseline = true
             }
-        } else {
-            MetricScoreEmptyCard(config: .sleepRoutine, color: color) {
-                showingDetail = true
-            }
-            .sheet(isPresented: $showingDetail) {
-                SleepRoutineWizardView()
-            }
+        )
+        .sheet(isPresented: $showingBaseline) {
+            SleepRoutineWizardView()
         }
     }
 }

@@ -104,8 +104,14 @@ enum CardRegistry {
             WholeGrainsTypeCard(color: color, pillar: pillar)
 
         // MARK: - Water/Hydration Cards
-        case "DISP_WATER_ML", "CARD_WATER_ML", "DISP_HYDRATION", "CARD_HYDRATION":
+        case "DISP_HYDRATION_AMOUNT", "CARD_HYDRATION_AMOUNT", "DISP_WATER_ML", "CARD_WATER_ML", "DISP_HYDRATION", "CARD_HYDRATION":
             WaterAmountCard(color: color, pillar: pillar)
+        case "DISP_HYDRATION_TIMING", "CARD_HYDRATION_TIMING", "DISP_WATER_TIMING", "CARD_WATER_TIMING":
+            WaterTimingCard(color: color, pillar: pillar)
+
+        // MARK: - Caffeine Cards
+        case "DISP_CAFFEINE_TIMING", "CARD_CAFFEINE_TIMING":
+            CaffeineTimingCard(color: color, pillar: pillar)
 
         // MARK: - Sleep Analysis Cards (database-driven viewId)
         case "DISP_SLEEP_STAGES":
@@ -188,6 +194,12 @@ enum CardRegistry {
             return true
         // Whole Grains
         case "DISP_WHOLE_GRAINS_SERVINGS", "DISP_WHOLE_GRAINS_TYPE":
+            return true
+        // Water/Hydration
+        case "DISP_HYDRATION_TIMING", "CARD_HYDRATION_TIMING", "DISP_WATER_TIMING", "CARD_WATER_TIMING":
+            return true
+        // Caffeine
+        case "DISP_CAFFEINE_TIMING", "CARD_CAFFEINE_TIMING":
             return true
         // Sleep Analysis
         case "DISP_SLEEP_STAGES", "DISP_SLEEP_AMOUNTS", "DISP_SLEEP_PERCENTAGES", "DISP_SLEEP_COMPARISONS":

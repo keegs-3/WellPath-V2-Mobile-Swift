@@ -881,6 +881,16 @@ struct CompactScoringRangesSection: View {
         viewModel.quantityType(for: component.componentScoreType)
     }
 
+    /// For variety scores, use the scoring_ranges_key from the database
+    private var rangeKey: String? {
+        viewModel.scoringRangesKey(for: component.componentScoreType)
+    }
+
+    /// Whether this is a variety score (uses range_key instead of quantity_type)
+    private var isVarietyScore: Bool {
+        component.componentScoreType.contains("variety")
+    }
+
     private var isToday: Bool {
         Calendar.current.isDateInToday(date)
     }
@@ -893,7 +903,11 @@ struct CompactScoringRangesSection: View {
             } else if let val = value {
                 // Current value display
                 HStack {
-                    Text(isBaseline ? "Baseline:" : (isToday ? "Your intake:" : "Intake:"))
+                    // Use appropriate label based on score type
+                    let labelText = isVarietyScore
+                        ? (isBaseline ? "Baseline:" : (isToday ? "Today:" : "Count:"))
+                        : (isBaseline ? "Baseline:" : (isToday ? "Your intake:" : "Intake:"))
+                    Text(labelText)
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -925,8 +939,8 @@ struct CompactScoringRangesSection: View {
             async let rangesTask = loadRanges()
 
             let components = await componentsTask
-            // Get the "value" component key for scoring_ranges
-            if let valueComponent = components["value"] {
+            // Get the "value" component key for scoring_ranges (or "count" for variety)
+            if let valueComponent = components["value"] ?? components["count"] {
                 value = valueComponent.componentValue
             }
             _ = await rangesTask
@@ -936,13 +950,25 @@ struct CompactScoringRangesSection: View {
 
     private func loadRanges() async {
         do {
-            let results: [ScoringRangeData] = try await SupabaseManager.shared.client
-                .from("sample_scoring_ranges")
-                .select("id, range_name, range_low, range_high, score_at_low, score_at_high, frontend_display")
-                .eq("quantity_type", value: quantityType)
-                .order("range_low", ascending: true)
-                .execute()
-                .value
+            // For variety scores, query by range_key; otherwise by quantity_type
+            let results: [ScoringRangeData]
+            if isVarietyScore, let key = rangeKey {
+                results = try await SupabaseManager.shared.client
+                    .from("sample_scoring_ranges")
+                    .select("id, range_name, range_low, range_high, score_at_low, score_at_high, frontend_display")
+                    .eq("range_key", value: key)
+                    .order("range_low", ascending: true)
+                    .execute()
+                    .value
+            } else {
+                results = try await SupabaseManager.shared.client
+                    .from("sample_scoring_ranges")
+                    .select("id, range_name, range_low, range_high, score_at_low, score_at_high, frontend_display")
+                    .eq("quantity_type", value: quantityType)
+                    .order("range_low", ascending: true)
+                    .execute()
+                    .value
+            }
             ranges = results
         } catch {
             print("Error loading ranges: \(error)")
@@ -987,6 +1013,12 @@ struct CompactScoringRangesSection: View {
 
     /// Format value based on quantity type
     private func formatValue(_ val: Double) -> String {
+        // Variety scores show count of types
+        if isVarietyScore {
+            let count = Int(val)
+            return count == 1 ? "1 type" : "\(count) types"
+        }
+
         switch quantityType {
         case "water_ml":
             // Convert mL to L for display
@@ -1008,6 +1040,15 @@ struct CompactScoringRangesSection: View {
 
     /// Format range for display based on quantity type
     private func formatRange(_ range: ScoringRangeData) -> String {
+        // For variety, show integer type counts
+        if isVarietyScore {
+            let low = Int(range.safeLow)
+            let high = Int(range.safeHigh)
+            if low <= 0 { return "< \(high) types" }
+            if high >= 999999 { return "\(low)+ types" }
+            return "\(low)–\(high) types"
+        }
+
         let low = range.safeLow
         let high = range.safeHigh
         if low <= 0 { return "< \(formatValue(high))" }

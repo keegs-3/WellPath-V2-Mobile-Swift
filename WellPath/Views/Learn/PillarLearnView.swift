@@ -51,7 +51,7 @@ struct PillarLearnView: View {
             }
             .padding()
         }
-        .background(Color.black)
+        .wellPathAmbientBackground()
         .navigationTitle(pillar.displayName)
         .navigationBarTitleDisplayMode(.large)
     }

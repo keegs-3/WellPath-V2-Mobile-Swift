@@ -243,19 +243,9 @@ class SimpleBaselineWizardViewModel: ObservableObject {
                 .execute()
                 .value
 
-            // If baseline already exists, skip questions and summary steps
-            if hasExistingBaseline {
-                let tourSubpages = loadedSubpages.filter { subpage in
-                    subpage.subpageType != "questions" && subpage.subpageType != "summary_card"
-                }
-                subpages = tourSubpages.enumerated().map { index, subpage in
-                    var modified = subpage
-                    modified.displayOrder = index + 1
-                    return modified
-                }
-            } else {
-                subpages = loadedSubpages
-            }
+            // Always show all subpages including questions (for both new and edit)
+            // Pre-population of existing values happens in prepopulateResponses()
+            subpages = loadedSubpages
         } catch {
             print("Error loading subpages: \(error)")
         }

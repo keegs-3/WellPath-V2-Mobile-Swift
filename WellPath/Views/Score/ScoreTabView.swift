@@ -65,7 +65,7 @@ struct ScoreTabView: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .background(WellPathColors.cardBackground)
                     .cornerRadius(12)
                 } else {
                     NavigationLink(destination: WellPathOverviewView()) {
@@ -83,7 +83,7 @@ struct ScoreTabView: View {
             }
             .padding()
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .wellPathNeutralBackground()
         .refreshable {
             await scoreViewModel.loadWellPathScore()
         }

@@ -13,6 +13,7 @@ struct NutsSeedsScreen: View {
     let color: Color
 
     @StateObject private var scoreViewModel = NutsSeedsScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "nuts_seeds_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -20,20 +21,24 @@ struct NutsSeedsScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Nuts & Seeds Score Card (show if baseline wizard completed)
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
-                    MetricScoreCard(
-                        config: .nutsSeeds,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
-                        NutsSeedsScoreDetailView(viewModel: scoreViewModel, color: color)
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: .nutsSeeds, color: color) {
+                // Nuts & Seeds Score Card
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: .nutsSeeds,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "Nuts & Seeds Score",
+                            iconName: MetricsUIConfig.getIcon(for: "Nuts & Seeds"),
+                            color: color
+                        )
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card components
                 NutsSeedsServingsCard(color: color, pillar: pillar)

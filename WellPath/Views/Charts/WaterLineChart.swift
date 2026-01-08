@@ -20,7 +20,7 @@ struct WaterLineChart: View {
     @StateObject private var unitPrefs = UnitPreferencesViewModel()
     @State private var scrollPosition: Date
 
-    private let metricId = "DISP_WATER_ML"
+    private let metricId = "DISP_HYDRATION_AMOUNT"
 
     private var selectedPoint: ChartDataPoint? {
         guard let selectedDate = selectedPointDate else { return nil }

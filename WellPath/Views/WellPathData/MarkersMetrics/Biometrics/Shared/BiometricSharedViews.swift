@@ -15,24 +15,24 @@ struct BiometricBackground: View {
     let icon: String
 
     var body: some View {
+        let screenHeight = UIScreen.main.bounds.height
+
         ZStack {
-            Color(uiColor: .systemGroupedBackground)
+            // Rich charcoal base
+            WellPathColors.backgroundBase
 
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 900)
-                Spacer()
-            }
-
-            // Topographic wave pattern overlay - covers full screen, fades naturally
-            GeometryReader { geo in
-                TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
-                    .frame(width: geo.size.width, height: geo.size.height)
-            }
+            // Single top-center ambient glow
+            RadialGradient(
+                gradient: Gradient(colors: [
+                    color.opacity(0.20),
+                    color.opacity(0.10),
+                    color.opacity(0.04),
+                    Color.clear
+                ]),
+                center: UnitPoint(x: 0.5, y: 0.0),
+                startRadius: 0,
+                endRadius: screenHeight * 0.6
+            )
         }
         .ignoresSafeArea()
     }

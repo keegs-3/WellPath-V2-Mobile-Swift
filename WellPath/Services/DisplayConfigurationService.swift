@@ -115,6 +115,7 @@ struct CardCategoryConfig: Codable, Identifiable {
     let overview: String?
     let pillar: String?  // Optional - categories may not belong to a pillar
     let sectionId: String?  // Links to display_category_sections
+    let parentCategoryId: String?  // For subcategory support
     let displayOrder: Int?
     let iconName: String?
     let isActive: Bool?
@@ -126,6 +127,7 @@ struct CardCategoryConfig: Codable, Identifiable {
         case overview
         case pillar
         case sectionId = "section_id"
+        case parentCategoryId = "parent_category_id"
         case displayOrder = "display_order"
         case iconName = "icon_name"
         case isActive = "is_active"
@@ -447,11 +449,23 @@ class DisplayConfigurationService: ObservableObject {
             .sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
     }
 
-    /// Get card categories for a category section
+    /// Get card categories for a category section (excludes subcategories - only top-level)
     func cardCategories(forSection sectionId: String) -> [CardCategoryConfig] {
         cardCategories
-            .filter { $0.sectionId == sectionId }
+            .filter { $0.sectionId == sectionId && $0.parentCategoryId == nil }
             .sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
+    }
+
+    /// Get subcategories for a parent category
+    func subcategories(forCategory parentCategoryId: String) -> [CardCategoryConfig] {
+        cardCategories
+            .filter { $0.parentCategoryId == parentCategoryId }
+            .sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
+    }
+
+    /// Check if a category has subcategories
+    func hasSubcategories(categoryId: String) -> Bool {
+        cardCategories.contains { $0.parentCategoryId == categoryId }
     }
 
     /// Get icon for card category with fallback chain: category → section → pillar

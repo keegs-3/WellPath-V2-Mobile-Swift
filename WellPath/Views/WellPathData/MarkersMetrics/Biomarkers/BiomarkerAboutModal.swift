@@ -471,6 +471,13 @@ class MetricEducationContentLoader: ObservableObject {
 
         isLoading = false
     }
+
+    /// Load education content by therapeutic view_id
+    /// Therapeutics use DISP_{TYPE}_{NAME} pattern for view_id
+    func loadContent(forTherapeuticViewId viewId: String) async {
+        // Delegate to standard view_id loader
+        await loadContent(for: viewId)
+    }
 }
 
 // MARK: - Content Model
@@ -485,6 +492,12 @@ struct MetricEducationContent {
     let relatedMarkers: [String]?
     let quickTips: [String]?
 
+    // Therapeutic-specific fields
+    let mechanismSummary: String?
+    let safetyProfile: SafetyProfile?
+    let dosingSummary: String?
+    let interactionsNote: String?
+
     init(from staticContent: EducationStaticContent) {
         self.aboutShort = staticContent.aboutContentShort
         self.longevityImpactShort = staticContent.longevityImpactShort
@@ -496,6 +509,12 @@ struct MetricEducationContent {
         self.optimalRanges = Self.extractText(from: staticContent.optimalRangesExplanation)
         self.commonMisconceptions = Self.extractText(from: staticContent.commonMisconceptions)
         self.quickTips = Self.extractTips(from: staticContent.quickTips)
+
+        // Therapeutic-specific
+        self.mechanismSummary = staticContent.mechanismSummary
+        self.dosingSummary = staticContent.dosingSummary
+        self.interactionsNote = staticContent.interactionsNote
+        self.safetyProfile = Self.extractSafetyProfile(from: staticContent.safetyProfile)
     }
 
     private static func extractText(from anyJson: AnyJSON?) -> String? {
@@ -562,6 +581,43 @@ struct MetricEducationContent {
 
         return nil
     }
+
+    private static func extractSafetyProfile(from anyJson: AnyJSON?) -> SafetyProfile? {
+        guard let anyJson = anyJson else { return nil }
+
+        // Expect object with risks, warnings, contraindications arrays
+        if case .object(let json) = anyJson {
+            let risks = extractStringArray(from: json["risks"])
+            let warnings = extractStringArray(from: json["warnings"])
+            let contraindications = extractStringArray(from: json["contraindications"])
+
+            if risks != nil || warnings != nil || contraindications != nil {
+                return SafetyProfile(risks: risks, warnings: warnings, contraindications: contraindications)
+            }
+        }
+
+        return nil
+    }
+
+    private static func extractStringArray(from anyJson: AnyJSON?) -> [String]? {
+        guard let anyJson = anyJson else { return nil }
+        if case .array(let items) = anyJson {
+            let strings = items.compactMap { item -> String? in
+                if case .string(let text) = item { return text }
+                return nil
+            }
+            return strings.isEmpty ? nil : strings
+        }
+        return nil
+    }
+}
+
+// MARK: - Safety Profile Model
+
+struct SafetyProfile {
+    let risks: [String]?
+    let warnings: [String]?
+    let contraindications: [String]?
 }
 
 // MARK: - Backward Compatibility Aliases

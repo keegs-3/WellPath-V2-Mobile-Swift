@@ -112,6 +112,31 @@ class WizardViewModel: ObservableObject {
 
             let completedBaselineTypes = Set(existingBaselines.map { $0.baselineType })
 
+            // Load tour-type wizard cards (no questions, just tours)
+            struct TourWizardCard: Decodable {
+                let cardId: String
+                let categoryId: String
+                let cardTitle: String
+                let cardIcon: String?
+                let wizardIosView: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case cardId = "card_id"
+                    case categoryId = "category_id"
+                    case cardTitle = "card_title"
+                    case cardIcon = "card_icon"
+                    case wizardIosView = "wizard_ios_view"
+                }
+            }
+
+            let tourCards: [TourWizardCard] = try await client
+                .from("display_baseline_view_cards")
+                .select("card_id, category_id, card_title, card_icon, wizard_ios_view")
+                .eq("is_active", value: true)
+                .not("wizard_ios_view", operator: .is, value: "null")
+                .execute()
+                .value
+
             // Group questions by category
             var categoryMap: [String: [BaselineQuestion]] = [:]
             for question in questions {
@@ -138,6 +163,32 @@ class WizardViewModel: ObservableObject {
                     color: config.color,
                     questions: categoryQuestions,
                     isComplete: isComplete
+                ))
+            }
+
+            // Add tour-type categories that don't have questions
+            // (e.g., Therapeutics which is a tour, not data collection)
+            let questionCategoryIds = Set(categoryMap.keys)
+            for tourCard in tourCards {
+                // Skip if this category already has questions
+                if questionCategoryIds.contains(tourCard.categoryId) { continue }
+
+                let config = categoryConfig(for: tourCard.categoryId)
+
+                // For tour-type categories, check if the tour completion baseline exists
+                // Tour completion is stored as "{category}_baseline_complete"
+                let tourCompleteType = "therapeutics_baseline_complete"
+                let isComplete = completedBaselineTypes.contains(tourCompleteType)
+
+                builtCategories.append(WizardCategory(
+                    id: tourCard.categoryId,
+                    displayName: config.displayName,
+                    pillar: config.pillar,
+                    iconName: tourCard.cardIcon ?? config.iconName,
+                    color: config.color,
+                    questions: [], // No questions - this is a tour
+                    isComplete: isComplete,
+                    isTour: true
                 ))
             }
 
@@ -211,6 +262,8 @@ class WizardViewModel: ObservableObject {
             return ("Mobility", "Movement + Exercise", "figure.flexibility", "orange")
         case "CAT_DAILY_ACTIVITY":
             return ("Daily Activity", "Movement + Exercise", "figure.stand", "orange")
+        case "CAT_THERAPEUTICS":
+            return ("Therapeutics", "Core Care", "pills.fill", "blue")
         default:
             return (categoryId, "Unknown", "questionmark.circle", "gray")
         }

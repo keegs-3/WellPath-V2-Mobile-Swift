@@ -14,6 +14,7 @@ struct FatsScreen: View {
     let color: Color
 
     @StateObject private var scoreViewModel = FatsScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "fat_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -21,20 +22,24 @@ struct FatsScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Fats Score Card - taps to detail (show if baseline wizard completed)
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
-                    MetricScoreCard(
-                        config: .fats,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
-                        FatsScoreDetailView(viewModel: scoreViewModel, color: color)
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: .fats, color: color) {
+                // Fats Score Card
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: .fats,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "Fat Score",
+                            iconName: MetricsUIConfig.getIcon(for: "Fats"),
+                            color: color
+                        )
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card components
                 FatsAmountCard(color: color, pillar: pillar)

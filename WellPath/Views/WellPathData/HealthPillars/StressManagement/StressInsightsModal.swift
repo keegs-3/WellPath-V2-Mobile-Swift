@@ -345,45 +345,46 @@ struct StressInsightsModal: View {
         return formatter.string(from: date)
     }
 
-    // MARK: - Stress Chart Section (Scrollable with X-axis)
+    // MARK: - Stress Chart Section
+
+    /// Y-axis domain: from 0.5 (below tier 1) to maxTierOrder + 0.5
+    private var stressYAxisDomain: ClosedRange<Double> {
+        guard !sortedTiers.isEmpty else { return 0.5...5.5 }
+        let minOrder = Double(sortedTiers.first?.tierOrder ?? 1)
+        let maxOrder = Double(sortedTiers.last?.tierOrder ?? 5)
+        return (minOrder - 0.5)...(maxOrder + 0.5)
+    }
+
+    /// Get tier position (order) for a score
+    private func tierPositionForScore(_ score: Int) -> Double {
+        guard let tier = assessmentData.tiers.first(where: { score >= $0.scoreMin && score <= $0.scoreMax }) else {
+            return 1.0
+        }
+        return Double(tier.tierOrder)
+    }
 
     private var stressChartSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 0) {
-                // Main scrollable chart
+                // Main chart
                 stressChart
                     .frame(height: 180)
 
-                // Y-axis labels on right, outside chart - TOP aligned with gridlines
+                // Y-axis tier labels on right side - centered in each band
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(sortedTierNamesForDisplay.enumerated()), id: \.offset) { index, name in
-                        Text(name)
+                    ForEach(sortedTiers.reversed(), id: \.tierOrder) { tier in
+                        Text(tier.tierName)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                            .frame(maxHeight: .infinity, alignment: .top)
+                            .frame(maxHeight: .infinity, alignment: .center)
                     }
                 }
-                .frame(width: 60, height: 150)
-                .padding(.top, 4)
+                .frame(width: 60, height: 156) // 180 - 24 for x-axis labels
             }
             .padding(.horizontal)
         }
-    }
-
-    /// Tier names sorted for display: Very High at TOP, Very Low at BOTTOM for stress
-    private var sortedTierNamesForDisplay: [String] {
-        // For stress: higher tier_order = worse = should be at top
-        // sortedTiers is sorted ascending by tier_order (1=Very Low, 5=Very High)
-        // We need to REVERSE so Very High (tier_order 5) is at top
-        return sortedTiers.reversed().map { $0.tierName }
-    }
-
-    /// Y-axis domain values matching display order
-    private var yAxisDomain: [Double] {
-        // Return indices matching sortedTierNamesForDisplay (0=Very High at top, 4=Very Low at bottom)
-        return Array(0..<sortedTiers.count).map { Double($0) }
     }
 
     private var stressChart: some View {
@@ -391,30 +392,32 @@ struct StressInsightsModal: View {
 
         return Chart {
             ForEach(chartData, id: \.date) { point in
-                let tierIndex = tierIndexForDisplay(for: point.score)
-                let isSelected = selectedDate != nil && Calendar.current.isDate(point.date, equalTo: selectedDate!, toGranularity: .day)
+                let position = tierPositionForScore(point.score)
+                let isSelected = selectedDate != nil && Calendar.current.isDate(point.date, equalTo: selectedDate!, toGranularity: selectedPeriod.calendarComponent)
 
                 PointMark(
                     x: .value("Date", point.date, unit: selectedPeriod.calendarComponent),
-                    y: .value("Level", tierIndex)
+                    y: .value("Position", position)
                 )
                 .foregroundStyle(point.tierColor ?? color)
                 .symbolSize(isSelected ? 120 : 60)
             }
         }
-        .chartYScale(domain: 0...Double(sortedTiers.count - 1))
+        .chartYScale(domain: stressYAxisDomain)
         .chartYAxis {
-            AxisMarks(values: yAxisDomain) { _ in
+            AxisMarks(values: sortedTiers.map { Double($0.tierOrder) }) { _ in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                     .foregroundStyle(Color.secondary.opacity(0.3))
             }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: xAxisStride)) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                    .foregroundStyle(Color.secondary.opacity(0.2))
-                AxisValueLabel(format: xAxisFormat)
-                    .foregroundStyle(Color.secondary)
+            AxisMarks(values: .stride(by: xAxisStride, count: 1)) { value in
+                if value.as(Date.self) != nil {
+                    AxisValueLabel(format: xAxisFormat)
+                        .foregroundStyle(Color.secondary)
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                        .foregroundStyle(Color.secondary.opacity(0.2))
+                }
             }
         }
         .chartScrollableAxes(.horizontal)
@@ -428,7 +431,7 @@ struct StressInsightsModal: View {
                             abs($0.date.timeIntervalSince(tappedDate)) < abs($1.date.timeIntervalSince(tappedDate))
                         })
                         if let closestDate = closest?.date {
-                            if selectedDate != nil && Calendar.current.isDate(selectedDate!, equalTo: closestDate, toGranularity: .day) {
+                            if selectedDate != nil && Calendar.current.isDate(selectedDate!, equalTo: closestDate, toGranularity: selectedPeriod.calendarComponent) {
                                 selectedDate = nil
                             } else {
                                 selectedDate = closestDate
@@ -437,20 +440,6 @@ struct StressInsightsModal: View {
                     }
                 }
         }
-    }
-
-    /// Map score to display index (0 = top = Very High for stress)
-    private func tierIndexForDisplay(for score: Int) -> Double {
-        guard let tier = assessmentData.tiers.first(where: { score >= $0.scoreMin && score <= $0.scoreMax }) else {
-            return Double(sortedTiers.count - 1)
-        }
-        // sortedTiers: index 0 = Very Low (tier_order 1), index 4 = Very High (tier_order 5)
-        // We want: Very High at top (index 0 in display), Very Low at bottom (index 4 in display)
-        // So: displayIndex = (sortedTiers.count - 1) - originalIndex
-        if let originalIndex = sortedTiers.firstIndex(where: { $0.tierOrder == tier.tierOrder }) {
-            return Double(sortedTiers.count - 1 - originalIndex)
-        }
-        return Double(sortedTiers.count - 1)
     }
 
     // MARK: - Comparison Chart Section (Linked scroll/selection)
@@ -893,19 +882,19 @@ struct StressInsightsModal: View {
             // Query steps from patient_quantity_samples
             let stepsData: [QuantitySampleRow] = try await supabase
                 .from("patient_quantity_samples")
-                .select("sample_date, value")
+                .select("aggregation_date, quantity_value")
                 .eq("patient_id", value: userId)
                 .eq("quantity_type", value: "steps")
-                .gte("sample_date", value: dateFormatter.string(from: startDate))
-                .lte("sample_date", value: dateFormatter.string(from: endDate))
-                .order("sample_date", ascending: true)
+                .gte("aggregation_date", value: dateFormatter.string(from: startDate))
+                .lte("aggregation_date", value: dateFormatter.string(from: endDate))
+                .order("aggregation_date", ascending: true)
                 .execute()
                 .value
 
             // Aggregate by date (sum steps per day)
             var stepsByDate: [String: Double] = [:]
             for row in stepsData {
-                stepsByDate[row.sampleDate, default: 0] += row.value ?? 0
+                stepsByDate[row.aggregationDate, default: 0] += row.quantityValue ?? 0
             }
 
             let dailyData = stepsByDate.compactMap { dateString, steps -> ComparisonDataPoint? in
@@ -936,19 +925,19 @@ struct StressInsightsModal: View {
             // Query exercise minutes from patient_quantity_samples
             let exerciseData: [QuantitySampleRow] = try await supabase
                 .from("patient_quantity_samples")
-                .select("sample_date, value")
+                .select("aggregation_date, quantity_value")
                 .eq("patient_id", value: userId)
                 .eq("quantity_type", value: "exercise_time")
-                .gte("sample_date", value: dateFormatter.string(from: startDate))
-                .lte("sample_date", value: dateFormatter.string(from: endDate))
-                .order("sample_date", ascending: true)
+                .gte("aggregation_date", value: dateFormatter.string(from: startDate))
+                .lte("aggregation_date", value: dateFormatter.string(from: endDate))
+                .order("aggregation_date", ascending: true)
                 .execute()
                 .value
 
             // Aggregate by date (sum minutes per day)
             var exerciseByDate: [String: Double] = [:]
             for row in exerciseData {
-                exerciseByDate[row.sampleDate, default: 0] += row.value ?? 0
+                exerciseByDate[row.aggregationDate, default: 0] += row.quantityValue ?? 0
             }
 
             let dailyData = exerciseByDate.compactMap { dateString, minutes -> ComparisonDataPoint? in
@@ -978,19 +967,19 @@ struct StressInsightsModal: View {
             // Query time in daylight from patient_quantity_samples
             let outdoorData: [QuantitySampleRow] = try await supabase
                 .from("patient_quantity_samples")
-                .select("sample_date, value")
+                .select("aggregation_date, quantity_value")
                 .eq("patient_id", value: userId)
                 .eq("quantity_type", value: "time_in_daylight")
-                .gte("sample_date", value: dateFormatter.string(from: startDate))
-                .lte("sample_date", value: dateFormatter.string(from: endDate))
-                .order("sample_date", ascending: true)
+                .gte("aggregation_date", value: dateFormatter.string(from: startDate))
+                .lte("aggregation_date", value: dateFormatter.string(from: endDate))
+                .order("aggregation_date", ascending: true)
                 .execute()
                 .value
 
             // Aggregate by date (sum hours per day)
             var outdoorByDate: [String: Double] = [:]
             for row in outdoorData {
-                outdoorByDate[row.sampleDate, default: 0] += row.value ?? 0
+                outdoorByDate[row.aggregationDate, default: 0] += row.quantityValue ?? 0
             }
 
             let dailyData = outdoorByDate.compactMap { dateString, hours -> ComparisonDataPoint? in
@@ -1044,12 +1033,12 @@ private struct SleepComparisonRow: Codable {
 }
 
 private struct QuantitySampleRow: Codable {
-    let sampleDate: String
-    let value: Double?
+    let aggregationDate: String
+    let quantityValue: Double?
 
     enum CodingKeys: String, CodingKey {
-        case sampleDate = "sample_date"
-        case value
+        case aggregationDate = "aggregation_date"
+        case quantityValue = "quantity_value"
     }
 }
 

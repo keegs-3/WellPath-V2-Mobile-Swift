@@ -92,50 +92,6 @@ struct TourMyDataScreen: View {
                         }
                     }
 
-                    TourLandingSectionCard(
-                        title: "Lifestyle Factors",
-                        subtitle: "Substances & Mental Health",
-                        icon: "leaf.fill",
-                        color: .purple,
-                        isHighlighted: highlightMode == .dataSections && selectedSection == 2
-                    )
-                    .opacity(dimOpacity(for: 2))
-                    .onTapGesture {
-                        if highlightMode == .dataSections {
-                            selectedSection = 2
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                tourManager.goToScreen(.dataFavorites)
-                            }
-                        } else if highlightMode == .dataCardNavigation {
-                            selectedSection = 2
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                tourManager.goToScreen(.dataDeepNavigation)
-                            }
-                        }
-                    }
-
-                    TourLandingSectionCard(
-                        title: "Health Records",
-                        subtitle: "History, Therapeutics & Screenings",
-                        icon: "folder.fill",
-                        color: .orange,
-                        isHighlighted: highlightMode == .dataSections && selectedSection == 3
-                    )
-                    .opacity(dimOpacity(for: 3))
-                    .onTapGesture {
-                        if highlightMode == .dataSections {
-                            selectedSection = 3
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                tourManager.goToScreen(.dataFavorites)
-                            }
-                        } else if highlightMode == .dataCardNavigation {
-                            selectedSection = 3
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                tourManager.goToScreen(.dataDeepNavigation)
-                            }
-                        }
-                    }
-
                     // Favorites hint when highlighting favorites
                     if highlightMode == .dataFavorites {
                         HStack(spacing: 8) {

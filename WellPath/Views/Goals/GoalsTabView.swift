@@ -1072,15 +1072,49 @@ struct FloatingAdherenceArc: View {
     }
 }
 
+// MARK: - Goals Time Period (for hero backgrounds)
+
+enum GoalsTimePeriod: String {
+    case morning    // 5am - 12pm
+    case afternoon  // 12pm - 5pm
+    case evening    // 5pm - 9pm
+    case night      // 9pm - 5am
+
+    static var current: GoalsTimePeriod {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return .morning
+        case 12..<17: return .afternoon
+        case 17..<21: return .evening
+        default: return .night
+        }
+    }
+
+    var heroImageName: String {
+        "goals-hero-\(rawValue)"
+    }
+
+    var greeting: String {
+        switch self {
+        case .morning: return "Good Morning"
+        case .afternoon: return "Good Afternoon"
+        case .evening: return "Good Evening"
+        case .night: return "Good Night"
+        }
+    }
+}
+
 // MARK: - Full Screen Hero Background
 
 struct GoalsHeroBackground: View {
-    private let imageName = "goals_hero_background"
+    private var imageName: String {
+        GoalsTimePeriod.current.heroImageName
+    }
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Try image first, fallback to gradient
+                // Try time-based image first, fallback to gradient
                 if let uiImage = UIImage(named: imageName) {
                     Image(uiImage: uiImage)
                         .resizable()
@@ -1099,6 +1133,19 @@ struct GoalsHeroBackground: View {
                         endPoint: .bottom
                     )
                 }
+
+                // Dark overlay from top through ring area for readability
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.7), location: 0),
+                        .init(color: .black.opacity(0.6), location: 0.2),
+                        .init(color: .black.opacity(0.4), location: 0.4),
+                        .init(color: .black.opacity(0.2), location: 0.5),
+                        .init(color: .clear, location: 0.6)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
 
                 // Gradient overlay for content readability (fades to solid at bottom)
                 LinearGradient(

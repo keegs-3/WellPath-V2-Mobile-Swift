@@ -2,7 +2,7 @@
 //  WaterAmountView.swift
 //  WellPath
 //
-//  Full view for Water Amount metric (DISP_WATER_ML).
+//  Full view for Water Amount metric (DISP_HYDRATION_AMOUNT).
 //  Uses custom WaterLineChart with unit preference support (mL/oz toggle).
 //
 
@@ -15,7 +15,7 @@ struct WaterAmountView: View {
     @State private var showingDataManagement = false
     @State private var showAboutModal = false
 
-    private let metricId = "DISP_WATER_ML"
+    private let metricId = "DISP_HYDRATION_AMOUNT"
     private let metricName = "Hydration"
 
     var body: some View {
@@ -38,7 +38,7 @@ struct WaterAmountView: View {
                         itemId: metricId,
                         displayName: metricName,
                         pillar: "Healthful Nutrition",
-                        cardId: "CARD_WATER_ML",
+                        cardId: "CARD_HYDRATION_AMOUNT",
                         sectionId: "NAV_NUTRITION"
                     )
 

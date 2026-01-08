@@ -13,6 +13,7 @@ struct CaffeineScreen: View {
     let color: Color
 
     @StateObject private var scoreViewModel = CaffeineScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "caffeine_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -20,24 +21,29 @@ struct CaffeineScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Caffeine Score Card (show if baseline wizard completed)
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
-                    MetricScoreCard(
-                        config: .caffeine,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
-                        CaffeineScoreDetailView(viewModel: scoreViewModel, color: color)
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: .caffeine, color: color) {
+                // Caffeine Score Card
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: .caffeine,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "Caffeine Score",
+                            iconName: MetricsUIConfig.getIcon(for: "Caffeine"),
+                            color: color
+                        )
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card components
                 CaffeineAmountCard(color: color, pillar: pillar)
                 CaffeineTypeCard(color: color, pillar: pillar)
+                CaffeineTimingCard(color: color, pillar: pillar)
             }
             .padding()
             .padding(.bottom, 24)

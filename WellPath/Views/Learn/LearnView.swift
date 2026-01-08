@@ -51,7 +51,7 @@ struct LearnView: View {
                 }
                 .padding(.bottom, 40)
             }
-            .background(Color.black)
+            .wellPathAmbientBackground()
             .navigationTitle("Learn")
             .searchable(text: $searchText, prompt: "Search articles")
             .task {

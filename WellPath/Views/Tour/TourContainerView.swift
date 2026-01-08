@@ -113,7 +113,7 @@ struct TourContainerView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(uiColor: .systemBackground))
+                .wellPathAmbientBackground()
             } else {
                 ZStack {
                     // Main content layer
@@ -158,7 +158,7 @@ struct TourContainerView: View {
                     }
                     .animation(.easeInOut(duration: 0.3), value: coachBubblePosition)
                 }
-                .background(Color(uiColor: .systemBackground))
+                .wellPathAmbientBackground()
             }
         }
         .fullScreenCover(isPresented: $showSetupWizard) {
@@ -208,7 +208,7 @@ struct TourContainerView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(WellPathColors.surfaceElevated)
     }
 
     // MARK: - Screen Content
@@ -301,7 +301,7 @@ struct TourContainerView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(WellPathColors.surfaceElevated)
     }
 }
 

@@ -184,7 +184,7 @@ class AssessmentService: ObservableObject {
         return (result.totalScore, result.completedAt)
     }
 
-    /// Fetch score history for an assessment
+    /// Fetch score history for an assessment (including responses for filtering)
     func fetchScoreHistory(assessmentId: String, limit: Int = 30) async throws -> [AssessmentResult] {
         guard let userId = try? await supabase.auth.session.user.id else {
             return []
@@ -216,6 +216,36 @@ class AssessmentService: ObservableObject {
             .execute()
             .value
 
+        // Fetch all responses for these results in one query
+        let resultIds = response.map { $0.id.uuidString }
+        var responsesByResult: [UUID: [String: Int]] = [:]
+
+        if !resultIds.isEmpty {
+            struct ResponseRow: Codable {
+                let resultId: String
+                let questionId: String
+                let responseValue: Int
+
+                enum CodingKeys: String, CodingKey {
+                    case resultId = "result_id"
+                    case questionId = "question_id"
+                    case responseValue = "response_value"
+                }
+            }
+
+            let allResponses: [ResponseRow] = try await supabase
+                .from("patient_assessment_responses")
+                .select("result_id, question_id, response_value")
+                .in("result_id", values: resultIds)
+                .execute()
+                .value
+
+            for resp in allResponses {
+                guard let uuid = UUID(uuidString: resp.resultId) else { continue }
+                responsesByResult[uuid, default: [:]][resp.questionId] = resp.responseValue
+            }
+        }
+
         return response.map { result in
             let tier = assessmentData.tier(for: result.totalScore)
             return AssessmentResult(
@@ -224,7 +254,7 @@ class AssessmentService: ObservableObject {
                 score: result.totalScore,
                 tierName: tier?.tierName,
                 tierColor: tier?.color,
-                responses: nil  // Fetch separately if needed
+                responses: responsesByResult[result.id]
             )
         }
     }

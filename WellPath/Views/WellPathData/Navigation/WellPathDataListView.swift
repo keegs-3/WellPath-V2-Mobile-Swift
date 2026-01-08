@@ -230,7 +230,7 @@ struct TrackedMetricsListView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(WellPathColors.backgroundBase)
     }
 
     // MARK: - Favorites View (grouped by pillar)
@@ -337,7 +337,7 @@ struct TrackedMetricsListView: View {
                                         }
                                     }
                                 }
-                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .background(WellPathColors.cardBackground)
                                 .cornerRadius(12)
                             }
                         }
@@ -443,7 +443,7 @@ struct TrackedMetricsListView: View {
                     }
                 }
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(WellPathColors.cardBackground)
             .cornerRadius(12)
         }
     }
@@ -469,15 +469,11 @@ struct TrackedMetricsListView: View {
         case "NAV_BIO_AGE":
             BiologicalAgeScreen(pillar: section.sectionName, color: color)
 
-        // Lifestyle Factors - database-driven like other sections
-        case "NAV_SUBSTANCES":
+        // Legacy sections (now inactive - categories moved to Core Care)
+        case "NAV_SUBSTANCES", "NAV_MENTAL_HEALTH":
             CategoryCardsListView(section: section)
-        case "NAV_MENTAL_HEALTH":
-            CategoryCardsListView(section: section)
-
-        // Health Records
         case "NAV_THERAPEUTICS":
-            TherapeuticsListView()
+            TherapeuticsEntryView()
         case "NAV_HEALTH_HISTORY":
             ConditionsListView()
         case "NAV_SCREENINGS":
@@ -687,34 +683,7 @@ struct TrackedMetricsListView: View {
     // MARK: - Background
 
     private var backgroundView: some View {
-        ZStack {
-            Color(uiColor: .systemGroupedBackground)
-
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.65),
-                        Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.45),
-                        Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.25),
-                        Color(red: 0.56, green: 0.82, blue: 0.31).opacity(0.1),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 900)
-
-                Spacer()
-            }
-
-            // Topographic pattern overlay
-            GeometryReader { geo in
-                TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
-                    .frame(width: geo.size.width, height: geo.size.height)
-            }
-
-        }
-        .ignoresSafeArea()
+        WellPathAmbientBackground(accentColor: WellPathColors.brandGreen)
     }
 
     // MARK: - Navigation Helpers
@@ -832,21 +801,7 @@ struct MetricFavoriteDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(
-            ZStack {
-                Color(uiColor: .systemGroupedBackground)
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 900)
-                    Spacer()
-                }
-            }
-            .ignoresSafeArea()
-        )
+        .metricScreenBackground(color: color)
         .navigationTitle(viewModel.metric?.metricName ?? "Metric")
         .navigationBarTitleDisplayMode(.large)
         .task {
@@ -1243,33 +1198,7 @@ struct CategoryCardsListView: View {
                 )
             }
         }
-        .background(
-            ZStack {
-                Color(uiColor: .systemGroupedBackground)
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [
-                            section.color.opacity(0.65),
-                            section.color.opacity(0.45),
-                            section.color.opacity(0.25),
-                            section.color.opacity(0.1),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 900)
-                    Spacer()
-                }
-
-                // Topographic pattern overlay
-                GeometryReader { geo in
-                    TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
-            }
-            .ignoresSafeArea()
-        )
+        .wellPathAmbientBackground(color: section.color)
         .navigationTitle(section.sectionName)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -1340,19 +1269,150 @@ struct CategoryCardsListView: View {
                 color: color
             )
 
-        // Default - automatic single-card detection
+        // Default - check for subcategories first, then cards
         default:
-            // If category has exactly 1 card, route directly to the view (skip card list)
-            if cards.count == 1,
+            // If category has subcategories, show subcategory list
+            if displayConfig.hasSubcategories(categoryId: category.categoryId) {
+                SubcategoriesListView(parentCategory: category, sectionColor: section.color)
+            } else if cards.count == 1,
                let singleCard = cards.first,
                let viewId = singleCard.viewId,
                let viewConfig = displayConfig.view(id: viewId) {
+                // Single card: route directly to the view (skip card list)
                 ViewRouter.viewForViewId(viewConfig, color: color, sectionId: section.sectionId)
             } else {
                 // Multi-card category: show card list
                 ViewCardsListView(category: category, sectionColor: section.color)
             }
         }
+    }
+}
+
+// MARK: - Subcategories List View (Shows subcategories for a parent category)
+
+struct SubcategoriesListView: View {
+    let parentCategory: CardCategoryConfig
+    let sectionColor: Color
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+
+    var subcategories: [CardCategoryConfig] {
+        displayConfig.subcategories(forCategory: parentCategory.categoryId)
+    }
+
+    var color: Color {
+        displayConfig.cardCategoryColor(for: parentCategory.categoryId)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                if subcategories.isEmpty {
+                    emptyState
+                } else {
+                    ForEach(subcategories) { subcategory in
+                        NavigationLink {
+                            SubcategoryDestinationView(
+                                category: subcategory,
+                                parentColor: color
+                            )
+                        } label: {
+                            SubcategoryCard(category: subcategory, color: color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .wellPathAmbientBackground(color: color)
+        .navigationTitle(parentCategory.name)
+        .navigationBarTitleDisplayMode(.large)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: parentCategory.iconName ?? "folder")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("No subcategories available")
+                .font(.headline)
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Subcategory Card
+
+struct SubcategoryCard: View {
+    let category: CardCategoryConfig
+    let color: Color
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+
+    var cardCount: Int {
+        displayConfig.viewCards(forCategory: category.categoryId).count
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: category.iconName ?? "folder")
+                    .font(.title3)
+                    .foregroundColor(color)
+            }
+
+            // Text content
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                if let overview = category.overview {
+                    Text(overview)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                } else if cardCount > 0 {
+                    Text("\(cardCount) items")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.system(size: 14, weight: .semibold))
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Subcategory Destination View
+
+struct SubcategoryDestinationView: View {
+    let category: CardCategoryConfig
+    let parentColor: Color
+    @EnvironmentObject private var displayConfig: DisplayConfigurationService
+
+    var cards: [ViewCardConfig] {
+        displayConfig.viewCards(forCategory: category.categoryId)
+    }
+
+    var color: Color {
+        displayConfig.cardCategoryColor(for: category.categoryId)
+    }
+
+    var body: some View {
+        // Subcategories show their cards (not further nesting for now)
+        ViewCardsListView(category: category, sectionColor: parentColor)
     }
 }
 
@@ -1404,27 +1464,7 @@ struct ViewCardsListView: View {
                 )
             }
         }
-        .background(
-            ZStack {
-                Color(uiColor: .systemGroupedBackground)
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 900)
-                    Spacer()
-                }
-
-                // Topographic pattern overlay
-                GeometryReader { geo in
-                    TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
-            }
-            .ignoresSafeArea()
-        )
+        .wellPathAmbientBackground(color: color)
         .navigationTitle(category.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -1644,11 +1684,13 @@ struct ViewRouter {
             CaffeineAmountView(color: color)
         case "DISP_CAFFEINE_TYPE":
             CaffeineTypeView(color: color)
+        case "DISP_CAFFEINE_TIMING":
+            CaffeineTimingView(color: color)
 
         // Water/Hydration views
-        case "DISP_WATER_ML":
+        case "DISP_HYDRATION_AMOUNT", "DISP_WATER_ML":
             WaterAmountView(color: color)
-        case "DISP_WATER_TIMING":
+        case "DISP_HYDRATION_TIMING", "DISP_WATER_TIMING":
             WaterTimingView(color: color)
 
         // Nuts & Seeds views
@@ -1761,13 +1803,37 @@ struct ViewRouter {
         case "DISP_DEPRESSION":
             AssessmentScreenTemplate(assessmentId: "ASSESS_PHQ2", color: color, viewId: "DISP_DEPRESSION")
         case "DISP_STRESS":
-            AssessmentScreenTemplate(assessmentId: "ASSESS_PSS10", color: color, viewId: "DISP_STRESS")
+            AssessmentScreenTemplate(assessmentId: "ASSESS_STRESS_LEVEL", color: color, viewId: "DISP_STRESS")
 
         // Sleep Assessment views
         case "DISP_SLEEP_ROUTINE":
             AssessmentScreenTemplate(assessmentId: "ASSESS_SLEEP_ROUTINE", color: color, viewId: "DISP_SLEEP_ROUTINE")
         case "DISP_SLEEP_ENVIRONMENT":
             AssessmentScreenTemplate(assessmentId: "ASSESS_SLEEP_ENVIRONMENT", color: color, viewId: "DISP_SLEEP_ENVIRONMENT")
+
+        // Core Care - Therapeutics views
+        case "DISP_MY_THERAPEUTICS":
+            MyTherapeuticsView()
+        case "DISP_SUPPLEMENTS":
+            TherapeuticsExploreView(therapeuticType: .supplement)
+        case "DISP_MEDICATIONS":
+            TherapeuticsExploreView(therapeuticType: .medication)
+        case "DISP_PEPTIDES":
+            TherapeuticsExploreView(therapeuticType: .peptide)
+        case "DISP_HORMONES":
+            TherapeuticsExploreView(therapeuticType: .hormone)
+
+        // Core Care - Health History views
+        case "DISP_PERSONAL_HISTORY":
+            PersonalHistoryView(viewModel: MedicalHistoryViewModel(), color: .red)
+        case "DISP_FAMILY_HISTORY":
+            FamilyHistoryView(viewModel: MedicalHistoryViewModel(), color: .red)
+        case "DISP_MEDICAL_HISTORY":
+            MedicalHistoryEntryView()
+
+        // Core Care - Screenings views
+        case "DISP_MY_SCREENINGS":
+            ScreeningsListView()
 
         // Default - for views without explicit routing
         default:
@@ -1789,7 +1855,7 @@ struct ViewRouter {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(uiColor: .systemGroupedBackground))
+                .background(WellPathColors.backgroundBase)
             }
         }
     }

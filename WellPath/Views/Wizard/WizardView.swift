@@ -404,7 +404,7 @@ struct PillarBaselineCategoriesView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
 
-                Text("\(category.questionCount) questions")
+                Text(category.isTour ? "Quick tour" : "\(category.questionCount) questions")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -465,6 +465,9 @@ struct PillarBaselineCategoriesView: View {
             MobilityWizardView()
         case "CAT_DAILY_ACTIVITY":
             DailyActivityWizardView()
+        // Core Care
+        case "CAT_THERAPEUTICS":
+            TherapeuticsWizardView()
         default:
             // Placeholder for categories not yet implemented
             Text("Coming soon: \(category.displayName)")

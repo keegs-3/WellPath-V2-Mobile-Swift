@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  My Data tab landing page with big section cards
-//  - Favorites, Pillars, Markers & Metrics, Lifestyle, Records
+//  - Favorites, Pillars, Markers & Metrics
 //  - Tapping a card navigates to section detail with contextual bottom nav
 //
 
@@ -41,7 +41,7 @@ struct MyDataLandingView: View {
                 .padding(.bottom, 100) // Space for tab bar
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(WellPathColors.backgroundBase.ignoresSafeArea())
     }
 
     private var searchBar: some View {
@@ -63,17 +63,16 @@ struct MyDataLandingView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color(uiColor: .systemBackground))
+            .background(WellPathColors.cardBackground)
             .cornerRadius(12)
 
             Button("Cancel") {
                 searchState.deactivateSearch()
             }
-            .foregroundColor(.blue)
+            .foregroundColor(.green)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 
     private func favoritesCount(for section: DataSection) -> Int {
@@ -93,8 +92,6 @@ enum DataSection: String, CaseIterable, Identifiable {
     case favorites
     case pillars
     case markers
-    case lifestyle
-    case records
 
     var id: String { rawValue }
 
@@ -104,8 +101,6 @@ enum DataSection: String, CaseIterable, Identifiable {
         case .favorites: return "" // Special case - not in database
         case .pillars: return "SEC_PILLARS"
         case .markers: return "SEC_MARKERS"
-        case .lifestyle: return "SEC_LIFESTYLE"
-        case .records: return "SEC_RECORDS"
         }
     }
 
@@ -115,8 +110,6 @@ enum DataSection: String, CaseIterable, Identifiable {
         case .favorites: return "Favorites"
         case .pillars: return "Health Pillars"
         case .markers: return "Markers & Metrics"
-        case .lifestyle: return "Lifestyle Factors"
-        case .records: return "Health Records"
         }
     }
 
@@ -125,8 +118,6 @@ enum DataSection: String, CaseIterable, Identifiable {
         case .favorites: return "Your pinned metrics"
         case .pillars: return "Nutrition, Sleep, Movement & more"
         case .markers: return "Biomarkers & Biometrics"
-        case .lifestyle: return "Substances & Mental Health"
-        case .records: return "History, Therapeutics & Screenings"
         }
     }
 
@@ -136,8 +127,6 @@ enum DataSection: String, CaseIterable, Identifiable {
         case .favorites: return "star.fill"
         case .pillars: return "heart.circle.fill"
         case .markers: return "waveform.path.ecg"
-        case .lifestyle: return "leaf.fill"
-        case .records: return "folder.fill"
         }
     }
 
@@ -147,8 +136,6 @@ enum DataSection: String, CaseIterable, Identifiable {
         case .favorites: return .yellow
         case .pillars: return .green
         case .markers: return .blue
-        case .lifestyle: return .purple
-        case .records: return .orange
         }
     }
 }
@@ -227,23 +214,19 @@ struct LandingSectionCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    sectionColor.opacity(0.15),
-                                    sectionColor.opacity(0.05)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            sectionColor.opacity(0.25),
+                            sectionColor.opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(sectionColor.opacity(0.25), lineWidth: 1)
+                        .stroke(sectionColor.opacity(0.3), lineWidth: 1)
                 )
         )
     }

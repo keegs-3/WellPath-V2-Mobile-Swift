@@ -48,9 +48,7 @@ struct CaffeineEntryView: View {
     @State private var selectedDateTime = Date()
     @State private var caffeineAmount: String = ""
     @State private var selectedType: String = ""
-    @State private var selectedTiming: String = ""
     @State private var caffeineTypes: [CaffeineReferenceOption] = []
-    @State private var mealTimings: [ReferenceOption] = []
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -125,13 +123,6 @@ struct CaffeineEntryView: View {
                                 Text(option.displayName).tag(option.referenceKey)
                             }
                         }
-
-                        Picker("Timing", selection: $selectedTiming) {
-                            Text("Select Timing").tag("")
-                            ForEach(mealTimings) { option in
-                                Text(option.displayName).tag(option.referenceKey)
-                            }
-                        }
                     }
 
                     if let error = errorMessage {
@@ -187,21 +178,9 @@ struct CaffeineEntryView: View {
                 .execute()
                 .value
 
-            // Load meal timings
-            let timingsResponse: [ReferenceOption] = try await supabase
-                .from("sample_category_types_reference")
-                .select("id, display_name, reference_key")
-                .eq("reference_category", value: "food_timing")
-                .eq("is_active", value: true)
-                .order("display_order")
-                .execute()
-                .value
-
             await MainActor.run {
                 caffeineTypes = typesResponse
-                mealTimings = timingsResponse
                 selectedType = caffeineTypes.first?.referenceKey ?? ""
-                selectedTiming = mealTimings.first?.referenceKey ?? ""
                 isLoading = false
             }
 
@@ -231,9 +210,6 @@ struct CaffeineEntryView: View {
             if !selectedType.isEmpty {
                 metadata["caffeine_type"] = .string(selectedType)
             }
-            if !selectedTiming.isEmpty {
-                metadata["food_timing"] = .string(selectedTiming)
-            }
 
             // Create caffeine sample
             let caffeineSample = QuantitySampleWrite.create(
@@ -259,13 +235,10 @@ struct CaffeineEntryView: View {
                let caloriesValue = selectedOption.metadata?.caloriesValue,
                caloriesValue > 0 {
                 // Add source info to calories metadata
-                var caloriesMetadata: [String: AnyJSON] = [
+                let caloriesMetadata: [String: AnyJSON] = [
                     "source_type": .string("caffeine"),
                     "caffeine_type": .string(selectedType)
                 ]
-                if !selectedTiming.isEmpty {
-                    caloriesMetadata["food_timing"] = .string(selectedTiming)
-                }
 
                 let calorieSample = QuantitySampleWrite.create(
                     patientId: userId,

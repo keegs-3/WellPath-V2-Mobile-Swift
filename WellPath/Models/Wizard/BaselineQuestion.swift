@@ -94,6 +94,9 @@ struct WizardCategory: Identifiable {
     let color: String
     var questions: [BaselineQuestion]
     var isComplete: Bool
+    var isTour: Bool = false  // Tour-only categories (no questions, just intro/tour steps)
 
-    var questionCount: Int { questions.count }
+    var questionCount: Int {
+        isTour ? 0 : questions.count
+    }
 }

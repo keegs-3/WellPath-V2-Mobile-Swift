@@ -752,10 +752,41 @@ class LineChartScrollManager: ObservableObject {
                 )
             }
 
-            // Query patient_quantity_samples via the sample_quantity_type from display_views_dependencies
-            let sampleType = await lookupSampleType()
-            guard let quantityType = sampleType else {
-                print("⚠️ No sample_quantity_type found for \(metricId)")
+            // Query via the sample_quantity_type or sample_derived_type from display_views_dependencies
+            let (quantityType, derivedType) = await lookupSampleType()
+
+            // Handle derived types (ASMI, BMI, waist-to-hip ratio, etc.)
+            if let derivedType = derivedType {
+                struct DerivedReading: Codable {
+                    let calculatedValue: Double?
+                    let calculationDate: Date
+
+                    enum CodingKeys: String, CodingKey {
+                        case calculatedValue = "calculated_value"
+                        case calculationDate = "calculation_date"
+                    }
+                }
+
+                let derivedResults: [DerivedReading] = try await supabase
+                    .from("patient_derived_samples")
+                    .select("calculated_value, calculation_date")
+                    .eq("patient_id", value: patientId)
+                    .eq("derived_type", value: derivedType)
+                    .gte("calculation_date", value: formatter.string(from: startDate))
+                    .lte("calculation_date", value: formatter.string(from: endDate))
+                    .order("calculation_date", ascending: false)
+                    .execute()
+                    .value
+
+                return derivedResults.compactMap { reading -> ChartDataPoint? in
+                    guard let value = reading.calculatedValue else { return nil }
+                    return ChartDataPoint(date: reading.calculationDate, value: value, label: "")
+                }
+            }
+
+            // Handle quantity types
+            guard let quantityType = quantityType else {
+                print("⚠️ No sample_quantity_type or sample_derived_type found for \(metricId)")
                 return []
             }
 
@@ -848,30 +879,33 @@ class LineChartScrollManager: ObservableObject {
         }
     }
 
-    private func lookupSampleType() async -> String? {
+    /// Returns (quantityType, derivedType) - one will be set, the other nil
+    private func lookupSampleType() async -> (quantityType: String?, derivedType: String?) {
         do {
             struct SampleTypeLookup: Codable {
                 let sampleQuantityType: String?
+                let sampleDerivedType: String?
 
                 enum CodingKeys: String, CodingKey {
                     case sampleQuantityType = "sample_quantity_type"
+                    case sampleDerivedType = "sample_derived_type"
                 }
             }
 
             let results: [SampleTypeLookup] = try await supabase
                 .from("display_views_dependencies")
-                .select("sample_quantity_type")
+                .select("sample_quantity_type, sample_derived_type")
                 .eq("view_id", value: metricId)
                 .eq("is_primary", value: true)
                 .limit(1)
                 .execute()
                 .value
 
-            return results.first?.sampleQuantityType
+            return (results.first?.sampleQuantityType, results.first?.sampleDerivedType)
 
         } catch {
             print("❌ Error looking up sample type: \(error)")
-            return nil
+            return (nil, nil)
         }
     }
 

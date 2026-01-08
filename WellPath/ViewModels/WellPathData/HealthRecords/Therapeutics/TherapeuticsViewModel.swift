@@ -73,6 +73,7 @@ class TherapeuticsViewModel: ObservableObject {
     @Published var peptides: [PatientTherapeutic] = []
     @Published var hormones: [PatientTherapeutic] = []
     @Published var therapeuticsBase: [TherapeuticsBase] = []
+    @Published var unitOptions: [TherapeuticUnitOption] = []
     @Published var isLoading = false
     @Published var error: String?
 
@@ -143,7 +144,7 @@ class TherapeuticsViewModel: ObservableObject {
     func loadTherapeuticsBase() async {
         do {
             therapeuticsBase = try await supabase
-                .from("therapeutics_base")
+                .from("sample_therapeutic_types")
                 .select()
                 .eq("is_active", value: true)
                 .order("therapeutic_name")
@@ -152,6 +153,36 @@ class TherapeuticsViewModel: ObservableObject {
         } catch {
             print("TherapeuticsViewModel: Error loading therapeutics base - \(error)")
         }
+    }
+
+    /// Load substance-specific unit options from therapeutic_unit_options table.
+    /// Joins with units_base to get display symbols.
+    func loadUnitOptions(for therapeuticName: String) async {
+        do {
+            unitOptions = try await supabase
+                .from("therapeutic_unit_options")
+                .select("*, units_base(symbol, ui_display)")
+                .eq("therapeutic_name", value: therapeuticName)
+                .eq("is_available", value: true)
+                .order("is_default", ascending: false)
+                .execute()
+                .value
+
+            // If no options found, try to create a default from the therapeutic's base unit
+            if unitOptions.isEmpty, let therapeutic = therapeuticsBase.first(where: { $0.therapeuticName == therapeuticName }) {
+                // Fall back to empty - the view should handle showing a default unit picker
+                print("TherapeuticsViewModel: No unit options found for \(therapeuticName), using therapeutic base unit: \(therapeutic.therapeuticUnit ?? "mg")")
+            }
+        } catch {
+            print("TherapeuticsViewModel: Error loading unit options for \(therapeuticName) - \(error)")
+            unitOptions = []
+        }
+    }
+
+    /// Get the default unit for a therapeutic, or first available
+    func defaultUnit(for therapeuticName: String) -> TherapeuticUnitOption? {
+        unitOptions.first(where: { $0.therapeuticName == therapeuticName && $0.isDefault }) ??
+        unitOptions.first(where: { $0.therapeuticName == therapeuticName })
     }
 
     // MARK: - CRUD Operations

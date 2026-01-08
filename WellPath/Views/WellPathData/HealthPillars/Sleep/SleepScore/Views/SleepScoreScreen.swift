@@ -20,20 +20,19 @@ struct SleepScoreScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Score Card or Empty State
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.hasDailyScore {
-                    MetricScoreCard(
-                        config: .sleep,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
+                // Sleep Score Card
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: .sleep,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
                         SleepScoreDetailView(viewModel: scoreViewModel, color: color)
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: .sleep, color: color) {
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Component explanation card
                 componentExplanationCard

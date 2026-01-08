@@ -19,6 +19,7 @@ struct ScoreTypeInfo: Codable {
     let calculationConfig: String?  // JSON config if needed
     let iconName: String?
     let colorHex: String?
+    let scoringRangesKey: String?  // For scoring_ranges method, the range_key to use
 
     enum CodingKeys: String, CodingKey {
         case scoreType = "score_type"
@@ -27,6 +28,7 @@ struct ScoreTypeInfo: Codable {
         case calculationConfig = "calculation_config"
         case iconName = "icon_name"
         case colorHex = "color_hex"
+        case scoringRangesKey = "scoring_ranges_key"
     }
 }
 
@@ -281,7 +283,7 @@ class GenericScoreDetailViewModel: ObservableObject {
     private func loadScoreTypeInfo() async throws {
         let results: [ScoreTypeInfo] = try await supabase
             .from("sample_behavioral_score_types")
-            .select("score_type, display_name, calculation_method, calculation_config, icon_name, color_hex")
+            .select("score_type, display_name, calculation_method, calculation_config, icon_name, color_hex, scoring_ranges_key")
             .eq("score_type", value: scoreType)
             .limit(1)
             .execute()
@@ -345,6 +347,7 @@ class GenericScoreDetailViewModel: ObservableObject {
                 let iconName: String?
                 let colorHex: String?
                 let description: String?
+                let scoringRangesKey: String?
 
                 enum CodingKeys: String, CodingKey {
                     case scoreType = "score_type"
@@ -353,13 +356,14 @@ class GenericScoreDetailViewModel: ObservableObject {
                     case iconName = "icon_name"
                     case colorHex = "color_hex"
                     case description
+                    case scoringRangesKey = "scoring_ranges_key"
                 }
             }
 
             // Note: calculation_config removed from query - it's JSONB and not needed here
             let results: [ComponentInfo] = try await supabase
                 .from("sample_behavioral_score_types")
-                .select("score_type, display_name, calculation_method, icon_name, color_hex, description")
+                .select("score_type, display_name, calculation_method, icon_name, color_hex, description, scoring_ranges_key")
                 .in("score_type", values: componentTypes)
                 .execute()
                 .value
@@ -373,7 +377,8 @@ class GenericScoreDetailViewModel: ObservableObject {
                     calculationMethod: info.calculationMethod,
                     calculationConfig: nil,  // Not needed for display
                     iconName: info.iconName,
-                    colorHex: info.colorHex
+                    colorHex: info.colorHex,
+                    scoringRangesKey: info.scoringRangesKey
                 )
                 if let desc = info.description {
                     descMap[info.scoreType] = desc
@@ -383,7 +388,7 @@ class GenericScoreDetailViewModel: ObservableObject {
             componentDescriptions = descMap
             print("[ViewModel] Loaded \(typeMap.count) component score types: \(typeMap.keys.sorted())")
             for (key, info) in typeMap {
-                print("  - \(key): method=\(info.calculationMethod ?? "nil")")
+                print("  - \(key): method=\(info.calculationMethod ?? "nil"), rangesKey=\(info.scoringRangesKey ?? "nil")")
             }
         } catch {
             print("Error loading component score types: \(error)")
@@ -639,6 +644,11 @@ class GenericScoreDetailViewModel: ObservableObject {
         return ScoreCalculationMethod(rawValue: method) ?? .unknown
     }
 
+    /// Get scoring_ranges_key for a component score type (used for variety scores, etc.)
+    func scoringRangesKey(for componentType: String) -> String? {
+        componentScoreTypes[componentType]?.scoringRangesKey
+    }
+
     /// Get component by score type
     func component(for scoreType: String) -> ScoreComponentWeight? {
         components.first { $0.componentScoreType == scoreType }
@@ -760,49 +770,86 @@ extension GenericScoreDetailViewModel {
                 return [:]
             }
 
-            // Query individual samples with their timestamps
+            // First, load timing window definitions from scoring_thresholds
+            struct TimingWindow: Codable {
+                let thresholdKey: String
+                let windowStartHour: Int
+                let windowEndHour: Int
+
+                enum CodingKeys: String, CodingKey {
+                    case thresholdKey = "threshold_key"
+                    case windowStartHour = "window_start_hour"
+                    case windowEndHour = "window_end_hour"
+                }
+            }
+
+            let windows: [TimingWindow] = try await supabase
+                .from("scoring_thresholds")
+                .select("threshold_key, window_start_hour, window_end_hour")
+                .eq("score_type", value: scoreType)
+                .eq("threshold_type", value: "timing")
+                .eq("is_active", value: true)
+                .order("display_order")
+                .execute()
+                .value
+
+            guard !windows.isEmpty else {
+                print("No timing windows found for \(scoreType)")
+                return [:]
+            }
+
+            // Query individual samples with their timestamps and user_timezone
             struct TimingRow: Codable {
                 let canonicalValue: Double
                 let startTime: Date
+                let userTimezone: String
 
                 enum CodingKeys: String, CodingKey {
                     case canonicalValue = "canonical_value"
                     case startTime = "start_time"
+                    case userTimezone = "user_timezone"
                 }
             }
 
             let results: [TimingRow] = try await supabase
                 .from("patient_quantity_samples")
-                .select("canonical_value, start_time")
+                .select("canonical_value, start_time, user_timezone")
                 .eq("patient_id", value: userId.uuidString)
                 .eq("quantity_type", value: quantityType)
                 .eq("aggregation_date", value: dateStr)
                 .execute()
                 .value
 
-            // Group by time window based on hour (matching calculate_timing_distribution_score function)
-            // Morning: 6-11 (6am-12pm), Afternoon: 12-17 (12pm-6pm), Evening: 18-21 (6pm-10pm), Night: 22-5 (10pm-6am)
-            var windowValues: [String: Double] = [
-                "morning": 0,
-                "afternoon": 0,
-                "evening": 0,
-                "night": 0
-            ]
+            // Initialize window values from DB-defined windows
+            var windowValues: [String: Double] = [:]
+            for window in windows {
+                windowValues[window.thresholdKey] = 0
+            }
 
-            let calendar = Calendar.current
+            // Group by time window using LOCAL time (user_timezone)
             for row in results {
+                // Convert to user's local timezone for hour extraction
+                let tz = TimeZone(identifier: row.userTimezone) ?? TimeZone.current
+                var calendar = Calendar.current
+                calendar.timeZone = tz
                 let hour = calendar.component(.hour, from: row.startTime)
-                let window: String
-                if hour >= 6 && hour < 12 {
-                    window = "morning"
-                } else if hour >= 12 && hour < 18 {
-                    window = "afternoon"
-                } else if hour >= 18 && hour < 22 {
-                    window = "evening"
-                } else {
-                    window = "night"
+
+                // Find which window this hour falls into
+                for window in windows {
+                    let inWindow: Bool
+                    if window.windowEndHour > window.windowStartHour {
+                        // Normal case (e.g., 4-12)
+                        inWindow = hour >= window.windowStartHour && hour < window.windowEndHour
+                    } else {
+                        // Wraps midnight (e.g., 18-4 means 18-24 OR 0-4)
+                        inWindow = hour >= window.windowStartHour || hour < window.windowEndHour
+                    }
+
+                    if inWindow {
+                        windowValues[window.thresholdKey, default: 0] += row.canonicalValue
+                        break
+                    }
                 }
-                windowValues[window, default: 0] += row.canonicalValue
             }
 
             return windowValues

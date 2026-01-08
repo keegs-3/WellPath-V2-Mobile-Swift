@@ -115,26 +115,32 @@ class BiometricValueLoader: ObservableObject {
 
             icon = viewInfos.first?.iconName
 
-            // Query sample_quantity_type from display_views_dependencies (primary dependency)
+            // Query dependency type from display_views_dependencies (primary dependency)
+            // Can be sample_quantity_type OR sample_derived_type
             struct DependencyMapping: Codable {
                 let sampleQuantityType: String?
+                let sampleDerivedType: String?
 
                 enum CodingKeys: String, CodingKey {
                     case sampleQuantityType = "sample_quantity_type"
+                    case sampleDerivedType = "sample_derived_type"
                 }
             }
 
             let dependencies: [DependencyMapping] = try await supabase
                 .from("display_views_dependencies")
-                .select("sample_quantity_type")
+                .select("sample_quantity_type, sample_derived_type")
                 .eq("view_id", value: metricId)
                 .eq("is_primary", value: true)
                 .limit(1)
                 .execute()
                 .value
 
-            guard let quantityType = dependencies.first?.sampleQuantityType else {
-                print("⚠️ No sample_quantity_type dependency for \(metricId)")
+            let quantityType = dependencies.first?.sampleQuantityType
+            let derivedType = dependencies.first?.sampleDerivedType
+
+            guard quantityType != nil || derivedType != nil else {
+                print("⚠️ No sample_quantity_type or sample_derived_type dependency for \(metricId)")
                 isLoading = false
                 return
             }
@@ -153,17 +159,54 @@ class BiometricValueLoader: ObservableObject {
                 }
             }
 
-            // Query patient_quantity_samples for recent values (for sparkline)
-            // Use canonical values - always in standard units (kg, cm) for consistent conversion
-            let results: [SampleReading] = try await supabase
-                .from("patient_quantity_samples")
-                .select("canonical_value, canonical_unit, start_time")
-                .eq("patient_id", value: patientId)
-                .eq("quantity_type", value: quantityType)
-                .order("start_time", ascending: false)
-                .limit(sparklinePointCount)
-                .execute()
-                .value
+            // For derived types, we need a different model (patient_derived_samples has different columns)
+            struct DerivedReading: Codable {
+                let calculatedValue: Double?
+                let calculationDate: Date
+
+                enum CodingKeys: String, CodingKey {
+                    case calculatedValue = "calculated_value"
+                    case calculationDate = "calculation_date"
+                }
+            }
+
+            var results: [SampleReading] = []
+
+            // Query from the appropriate table based on dependency type
+            if let derivedType = derivedType {
+                // Query patient_derived_samples view for derived values (ASMI, BMI, ratios, etc.)
+                let derivedResults: [DerivedReading] = try await supabase
+                    .from("patient_derived_samples")
+                    .select("calculated_value, calculation_date")
+                    .eq("patient_id", value: patientId)
+                    .eq("derived_type", value: derivedType)
+                    .order("calculation_date", ascending: false)
+                    .limit(sparklinePointCount)
+                    .execute()
+                    .value
+
+                // Convert to SampleReading format for consistent handling
+                results = derivedResults.compactMap { derived -> SampleReading? in
+                    guard let value = derived.calculatedValue else { return nil }
+                    return SampleReading(
+                        canonicalValue: value,
+                        canonicalUnit: nil, // Derived values may not have unit in view
+                        startTime: derived.calculationDate
+                    )
+                }
+            } else if let quantityType = quantityType {
+                // Query patient_quantity_samples for raw values
+                // Use canonical values - always in standard units (kg, cm) for consistent conversion
+                results = try await supabase
+                    .from("patient_quantity_samples")
+                    .select("canonical_value, canonical_unit, start_time")
+                    .eq("patient_id", value: patientId)
+                    .eq("quantity_type", value: quantityType)
+                    .order("start_time", ascending: false)
+                    .limit(sparklinePointCount)
+                    .execute()
+                    .value
+            }
 
             // Build sparkline points (reversed to show oldest first)
             let reversedResults = results.reversed()

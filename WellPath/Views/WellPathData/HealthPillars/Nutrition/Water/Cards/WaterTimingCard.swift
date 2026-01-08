@@ -18,7 +18,7 @@ struct WaterTimingCard: View {
         MetricCardView(
             title: "Hydration Timing",
             color: color,
-            metricId: "DISP_WATER_TIMING",
+            metricId: "DISP_HYDRATION_TIMING",
             pillar: pillar
         ) {
             WaterTimingMiniCard(

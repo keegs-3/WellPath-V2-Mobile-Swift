@@ -101,9 +101,10 @@ struct CategorySectionDetailView: View {
                 .padding(.bottom, 32)
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .wellPathAmbientBackground(color: currentSection.color)
         .navigationTitle(currentSection.sectionName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .task {
             // Load biomarker data if on biomarker section
             if isBiomarkerSection {
@@ -217,23 +218,19 @@ struct ViewCardSearchResult: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        cardColor.opacity(0.15),
-                                        cardColor.opacity(0.05)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                cardColor.opacity(0.25),
+                                cardColor.opacity(0.12)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(cardColor.opacity(0.25), lineWidth: 1)
+                            .stroke(cardColor.opacity(0.3), lineWidth: 1)
                     )
             )
         }
@@ -343,23 +340,19 @@ struct CardCategoryCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    sectionColor.opacity(0.15),
-                                    sectionColor.opacity(0.05)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            sectionColor.opacity(0.25),
+                            sectionColor.opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(sectionColor.opacity(0.25), lineWidth: 1)
+                        .stroke(sectionColor.opacity(0.3), lineWidth: 1)
                 )
         )
     }
@@ -412,7 +405,6 @@ struct TopCategoryNavBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 }
 
@@ -441,7 +433,11 @@ struct TopSectionNavIcon: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(isSelected ? section.color.opacity(0.15) : Color.clear)
+                    .fill(isSelected ? section.color.opacity(0.25) : Color.clear)
+                    .overlay(
+                        Capsule()
+                            .stroke(isSelected ? section.color.opacity(0.4) : Color.clear, lineWidth: 1)
+                    )
             )
         }
         .buttonStyle(.plain)
@@ -495,7 +491,7 @@ struct TopCategorySearchBar: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                    .fill(WellPathColors.cardBackground)
             )
 
             // Cancel button
@@ -510,7 +506,6 @@ struct TopCategorySearchBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 }
 
@@ -637,15 +632,240 @@ struct CollapsedCategorySearchBar: View {
 struct CategoryDetailView: View {
     let category: CardCategoryConfig
     let sectionColor: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
 
     var body: some View {
-        // Route directly to the actual screen for this category
-        CategoryScreenRouter.destinationView(
-            for: category.categoryId,
-            pillar: category.pillar ?? "",
-            color: sectionColor,
-            sectionId: category.sectionId ?? ""
-        )
+        // 1. Check if category has subcategories (e.g., CAT_SUBSTANCES → Alcohol, Tobacco, etc.)
+        if displayConfig.hasSubcategories(categoryId: category.categoryId) {
+            CategorySubcategoriesView(parentCategory: category, sectionColor: sectionColor)
+        }
+        // 2. Otherwise route to the specific screen via the router
+        // The router handles categories with dedicated *Screen views (Protein, Sleep, etc.)
+        // AND categories that need cards list (Therapeutics)
+        else {
+            CategoryScreenRouter.destinationView(
+                for: category.categoryId,
+                pillar: category.pillar ?? "",
+                color: sectionColor,
+                sectionId: category.sectionId ?? ""
+            )
+        }
+    }
+}
+
+// MARK: - Category Subcategories View (for categories with child categories)
+
+struct CategorySubcategoriesView: View {
+    let parentCategory: CardCategoryConfig
+    let sectionColor: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    private var subcategories: [CardCategoryConfig] {
+        displayConfig.subcategories(forCategory: parentCategory.categoryId)
+    }
+
+    private var color: Color {
+        displayConfig.cardCategoryColor(for: parentCategory.categoryId)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                if subcategories.isEmpty {
+                    emptyState
+                } else {
+                    ForEach(subcategories) { subcategory in
+                        NavigationLink {
+                            CategoryDetailView(category: subcategory, sectionColor: sectionColor)
+                        } label: {
+                            CategorySubcategoryCard(category: subcategory, color: color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .wellPathAmbientBackground(color: color)
+        .navigationTitle(parentCategory.name)
+        .navigationBarTitleDisplayMode(.large)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: parentCategory.iconName ?? "folder")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("No subcategories available")
+                .font(.headline)
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Category Subcategory Card
+
+struct CategorySubcategoryCard: View {
+    let category: CardCategoryConfig
+    let color: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    private var cardCount: Int {
+        displayConfig.viewCards(forCategory: category.categoryId).count
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.opacity(0.15))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: category.iconName ?? "folder")
+                    .font(.title2)
+                    .foregroundColor(color)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                if let overview = category.overview {
+                    Text(overview)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                } else if cardCount > 0 {
+                    Text("\(cardCount) items")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
+    }
+}
+
+// MARK: - Simple Category Cards List View (for categories with multiple view cards)
+// Note: Named "Simple" to avoid conflict with CategoryCardsListView in WellPathDataListView.swift
+
+struct SimpleCategoryCardsListView: View {
+    let category: CardCategoryConfig
+    let sectionColor: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    private var cards: [ViewCardConfig] {
+        displayConfig.viewCards(forCategory: category.categoryId)
+    }
+
+    private var color: Color {
+        displayConfig.cardCategoryColor(for: category.categoryId)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                if cards.isEmpty {
+                    emptyState
+                } else {
+                    ForEach(cards) { card in
+                        if let viewId = card.viewId,
+                           let viewConfig = displayConfig.view(id: viewId) {
+                            NavigationLink {
+                                ViewRouter.viewForViewId(viewConfig, color: color, sectionId: category.sectionId ?? "")
+                            } label: {
+                                SimpleCategoryViewCardRow(card: card, color: color)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            // Card without view_id - show placeholder
+                            SimpleCategoryViewCardRow(card: card, color: color)
+                                .opacity(0.5)
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+        .wellPathAmbientBackground(color: color)
+        .navigationTitle(category.name)
+        .navigationBarTitleDisplayMode(.large)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: category.iconName ?? "chart.bar.fill")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("No data available")
+                .font(.headline)
+            Text("Start tracking to see your data here")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Simple Category View Card Row
+
+struct SimpleCategoryViewCardRow: View {
+    let card: ViewCardConfig
+    let color: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    /// Get icon from the associated view config
+    private var iconName: String {
+        if let viewId = card.viewId,
+           let viewConfig = displayConfig.view(id: viewId) {
+            return viewConfig.iconName ?? "chart.bar.fill"
+        }
+        return "chart.bar.fill"
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.opacity(0.15))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: iconName)
+                    .font(.title2)
+                    .foregroundColor(color)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.cardName)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                if let desc = card.description {
+                    Text(desc)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
     }
 }
 
@@ -717,7 +937,7 @@ enum CategoryScreenRouter {
             StressLevelScreen(pillar: pillar, color: color)
         case "CAT_STRESS_DIRECT":  // Keep direct route for internal use
             AssessmentScreenTemplate(
-                assessmentId: "ASSESS_PSS10",
+                assessmentId: "ASSESS_STRESS_LEVEL",
                 color: color,
                 viewId: "DISP_STRESS",
                 sectionId: sectionId
@@ -776,13 +996,25 @@ enum CategoryScreenRouter {
         case "CAT_DEPRESSION":
             DepressionScreen(pillar: pillar, color: color)
 
-        // MARK: - Health Records
+        // MARK: - Health Records / Core Care
+        // CAT_THERAPEUTICS shows the full therapeutics screen with proper toolbar and cards
         case "CAT_THERAPEUTICS":
-            TherapeuticsListView()
+            TherapeuticsScreen(color: color)
+        // Individual therapeutics cards route directly to their views
+        case "CAT_SUPPLEMENTS":
+            TherapeuticsExploreView(therapeuticType: .supplement)
+        case "CAT_MEDICATIONS":
+            TherapeuticsExploreView(therapeuticType: .medication)
+        case "CAT_PEPTIDES":
+            TherapeuticsExploreView(therapeuticType: .peptide)
+        case "CAT_HORMONES":
+            TherapeuticsExploreView(therapeuticType: .hormone)
         case "CAT_PERSONAL_HISTORY":
-            MedicalHistoryListView()
+            PersonalHistoryView(viewModel: MedicalHistoryViewModel(), color: color)
         case "CAT_FAMILY_HISTORY":
-            CategoryPlaceholderView(categoryId: categoryId, color: color)  // Family history not yet built
+            FamilyHistoryView(viewModel: MedicalHistoryViewModel(), color: color)
+        case "CAT_MEDICAL_HISTORY":
+            MedicalHistoryEntryView(color: color)
         case "CAT_SCREENINGS":
             ScreeningsListView()
 
@@ -790,6 +1022,89 @@ enum CategoryScreenRouter {
         default:
             CategoryPlaceholderView(categoryId: categoryId, color: color)
         }
+    }
+}
+
+// MARK: - Therapeutics Cards List View
+// Shows cards for CAT_THERAPEUTICS category using standard card styling
+
+struct TherapeuticsCardsListView: View {
+    let color: Color
+    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
+
+    private var cards: [ViewCardConfig] {
+        displayConfig.viewCards(forCategory: "CAT_THERAPEUTICS")
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                ForEach(cards) { card in
+                    if let viewId = card.viewId,
+                       let viewConfig = displayConfig.view(id: viewId) {
+                        NavigationLink {
+                            ViewRouter.viewForViewId(viewConfig, color: color, sectionId: "NAV_CORE_CARE")
+                        } label: {
+                            TherapeuticsCardRow(card: card, viewConfig: viewConfig, color: color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .wellPathAmbientBackground(color: color)
+        .navigationTitle("Therapeutics")
+        .navigationBarTitleDisplayMode(.large)
+    }
+}
+
+// MARK: - Therapeutics Card Row (standard card styling without score ring)
+
+struct TherapeuticsCardRow: View {
+    let card: ViewCardConfig
+    let viewConfig: ViewConfig
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                // Icon
+                Image(systemName: viewConfig.iconName ?? "pills.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(color)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(color.opacity(0.2))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(card.cardName)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+
+                Spacer()
+
+                // Chevron (no score ring for therapeutics)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            // Description
+            if let description = card.description {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
     }
 }
 
@@ -819,7 +1134,7 @@ struct CategoryPlaceholderView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(WellPathColors.backgroundBase)
         .navigationTitle("Coming Soon")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -863,7 +1178,7 @@ struct ViewCardRow: View {
                 .foregroundColor(.secondary)
         }
         .padding(14)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(WellPathColors.cardBackground)
         .cornerRadius(12)
     }
 }
@@ -897,7 +1212,7 @@ struct MetricViewPlaceholder: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(WellPathColors.backgroundBase)
         .navigationTitle(card.cardName)
         .navigationBarTitleDisplayMode(.inline)
     }

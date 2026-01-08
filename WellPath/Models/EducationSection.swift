@@ -15,9 +15,10 @@ import Supabase  // For AnyJSON type
 /// Static education content from education_static_content table
 /// Each view has one education entry with about, longevity impact, tips, etc.
 /// JSONB columns can be strings, objects, or arrays - use AnyJSON to handle mixed types
+/// Referenced by view_id FK to display_views (including therapeutic views: DISP_{TYPE}_{NAME})
 struct EducationStaticContent: Codable, Identifiable {
     let id: UUID
-    let viewId: String
+    let viewId: String?                  // FK to display_views
     let aboutContent: AnyJSON?           // JSONB - can be string, object {"text": "..."}, or null
     let longevityImpact: AnyJSON?        // JSONB - can be string, object, or null
     let optimalRangesExplanation: AnyJSON?
@@ -29,6 +30,12 @@ struct EducationStaticContent: Codable, Identifiable {
     let longevityImpactShort: String?    // Plain TEXT column
     let suggestedQuestions: [String]?    // JSONB array of suggested questions for Chiron AI chat
     let aiContext: String?               // Text context/instructions for Chiron per metric
+
+    // Therapeutic-specific fields
+    let mechanismSummary: String?        // How the therapeutic works
+    let safetyProfile: AnyJSON?          // JSONB: risks, warnings, contraindications
+    let dosingSummary: String?           // Practical dosing guidance
+    let interactionsNote: String?        // Key drug/supplement interactions
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -44,6 +51,10 @@ struct EducationStaticContent: Codable, Identifiable {
         case longevityImpactShort = "longevity_impact_short"
         case suggestedQuestions = "suggested_questions"
         case aiContext = "ai_context"
+        case mechanismSummary = "mechanism_summary"
+        case safetyProfile = "safety_profile"
+        case dosingSummary = "dosing_summary"
+        case interactionsNote = "interactions_note"
     }
 }
 

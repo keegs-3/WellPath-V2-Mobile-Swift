@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Generic ViewModel for nutrient type distribution (legumes, vegetables, whole grains, fruits)
-//  Uses Variety Score (count + evenness) instead of tier-based Quality Score
+//  Uses Variety Score (count toward target) instead of tier-based Quality Score
 //
 
 import Foundation
@@ -211,29 +211,46 @@ class NutrientTypeViewModel: ObservableObject {
         }
     }
 
-    /// Loads variety score targets from database
+    /// Loads variety score targets from database (scoring_thresholds table)
     private func loadVarietyThresholds() async {
         do {
             struct TargetRow: Codable {
                 let periodType: String
-                let diversityTarget: Int
+                let targetValue: Double
 
                 enum CodingKeys: String, CodingKey {
                     case periodType = "period_type"
-                    case diversityTarget = "diversity_target"
+                    case targetValue = "target_value"
+                }
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    periodType = try container.decode(String.self, forKey: .periodType)
+                    // Handle numeric that may come as string
+                    if let doubleValue = try? container.decode(Double.self, forKey: .targetValue) {
+                        targetValue = doubleValue
+                    } else if let stringValue = try? container.decode(String.self, forKey: .targetValue),
+                              let parsed = Double(stringValue) {
+                        targetValue = parsed
+                    } else {
+                        targetValue = 3
+                    }
                 }
             }
 
+            // Query from consolidated scoring_thresholds table
             let results: [TargetRow] = try await supabase
-                .from("display_view_variety_thresholds")
-                .select("period_type, diversity_target")
+                .from("scoring_thresholds")
+                .select("period_type, target_value")
                 .eq("view_id", value: typeMetricId)
+                .eq("threshold_type", value: "variety")
+                .eq("is_active", value: true)
                 .execute()
                 .value
 
             // Build targets dictionary
             for row in results {
-                targets[row.periodType] = VarietyTarget(target: row.diversityTarget)
+                targets[row.periodType] = VarietyTarget(target: Int(row.targetValue))
             }
 
             print("🍽️ Loaded \(targets.count) variety targets for \(typeMetricId)")
@@ -400,22 +417,11 @@ class NutrientTypeViewModel: ObservableObject {
 
     // MARK: - Variety Score Calculation
 
-    /// Calculates the Variety Score (0-100) based on count and evenness
-    /// Formula: (Count Score × 0.5) + (Evenness Score × 0.5)
-    /// - Count Score: types consumed vs target (from database, period-aware)
-    /// - Evenness Score: Shannon entropy (rewards balanced distribution)
+    /// Calculates the Variety Score (0-100) based on types consumed vs target
+    /// Score = types consumed / target, capped at 100%
     func calculateVarietyScore(for period: TimePeriod = .week) -> Double {
         guard hasData else { return 0 }
 
-        let countScore = calculateCountScore(for: period)
-        let evennessScore = calculateEvennessScore()
-
-        return (countScore * 0.5) + (evennessScore * 0.5)
-    }
-
-    /// Count Score: types consumed vs target (capped at 100)
-    /// Target comes from database, varies by period
-    private func calculateCountScore(for period: TimePeriod) -> Double {
         let typesConsumed = typeAggregations.filter { type in
             !type.aggId.hasSuffix("_OTHER") && (typeData[type.aggId] ?? 0) > 0
         }.count
@@ -437,47 +443,6 @@ class NutrientTypeViewModel: ObservableObject {
 
         // Score = types consumed / target, capped at 100%
         return min(Double(typesConsumed) / Double(target), 1.0) * 100
-    }
-
-    /// Evenness Score using normalized Shannon entropy
-    /// Perfect evenness (equal distribution) = 100
-    /// Single type dominance = 0
-    /// Formula: (-Σ(p × ln(p)) / ln(n)) × 100 where p = proportion, n = types consumed
-    private func calculateEvennessScore() -> Double {
-        // Get non-zero values (excluding "Other" if we want to focus on named types)
-        let nonZeroValues = typeAggregations
-            .compactMap { type -> Double? in
-                let value = typeData[type.aggId] ?? 0
-                return value > 0 ? value : nil
-            }
-
-        let n = nonZeroValues.count
-        guard n > 1 else {
-            // If only 1 type consumed, evenness is 0 (no diversity)
-            // If 0 types, return 0
-            return n == 1 ? 0 : 0
-        }
-
-        let total = nonZeroValues.reduce(0, +)
-        guard total > 0 else { return 0 }
-
-        // Calculate Shannon entropy: H = -Σ(p × ln(p))
-        var entropy: Double = 0
-        for value in nonZeroValues {
-            let p = value / total
-            if p > 0 {
-                entropy -= p * log(p)
-            }
-        }
-
-        // Maximum entropy for n items = ln(n)
-        let maxEntropy = log(Double(n))
-        guard maxEntropy > 0 else { return 0 }
-
-        // Normalized entropy (Pielou's evenness): H / ln(n)
-        let normalizedEntropy = entropy / maxEntropy
-
-        return normalizedEntropy * 100
     }
 
     // MARK: - Helper Methods

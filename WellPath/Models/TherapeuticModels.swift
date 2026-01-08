@@ -243,6 +243,18 @@ struct TherapeuticsBase: Codable, Identifiable {
     let createdAt: String?
     let updatedAt: String?
 
+    // Education fields
+    let mechanismOfAction: String?
+    let benefits: [[String: String]]?
+    let risksWarnings: [[String: String]]?
+    let contraindications: [[String: String]]?
+    let dosingGuidance: String?
+    let timingGuidance: String?
+    let longevityRelevance: String?
+    let researchSummary: String?
+    let commonBrands: [String]?
+    let aiContext: String?
+
     enum CodingKeys: String, CodingKey {
         case id
         case therapeuticName = "therapeutic_name"
@@ -265,6 +277,31 @@ struct TherapeuticsBase: Codable, Identifiable {
         case isActive = "is_active"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case mechanismOfAction = "mechanism_of_action"
+        case benefits
+        case risksWarnings = "risks_warnings"
+        case contraindications
+        case dosingGuidance = "dosing_guidance"
+        case timingGuidance = "timing_guidance"
+        case longevityRelevance = "longevity_relevance"
+        case researchSummary = "research_summary"
+        case commonBrands = "common_brands"
+        case aiContext = "ai_context"
+    }
+
+    var type: TherapeuticType {
+        TherapeuticType(rawValue: therapeuticType ?? "") ?? .other
+    }
+
+    /// Generate view_id matching display_views pattern: DISP_{TYPE}_{SANITIZED_NAME}
+    var viewId: String {
+        let typeCode = therapeuticType ?? "UNK"
+        let sanitizedName = therapeuticName
+            .uppercased()
+            .replacingOccurrences(of: "[^A-Z0-9]", with: "_", options: .regularExpression)
+            .replacingOccurrences(of: "_+", with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        return "DISP_\(typeCode)_\(sanitizedName)"
     }
 
     var doseRangeDescription: String {
@@ -274,6 +311,138 @@ struct TherapeuticsBase: Codable, Identifiable {
             return "\(min.formatted())-\(max.formatted()) \(unit)"
         }
         return "\(min.formatted()) \(unit)"
+    }
+}
+
+// MARK: - Therapeutic Log (Daily Dose Tracking)
+
+struct TherapeuticLog: Codable, Identifiable {
+    let id: UUID
+    let patientId: UUID
+    let patientTherapeuticId: UUID
+    let loggedAt: String
+    let doseAmount: Double?
+    let doseUnit: String?
+    let timing: String?  // morning, midday, evening, bedtime
+    let taken: Bool
+    let skipReason: String?
+    let notes: String?
+    let source: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case patientId = "patient_id"
+        case patientTherapeuticId = "patient_therapeutic_id"
+        case loggedAt = "logged_at"
+        case doseAmount = "dose_amount"
+        case doseUnit = "dose_unit"
+        case timing
+        case taken
+        case skipReason = "skip_reason"
+        case notes
+        case source
+        case createdAt = "created_at"
+    }
+
+    var parsedLoggedAt: Date? {
+        ISO8601DateFormatter().date(from: loggedAt)
+    }
+
+    var logDate: Date {
+        parsedLoggedAt ?? Date()
+    }
+}
+
+// MARK: - Drug Interaction
+
+struct DrugInteraction: Codable, Identifiable {
+    let id: UUID
+    let drug1Name: String
+    let drug1Rxcui: String?
+    let drug2Name: String
+    let drug2Rxcui: String?
+    let severity: String?
+    let level: String?
+    let mechanism: String?
+    let clinicalEffect: String?
+    let management: String?
+    let alternativeDrugs: String?
+    let evidenceLevel: String?
+    let source: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case drug1Name = "drug_1_name"
+        case drug1Rxcui = "drug_1_rxcui"
+        case drug2Name = "drug_2_name"
+        case drug2Rxcui = "drug_2_rxcui"
+        case severity
+        case level
+        case mechanism
+        case clinicalEffect = "clinical_effect"
+        case management
+        case alternativeDrugs = "alternative_drugs"
+        case evidenceLevel = "evidence_level"
+        case source
+    }
+
+    var severityColor: Color {
+        switch severity?.lowercased() {
+        case "major": return .red
+        case "moderate": return .orange
+        case "minor": return .yellow
+        case "info": return .blue
+        default: return .gray
+        }
+    }
+
+    var severityIcon: String {
+        switch severity?.lowercased() {
+        case "major": return "exclamationmark.octagon.fill"
+        case "moderate": return "exclamationmark.triangle.fill"
+        case "minor": return "info.circle.fill"
+        case "info": return "checkmark.circle.fill"
+        default: return "questionmark.circle.fill"
+        }
+    }
+}
+
+// MARK: - Time of Day
+
+enum TimeOfDay: String, CaseIterable, Identifiable {
+    case morning
+    case midday
+    case evening
+    case bedtime
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .morning: return "Morning"
+        case .midday: return "Midday"
+        case .evening: return "Evening"
+        case .bedtime: return "Bedtime"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .morning: return "sun.max.fill"
+        case .midday: return "sun.min.fill"
+        case .evening: return "sunset.fill"
+        case .bedtime: return "moon.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .morning: return .orange
+        case .midday: return .yellow
+        case .evening: return .blue
+        case .bedtime: return .purple
+        }
     }
 }
 
@@ -305,7 +474,7 @@ struct TherapeuticDoseEntry: Codable {
     }
 }
 
-// MARK: - Common Dose Units
+// MARK: - Common Dose Units (Legacy - prefer TherapeuticUnitOption from DB)
 
 enum DoseUnit: String, CaseIterable, Identifiable {
     case mg = "mg"
@@ -322,6 +491,127 @@ enum DoseUnit: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var displayName: String { rawValue }
+}
+
+// MARK: - Therapeutic Unit Option (from therapeutic_unit_options table)
+
+/// Represents a substance-specific unit option from the database.
+/// Loaded via JOIN with units_base to get display info.
+struct TherapeuticUnitOption: Codable, Identifiable, Hashable {
+    let id: UUID
+    let therapeuticName: String
+    let unitId: String
+    let conversionToBaseFactor: Double?
+    let isDefault: Bool
+    let isAvailable: Bool
+    let baseUnitId: String?
+    let notes: String?
+
+    /// Joined from units_base table
+    let unitsBase: UnitsBaseInfo?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case therapeuticName = "therapeutic_name"
+        case unitId = "unit_id"
+        case conversionToBaseFactor = "conversion_to_base_factor"
+        case isDefault = "is_default"
+        case isAvailable = "is_available"
+        case baseUnitId = "base_unit_id"
+        case notes
+        case unitsBase = "units_base"
+    }
+
+    // MARK: - Computed Properties
+
+    /// Display symbol (e.g., "mg", "mcg", "IU")
+    var symbol: String {
+        unitsBase?.symbol ?? unitId
+    }
+
+    /// Full display name (e.g., "milligrams", "micrograms")
+    var displayName: String {
+        unitsBase?.uiDisplay ?? unitId
+    }
+
+    // MARK: - Hashable
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: TherapeuticUnitOption, rhs: TherapeuticUnitOption) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+/// Nested struct for units_base join data
+struct UnitsBaseInfo: Codable, Hashable {
+    let symbol: String?
+    let uiDisplay: String?
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case uiDisplay = "ui_display"
+    }
+}
+
+// MARK: - Suggested Therapeutic (from patient_suggested_therapeutics view)
+
+/// A therapeutic suggestion based on patient scores and biomarkers.
+/// Generated dynamically from score_therapeutic_links junction table.
+struct SuggestedTherapeutic: Codable, Identifiable {
+    let patientId: UUID
+    let therapeuticName: String
+    let therapeuticType: String?
+    let category: String?
+    let triggeringScore: String?
+    let scoreValue: Double?
+    let rawValue: Double?
+    let rawUnit: String?
+    let relevance: Int?
+    let direction: String?
+    let rationale: String?
+    let viewId: String?
+
+    var id: String { "\(patientId)-\(therapeuticName)" }
+
+    enum CodingKeys: String, CodingKey {
+        case patientId = "patient_id"
+        case therapeuticName = "therapeutic_name"
+        case therapeuticType = "therapeutic_type"
+        case category
+        case triggeringScore = "triggering_score"
+        case scoreValue = "score_value"
+        case rawValue = "raw_value"
+        case rawUnit = "raw_unit"
+        case relevance
+        case direction
+        case rationale
+        case viewId = "view_id"
+    }
+
+    var type: TherapeuticType {
+        TherapeuticType(rawValue: therapeuticType ?? "") ?? .other
+    }
+
+    /// Display-friendly triggering score name
+    var triggeringScoreDisplay: String {
+        guard let score = triggeringScore else { return "Health Score" }
+        return score
+            .replacingOccurrences(of: "_score", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+    }
+
+    /// Score status description
+    var scoreStatusDescription: String {
+        guard let value = scoreValue else { return "" }
+        let intValue = Int(value)
+        if intValue < 40 { return "Low" }
+        else if intValue < 60 { return "Below Target" }
+        else { return "Suboptimal" }
+    }
 }
 
 // MARK: - Common Therapeutic Categories

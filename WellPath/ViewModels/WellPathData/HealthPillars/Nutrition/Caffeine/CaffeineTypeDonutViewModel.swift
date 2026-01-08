@@ -219,46 +219,64 @@ class CaffeineTypeDonutViewModel: ObservableObject {
             // Calculate date range
             let (startDate, endDate) = getDateRange(for: period, date: date)
 
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate]
-            let startStr = formatter.string(from: startDate)
-            let endStr = formatter.string(from: endDate)
+            // Format as simple YYYY-MM-DD for aggregation_date (date type, not timestamp)
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let startStr = dateFormatter.string(from: startDate)
+            let endStr = dateFormatter.string(from: endDate)
 
-            // Query caffeine category samples for this period
+            // Query caffeine quantity samples with aggregation_date for tracking days with data
             struct CaffeineSample: Codable {
-                let categoryValue: String
-                let quantityValue: Double?
+                let canonicalValue: Double?
+                let aggregationDate: String?
+                let metadata: CaffeineMetadataJSON?
 
                 enum CodingKeys: String, CodingKey {
-                    case categoryValue = "category_value"
-                    case quantityValue = "quantity_value"
+                    case canonicalValue = "canonical_value"
+                    case aggregationDate = "aggregation_date"
+                    case metadata
+                }
+            }
+
+            struct CaffeineMetadataJSON: Codable {
+                let caffeineType: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case caffeineType = "caffeine_type"
                 }
             }
 
             let samples: [CaffeineSample] = try await supabase
-                .from("patient_category_samples")
-                .select("category_value, quantity_value")
+                .from("patient_quantity_samples")
+                .select("canonical_value, aggregation_date, metadata")
                 .eq("patient_id", value: userId.uuidString)
-                .eq("category_type", value: "caffeine_types")
-                .gte("start_time", value: startStr)
-                .lte("start_time", value: endStr)
+                .eq("quantity_type", value: "caffeine_mg")
+                .gte("aggregation_date", value: startStr)
+                .lte("aggregation_date", value: endStr)
                 .execute()
                 .value
 
-            // Aggregate by type
+            // Aggregate by type (from metadata), tracking unique dates with data
             var aggregated: [String: Double] = [:]
+            var datesWithData: Set<String> = []
+
             for sample in samples {
-                let typeKey = sample.categoryValue
-                let mg = sample.quantityValue ?? 0
+                guard let mg = sample.canonicalValue else { continue }
+
+                // Track which dates have data
+                if let dateStr = sample.aggregationDate {
+                    datesWithData.insert(dateStr)
+                }
+
+                let typeKey = sample.metadata?.caffeineType ?? "unknown"
                 aggregated[typeKey, default: 0] += mg
             }
 
-            // For non-day periods, calculate daily average
-            if period != .day {
-                let calendar = Calendar.current
-                let days = max(1, calendar.dateComponents([.day], from: startDate, to: endDate).day ?? 1)
+            // For non-day periods, calculate daily average using only days with data
+            if period != .day && !datesWithData.isEmpty {
+                let dayCount = max(1, datesWithData.count)
                 for key in aggregated.keys {
-                    aggregated[key] = aggregated[key]! / Double(days)
+                    aggregated[key] = aggregated[key]! / Double(dayCount)
                 }
             }
 

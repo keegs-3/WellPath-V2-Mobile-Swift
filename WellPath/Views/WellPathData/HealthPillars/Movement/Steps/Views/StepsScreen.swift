@@ -14,6 +14,7 @@ struct StepsScreen: View {
     let sectionId: String
 
     @StateObject private var scoreViewModel = StepsScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "steps_score")
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -61,7 +62,12 @@ struct StepsScreen: View {
             StepsWizardView()
         }
         .sheet(isPresented: $showingScoreDetail) {
-            StepsScoreDetailView(viewModel: scoreViewModel, color: color)
+            GenericScoreDetailView(
+                viewModel: detailViewModel,
+                title: "Steps Score",
+                iconName: "figure.walk",
+                color: color
+            )
         }
         .sheet(isPresented: $showingEntryForm) {
             StepsEntryView()

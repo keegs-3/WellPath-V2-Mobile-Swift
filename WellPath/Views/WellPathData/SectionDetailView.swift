@@ -42,11 +42,11 @@ struct SectionDetailView: View {
             sectionContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .wellPathAmbientBackground(color: selectedSection.fallbackColor)
         .navigationTitle(selectedSection.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
     }
 
     // MARK: - Section Content
@@ -60,10 +60,6 @@ struct SectionDetailView: View {
             PillarsSectionView(searchText: searchText, isSearchActive: isSearchActive)
         case .markers:
             MarkersSectionView(searchText: searchText, isSearchActive: isSearchActive)
-        case .lifestyle:
-            LifestyleSectionView(searchText: searchText, isSearchActive: isSearchActive)
-        case .records:
-            RecordsSectionView(searchText: searchText, isSearchActive: isSearchActive)
         }
     }
 }
@@ -154,7 +150,6 @@ struct FavoritesSectionView: View {
                 .padding(.bottom, 32)
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .task {
             await favoritesService.loadFavorites()
         }
@@ -201,7 +196,6 @@ struct PillarsSectionView: View {
             .padding(.top, 12)
             .padding(.bottom, 32)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 
     private var pillarSections: [CategorySectionConfig] {
@@ -235,7 +229,6 @@ struct MarkersSectionView: View {
             .padding(.top, 12)
             .padding(.bottom, 32)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 
     private var markerSections: [CategorySectionConfig] {
@@ -248,73 +241,6 @@ struct MarkersSectionView: View {
     }
 }
 
-struct LifestyleSectionView: View {
-    let searchText: String
-    let isSearchActive: Bool
-    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(filteredSections) { section in
-                    NavigationLink {
-                        CategorySectionDetailView(section: section)
-                    } label: {
-                        DatabaseCategoryCard(section: section)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 32)
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-    }
-
-    private var lifestyleSections: [CategorySectionConfig] {
-        displayConfig.categorySections(for: "SEC_LIFESTYLE")
-    }
-
-    private var filteredSections: [CategorySectionConfig] {
-        guard !searchText.isEmpty else { return lifestyleSections }
-        return lifestyleSections.filter { $0.sectionName.localizedCaseInsensitiveContains(searchText) }
-    }
-}
-
-struct RecordsSectionView: View {
-    let searchText: String
-    let isSearchActive: Bool
-    @ObservedObject private var displayConfig = DisplayConfigurationService.shared
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(filteredSections) { section in
-                    NavigationLink {
-                        CategorySectionDetailView(section: section)
-                    } label: {
-                        DatabaseCategoryCard(section: section)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 32)
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-    }
-
-    private var recordSections: [CategorySectionConfig] {
-        displayConfig.categorySections(for: "SEC_RECORDS")
-    }
-
-    private var filteredSections: [CategorySectionConfig] {
-        guard !searchText.isEmpty else { return recordSections }
-        return recordSections.filter { $0.sectionName.localizedCaseInsensitiveContains(searchText) }
-    }
-}
 
 // MARK: - Reusable Cards (Oura-style dark gradient)
 
@@ -348,20 +274,19 @@ struct PillarCategoryCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [color.opacity(0.15), color.opacity(0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            color.opacity(0.25),
+                            color.opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(color.opacity(0.25), lineWidth: 1)
+                        .stroke(color.opacity(0.3), lineWidth: 1)
                 )
         )
     }
@@ -404,20 +329,19 @@ struct CategoryCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [color.opacity(0.15), color.opacity(0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            color.opacity(0.25),
+                            color.opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(color.opacity(0.25), lineWidth: 1)
+                        .stroke(color.opacity(0.3), lineWidth: 1)
                 )
         )
     }
@@ -433,10 +357,19 @@ struct FavoriteRowCard: View {
         return displayConfig.categorySectionColor(for: sectionId)
     }
 
+    /// Get the correct ID to look up in CardRegistry
+    /// For screen types, use cardId if available; otherwise use itemId
+    private var cardLookupId: String {
+        if favorite.itemType == "screen", let cardId = favorite.cardId {
+            return cardId
+        }
+        return favorite.itemId
+    }
+
     var body: some View {
         // Use CardRegistry to get the proper card view with routing
         CardRegistry.card(
-            for: favorite.itemId,
+            for: cardLookupId,
             color: sectionColor,
             pillar: favorite.pillar ?? "",
             displayName: favorite.displayName,
@@ -543,23 +476,19 @@ struct DatabaseCategoryCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    section.color.opacity(0.15),
-                                    section.color.opacity(0.05)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            section.color.opacity(0.25),
+                            section.color.opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(section.color.opacity(0.25), lineWidth: 1)
+                        .stroke(section.color.opacity(0.3), lineWidth: 1)
                 )
         )
     }
@@ -609,7 +538,6 @@ struct TopDataSectionNavBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 }
 
@@ -646,12 +574,16 @@ struct DataSectionNavIcon: View {
                         .lineLimit(1)
                 }
             }
-            .foregroundColor(isSelected ? sectionColor : .secondary)
+            .foregroundColor(isSelected ? .white : .secondary)
             .padding(.horizontal, isSelected ? 12 : 10)
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(isSelected ? sectionColor.opacity(0.15) : Color.clear)
+                    .fill(isSelected ? Color.white.opacity(0.15) : Color.clear)
+                    .overlay(
+                        Capsule()
+                            .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
+                    )
             )
         }
         .buttonStyle(.plain)
@@ -718,7 +650,7 @@ struct TopDataSectionSearchBar: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                    .fill(WellPathColors.cardBackground)
             )
 
             // Cancel button
@@ -733,7 +665,6 @@ struct TopDataSectionSearchBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .systemGroupedBackground))
     }
 }
 

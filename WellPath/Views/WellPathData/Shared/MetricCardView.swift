@@ -83,23 +83,19 @@ struct MetricCardView<Content: View, FullScreenContent: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        color.opacity(0.15),
-                                        color.opacity(0.05)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(0.25),
+                                color.opacity(0.12)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(color.opacity(0.25), lineWidth: 1)
+                            .stroke(color.opacity(0.3), lineWidth: 1)
                     )
             )
         }
@@ -133,34 +129,32 @@ extension MetricCardView where FullScreenContent == EmptyView {
 
 // MARK: - Metric Screen Background ViewModifier
 
-/// Adds the standard gradient background with topographic pattern for metric detail screens
-/// The pattern covers the full screen and fades out gradually (no abrupt cutoff)
+/// Adds the standard ambient glow background for metric detail screens (Oura-style)
+/// Single top-center glow with the section's color
 struct MetricScreenBackground: ViewModifier {
     let color: Color
 
     func body(content: Content) -> some View {
+        let screenHeight = UIScreen.main.bounds.height
+
         content
             .background(
                 ZStack {
-                    // Base background that extends to bottom
-                    Color(uiColor: .systemGroupedBackground)
+                    // Rich charcoal base
+                    WellPathColors.backgroundBase
 
-                    // Gradient overlay at top
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [color.opacity(0.65), color.opacity(0.45), color.opacity(0.25), color.opacity(0.1), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 900)
-                        Spacer()
-                    }
-
-                    // Topographic pattern overlay - covers full screen, fades naturally
-                    GeometryReader { geo in
-                        TopographicPattern(color: .white, opacity: 0.12, fadeStart: 0.2, fadeEnd: 0.85)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                    }
+                    // Single top-center ambient glow
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            color.opacity(0.20),
+                            color.opacity(0.10),
+                            color.opacity(0.04),
+                            Color.clear
+                        ]),
+                        center: UnitPoint(x: 0.5, y: 0.0),
+                        startRadius: 0,
+                        endRadius: screenHeight * 0.6
+                    )
                 }
                 .ignoresSafeArea()
             )
@@ -168,7 +162,7 @@ struct MetricScreenBackground: ViewModifier {
 }
 
 extension View {
-    /// Applies the standard metric screen gradient background with topographic pattern
+    /// Applies the standard metric screen ambient glow background (Oura-style)
     func metricScreenBackground(color: Color) -> some View {
         modifier(MetricScreenBackground(color: color))
     }

@@ -93,6 +93,7 @@ struct NutrientScreen: View {
 
     @StateObject private var viewModel: StandardMetricViewModel
     @StateObject private var scoreViewModel: BehavioralScoreViewModel
+    @StateObject private var detailViewModel: GenericScoreDetailViewModel
     @State private var showingEntryForm = false
     @State private var showingDataManagement = false
     @State private var showingBaseline = false
@@ -103,29 +104,30 @@ struct NutrientScreen: View {
         self.color = color
         _viewModel = StateObject(wrappedValue: StandardMetricViewModel(metricId: config.metricId))
         _scoreViewModel = StateObject(wrappedValue: config.scoreViewModelFactory())
+        _detailViewModel = StateObject(wrappedValue: GenericScoreDetailViewModel(scoreType: config.scoreType))
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Score Card at top - taps to detail (show if baseline wizard completed)
-                if scoreViewModel.hasScore || scoreViewModel.hasBaselineData || scoreViewModel.dailyScore != nil {
-                    MetricScoreCard(
-                        config: config.scoreCardConfig,
-                        color: color,
-                        viewModel: scoreViewModel
-                    ) {
-                        NutrientScoreDetailView(
-                            config: config,
-                            viewModel: scoreViewModel,
+                // Score Card at top
+                // MetricScoreCard handles empty state internally when hasBaselineData is false
+                MetricScoreCard(
+                    config: config.scoreCardConfig,
+                    color: color,
+                    viewModel: scoreViewModel,
+                    detailViewBuilder: {
+                        GenericScoreDetailView(
+                            viewModel: detailViewModel,
+                            title: "\(config.title) Score",
+                            iconName: config.screenIcon,
                             color: color
                         )
-                    }
-                } else {
-                    MetricScoreEmptyCard(config: config.scoreCardConfig, color: color) {
+                    },
+                    onSetupTapped: {
                         showingBaseline = true
                     }
-                }
+                )
 
                 // Reusable card components (defined in Cards/NutrientCards.swift)
                 NutrientServingsCard(config: config, color: color, pillar: pillar)

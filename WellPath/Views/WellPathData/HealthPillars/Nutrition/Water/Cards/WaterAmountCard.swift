@@ -11,14 +11,14 @@ struct WaterAmountCard: View {
     let color: Color
     let pillar: String
 
-    @StateObject private var viewModel = StandardMetricViewModel(metricId: "DISP_WATER_ML")
+    @StateObject private var viewModel = StandardMetricViewModel(metricId: "DISP_HYDRATION_AMOUNT")
     @StateObject private var unitPrefs = UnitPreferencesViewModel()
 
     var body: some View {
         MetricCardView(
             title: "Water Intake",
             color: color,
-            metricId: "DISP_WATER_ML",
+            metricId: "DISP_HYDRATION_AMOUNT",
             pillar: pillar
         ) {
             WaterAmountMiniCard(viewModel: viewModel, color: color, liquidUnit: unitPrefs.liquidUnit)

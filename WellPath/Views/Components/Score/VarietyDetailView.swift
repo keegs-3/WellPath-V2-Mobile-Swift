@@ -3,7 +3,7 @@
 //  WellPath
 //
 //  Database-driven variety score visualization.
-//  Shows count (number of distinct types) and evenness (Shannon entropy).
+//  Shows count (number of distinct types) toward target.
 //  Used for: variety scores (vegetables_variety_score, fruits_variety_score, etc.)
 //
 
@@ -71,29 +71,6 @@ class VarietyDetailViewModel: ObservableObject {
         isLoading = false
     }
 
-    /// Calculate Shannon entropy-based evenness (0-100%)
-    func calculateEvenness(typeValues: [String: Double]) -> Double {
-        let values = typeValues.values.filter { $0 > 0 }
-        guard values.count > 1 else { return 100 }  // Single item = perfectly even
-
-        let total = values.reduce(0, +)
-        guard total > 0 else { return 0 }
-
-        // Calculate Shannon entropy
-        let entropy = values.reduce(0.0) { sum, value in
-            let proportion = value / total
-            guard proportion > 0 else { return sum }
-            return sum - (proportion * log(proportion))
-        }
-
-        // Maximum possible entropy for this count
-        let maxEntropy = log(Double(values.count))
-        guard maxEntropy > 0 else { return 100 }
-
-        // Normalize to percentage
-        return (entropy / maxEntropy) * 100
-    }
-
     /// Build display data for types
     func buildTypeDisplayData(
         typeValues: [String: Double],
@@ -155,10 +132,6 @@ struct VarietyDetailView: View {
         Int(viewModel.threshold?.targetValue ?? 3)
     }
 
-    private var evenness: Double {
-        viewModel.calculateEvenness(typeValues: typeValues)
-    }
-
     private var typeDisplayData: [VarietyTypeData] {
         viewModel.buildTypeDisplayData(typeValues: typeValues, displayNames: typeDisplayNames)
     }
@@ -184,9 +157,6 @@ struct VarietyDetailView: View {
                 if !typeDisplayData.isEmpty {
                     typesSection
                 }
-
-                // Evenness section
-                evennessSection
 
                 // Score display
                 if let score = score {
@@ -309,66 +279,6 @@ struct VarietyDetailView: View {
         }
     }
 
-    // MARK: - Evenness Section
-
-    private var evennessSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Evenness")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Spacer()
-                Text("\(Int(evenness))%")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(evennessColor)
-            }
-
-            // Distribution bars
-            if !typeDisplayData.isEmpty {
-                HStack(spacing: 2) {
-                    ForEach(typeDisplayData) { type in
-                        VStack(spacing: 4) {
-                            Rectangle()
-                                .fill(color.opacity(0.3 + (type.percentage / 200)))
-                                .frame(height: 30)
-                                .cornerRadius(4)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-
-                HStack {
-                    Image(systemName: evennessIcon)
-                        .foregroundColor(evennessColor)
-                    Text(evennessLabel)
-                        .foregroundColor(.secondary)
-                }
-                .font(.caption)
-            }
-        }
-    }
-
-    private var evennessColor: Color {
-        if evenness >= 80 { return .green }
-        else if evenness >= 60 { return .yellow }
-        else if evenness >= 40 { return .orange }
-        else { return .red }
-    }
-
-    private var evennessIcon: String {
-        if evenness >= 80 { return "checkmark.circle.fill" }
-        else if evenness >= 60 { return "minus.circle.fill" }
-        else { return "exclamationmark.circle.fill" }
-    }
-
-    private var evennessLabel: String {
-        if evenness >= 80 { return "Well distributed" }
-        else if evenness >= 60 { return "Moderately distributed" }
-        else if evenness >= 40 { return "Uneven distribution" }
-        else { return "Concentrated in few types" }
-    }
-
     private func scoreColor(for score: Int) -> Color {
         if score >= 80 { return .green }
         else if score >= 60 { return .yellow }
@@ -383,30 +293,17 @@ struct VarietyDetailView: View {
 struct VarietyCompactView: View {
     let count: Int
     let target: Int
-    let evenness: Double
     let color: Color
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(spacing: 2) {
-                Text("\(count)/\(target)")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(count >= target ? .green : .orange)
-                Text("types")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            VStack(spacing: 2) {
-                Text("\(Int(evenness))%")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(evenness >= 70 ? .green : .orange)
-                Text("even")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
+        VStack(spacing: 2) {
+            Text("\(count)/\(target)")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(count >= target ? .green : .orange)
+            Text("types")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
     }
 }

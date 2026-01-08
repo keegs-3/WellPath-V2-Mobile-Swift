@@ -15,6 +15,7 @@ struct DailyActivityScreen: View {
     let sectionId: String
 
     @StateObject private var scoreViewModel = DailyActivityScoreViewModel()
+    @StateObject private var detailViewModel = GenericScoreDetailViewModel(scoreType: "daily_activity_score")
     @State private var showingBaseline = false
     @State private var showingScoreDetail = false
 
@@ -49,7 +50,12 @@ struct DailyActivityScreen: View {
             DailyActivityWizardView()
         }
         .sheet(isPresented: $showingScoreDetail) {
-            DailyActivityScoreDetailView(viewModel: scoreViewModel, color: color)
+            GenericScoreDetailView(
+                viewModel: detailViewModel,
+                title: "Daily Activity Score",
+                iconName: "figure.stand",
+                color: color
+            )
         }
         .task {
             await scoreViewModel.loadData()

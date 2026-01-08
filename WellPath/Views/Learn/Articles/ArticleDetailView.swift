@@ -85,7 +85,7 @@ struct ArticleDetailView: View {
         .onPreferenceChange(ArticleContentHeightPreferenceKey.self) { value in
             contentHeight = value
         }
-        .background(Color.black)
+        .wellPathAmbientBackground()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -126,22 +126,31 @@ struct ArticleDetailView: View {
     @ViewBuilder
     private var heroHeader: some View {
         ZStack(alignment: .bottomLeading) {
-            // Gradient background
-            RoundedRectangle(cornerRadius: 20)
-                .fill(
-                    LinearGradient(
-                        colors: [pillarColor, pillarColor.opacity(0.5)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(height: 180)
-
-            // Decorative icon
-            Image(systemName: article.iconName ?? "book.fill")
-                .font(.system(size: 120))
-                .foregroundColor(.white.opacity(0.15))
-                .offset(x: 140, y: 20)
+            // Background - either image or gradient
+            if let imageUrl = article.heroImageUrl, let url = URL(string: imageUrl) {
+                // Hero image
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(height: 200)
+                            .clipped()
+                            .overlay(
+                                LinearGradient(
+                                    colors: [.clear, .black.opacity(0.7)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    default:
+                        gradientBackground
+                    }
+                }
+            } else {
+                gradientBackground
+            }
 
             // Content overlay
             VStack(alignment: .leading, spacing: 10) {
@@ -195,25 +204,40 @@ struct ArticleDetailView: View {
             }
             .padding(20)
         }
+        .frame(height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+
+    /// Gradient background with decorative icon (clipped)
+    @ViewBuilder
+    private var gradientBackground: some View {
+        ZStack {
+            // Gradient
+            LinearGradient(
+                colors: [pillarColor, pillarColor.opacity(0.5)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            // Decorative icon - positioned in corner
+            Image(systemName: article.iconName ?? "book.fill")
+                .font(.system(size: 100))
+                .foregroundColor(.white.opacity(0.12))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.trailing, -20)
+                .padding(.top, -10)
+        }
+        .frame(height: 200)
     }
 
     // MARK: - Markdown Content
 
     @ViewBuilder
     private var markdownContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let attributed = try? AttributedString(markdown: article.contentMarkdown, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-                Text(attributed)
-                    .font(.body)
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineSpacing(8)
-            } else {
-                Text(article.contentMarkdown)
-                    .font(.body)
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineSpacing(8)
-            }
-        }
+        MarkdownContentView(
+            markdown: article.contentMarkdown,
+            accentColor: pillarColor
+        )
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
